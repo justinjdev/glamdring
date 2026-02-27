@@ -39,8 +39,10 @@ type Message struct {
 	Err error
 
 	// Usage (updated on MessageDone)
-	InputTokens  int
-	OutputTokens int
+	InputTokens              int
+	OutputTokens             int
+	CacheCreationInputTokens int
+	CacheReadInputTokens     int
 }
 
 // PermissionAnswer is the user's response to a permission prompt.

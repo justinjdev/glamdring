@@ -187,6 +187,56 @@ func TestMessageRequestSystemOmittedWhenNil(t *testing.T) {
 	}
 }
 
+func TestUsageCacheFieldsSerialization(t *testing.T) {
+	usage := Usage{
+		InputTokens:              1000,
+		OutputTokens:             500,
+		CacheCreationInputTokens: 200,
+		CacheReadInputTokens:     300,
+	}
+
+	data, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded Usage
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if decoded.CacheCreationInputTokens != 200 {
+		t.Errorf("CacheCreationInputTokens = %d, want 200", decoded.CacheCreationInputTokens)
+	}
+	if decoded.CacheReadInputTokens != 300 {
+		t.Errorf("CacheReadInputTokens = %d, want 300", decoded.CacheReadInputTokens)
+	}
+}
+
+func TestUsageCacheFieldsOmittedWhenZero(t *testing.T) {
+	usage := Usage{
+		InputTokens:  1000,
+		OutputTokens: 500,
+	}
+
+	data, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if _, exists := decoded["cache_creation_input_tokens"]; exists {
+		t.Error("cache_creation_input_tokens should be omitted when zero")
+	}
+	if _, exists := decoded["cache_read_input_tokens"]; exists {
+		t.Error("cache_read_input_tokens should be omitted when zero")
+	}
+}
+
 func TestAPIErrorFormat(t *testing.T) {
 	err := &APIError{
 		StatusCode: 429,

@@ -62,9 +62,11 @@ type Model struct {
 	settings config.Settings
 
 	// cumulative token tracking
-	totalInputTokens  int
-	totalOutputTokens int
-	turn              int
+	totalInputTokens         int
+	totalOutputTokens        int
+	totalCacheCreationTokens int
+	totalCacheReadTokens     int
+	turn                     int
 
 	// compacting is true when /compact is running (agent summarizing).
 	compacting bool
@@ -417,7 +419,9 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 	case agent.MessageDone:
 		m.totalInputTokens += am.InputTokens
 		m.totalOutputTokens += am.OutputTokens
-		m.statusbar.Update(m.agentCfg.Model, m.totalInputTokens, m.totalOutputTokens, m.turn)
+		m.totalCacheCreationTokens += am.CacheCreationInputTokens
+		m.totalCacheReadTokens += am.CacheReadInputTokens
+		m.statusbar.Update(m.agentCfg.Model, m.totalInputTokens, m.totalOutputTokens, m.totalCacheCreationTokens, m.totalCacheReadTokens, m.turn)
 
 		if m.compacting {
 			m.compacting = false
