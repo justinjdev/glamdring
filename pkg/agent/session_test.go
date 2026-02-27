@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/justin/glamdring/pkg/auth"
+	"github.com/justin/glamdring/pkg/tools"
 )
 
 // mockCreds implements auth.Credentials for testing.
@@ -231,6 +233,127 @@ func TestSessionTokenDeltas(t *testing.T) {
 	}
 	_ = turn1Output
 	_ = turn2Output
+}
+
+func TestSessionSetYolo(t *testing.T) {
+	s := newTestSessionWithTools()
+
+	if s.IsYolo() {
+		t.Fatal("expected yolo to be false initially")
+	}
+
+	s.SetYolo(true)
+	if !s.IsYolo() {
+		t.Error("expected yolo to be true after SetYolo(true)")
+	}
+	// All tools should be in sessionAllow.
+	if !s.sessionAllow["Bash"] {
+		t.Error("expected Bash in sessionAllow when yolo is on")
+	}
+	if !s.sessionAllow["Write"] {
+		t.Error("expected Write in sessionAllow when yolo is on")
+	}
+
+	s.SetYolo(false)
+	if s.IsYolo() {
+		t.Error("expected yolo to be false after SetYolo(false)")
+	}
+	if len(s.sessionAllow) != 0 {
+		t.Errorf("expected empty sessionAllow when yolo is off, got %d entries", len(s.sessionAllow))
+	}
+}
+
+func TestSessionToggleYolo(t *testing.T) {
+	s := newTestSessionWithTools()
+
+	s.ToggleYolo()
+	if !s.IsYolo() {
+		t.Error("expected yolo to be true after first toggle")
+	}
+
+	s.ToggleYolo()
+	if s.IsYolo() {
+		t.Error("expected yolo to be false after second toggle")
+	}
+}
+
+func TestSessionSetYoloScoped(t *testing.T) {
+	s := newTestSessionWithTools()
+
+	s.SetYoloScoped([]string{"Bash", "Write"})
+	if s.IsYolo() {
+		t.Error("scoped yolo should not set global yolo flag")
+	}
+	if !s.sessionAllow["Bash"] {
+		t.Error("expected Bash in sessionAllow after scoped yolo")
+	}
+	if !s.sessionAllow["Write"] {
+		t.Error("expected Write in sessionAllow after scoped yolo")
+	}
+	if s.sessionAllow["Edit"] {
+		t.Error("expected Edit NOT in sessionAllow after scoped yolo")
+	}
+}
+
+func TestSessionResetClearsYolo(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.SetYolo(true)
+	if !s.IsYolo() {
+		t.Fatal("expected yolo to be true before reset")
+	}
+
+	s.Reset()
+	if s.IsYolo() {
+		t.Error("expected yolo to be false after reset")
+	}
+	if len(s.sessionAllow) != 0 {
+		t.Errorf("expected empty sessionAllow after reset, got %d", len(s.sessionAllow))
+	}
+}
+
+func TestNewSessionWithYoloConfig(t *testing.T) {
+	cfg := Config{
+		Model: "test-model",
+		Creds: mockCreds{},
+		Tools: []tools.Tool{&mockTool{name: "Bash"}, &mockTool{name: "Write"}},
+		Yolo:  true,
+	}
+	s := NewSession(cfg)
+	if !s.IsYolo() {
+		t.Error("expected yolo to be true when Config.Yolo is true")
+	}
+	if !s.sessionAllow["Bash"] {
+		t.Error("expected Bash in sessionAllow when yolo config is set")
+	}
+}
+
+// newTestSessionWithTools creates a session with mock tools for yolo testing.
+func newTestSessionWithTools() *Session {
+	cfg := Config{
+		Model: "test-model",
+		Creds: mockCreds{},
+		Tools: []tools.Tool{
+			&mockTool{name: "Bash"},
+			&mockTool{name: "Write"},
+			&mockTool{name: "Edit"},
+			&mockTool{name: "Read"},
+		},
+	}
+	return NewSession(cfg)
+}
+
+// mockTool is a minimal tool implementation for testing.
+type mockTool struct {
+	name string
+}
+
+func (t *mockTool) Name() string        { return t.name }
+func (t *mockTool) Description() string { return "mock tool" }
+func (t *mockTool) Schema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{}}`)
+}
+func (t *mockTool) Execute(ctx context.Context, input json.RawMessage) (tools.Result, error) {
+	return tools.Result{Output: "ok"}, nil
 }
 
 // Ensure mockCreds satisfies auth.Credentials.

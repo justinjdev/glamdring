@@ -15,6 +15,7 @@ type Session struct {
 	client       *api.Client
 	registry     *tools.Registry
 	sessionAllow map[string]bool
+	yolo         bool
 	messages     []api.RequestMessage
 	TotalInput         int
 	TotalOutput        int
@@ -37,12 +38,16 @@ func NewSession(cfg Config) *Session {
 		registry.Register(t)
 	}
 
-	return &Session{
+	s := &Session{
 		cfg:          cfg,
 		client:       client,
 		registry:     registry,
 		sessionAllow: make(map[string]bool),
 	}
+	if cfg.Yolo {
+		s.SetYolo(true)
+	}
+	return s
 }
 
 // Turn sends a user message and returns a channel of Messages for the response.
@@ -72,6 +77,39 @@ func (s *Session) Messages() []api.RequestMessage {
 func (s *Session) Reset() {
 	s.messages = nil
 	s.sessionAllow = make(map[string]bool)
+	s.yolo = false
+}
+
+// ToggleYolo flips yolo mode on or off. When enabled, all registered tools
+// are added to the session allow list. When disabled, the allow list is cleared.
+func (s *Session) ToggleYolo() {
+	s.SetYolo(!s.yolo)
+}
+
+// SetYolo sets yolo mode to the given state. When on, all registered tools
+// are added to the session allow list. When off, the allow list is cleared.
+func (s *Session) SetYolo(on bool) {
+	s.yolo = on
+	if on {
+		for _, t := range s.registry.All() {
+			s.sessionAllow[t.Name()] = true
+		}
+	} else {
+		s.sessionAllow = make(map[string]bool)
+	}
+}
+
+// IsYolo returns whether yolo mode is active.
+func (s *Session) IsYolo() bool {
+	return s.yolo
+}
+
+// SetYoloScoped adds specific tools to the session allow list without
+// enabling full yolo mode.
+func (s *Session) SetYoloScoped(toolNames []string) {
+	for _, name := range toolNames {
+		s.sessionAllow[name] = true
+	}
 }
 
 // runTurn executes the agentic loop for one or more API turns until the model

@@ -16,6 +16,7 @@ type Config struct {
 	MaxTurns     *int
 	CWD          string
 	HookRunner   *hooks.HookRunner
+	Yolo         bool
 }
 
 // DefaultModel is the default Claude model to use.

@@ -28,6 +28,7 @@ var builtinCommands = map[string]BuiltinHandler{
 	"compact":  cmdCompact,
 	"index":    cmdIndex,
 	"thinking": cmdThinking,
+	"yolo":     cmdYolo,
 }
 
 // builtinDescriptions provides short help text for each built-in command.
@@ -41,6 +42,7 @@ var builtinDescriptions = map[string]string{
 	"compact":  "Summarize and compress context",
 	"index":    "Show index status or rebuild (shire)",
 	"thinking": "Toggle thinking block display",
+	"yolo":     "Toggle auto-approve (optionally scope: /yolo bash,write)",
 }
 
 // BuiltinNames returns a sorted list of built-in command names.
@@ -285,6 +287,35 @@ func cmdThinking(m *Model, args string) tea.Cmd {
 		m.output.AppendSystem("Thinking display enabled.")
 	} else {
 		m.output.AppendSystem("Thinking display disabled.")
+	}
+	return nil
+}
+
+// cmdYolo toggles yolo mode or scopes it to specific tools.
+func cmdYolo(m *Model, args string) tea.Cmd {
+	if m.session == nil {
+		m.session = agent.NewSession(m.agentCfg)
+	}
+
+	args = strings.TrimSpace(args)
+	if args != "" {
+		// Scoped yolo: /yolo bash,write
+		toolNames := strings.Split(args, ",")
+		for i := range toolNames {
+			toolNames[i] = strings.TrimSpace(toolNames[i])
+		}
+		m.session.SetYoloScoped(toolNames)
+		m.output.AppendSystem(fmt.Sprintf("Auto-approve enabled for: %s", strings.Join(toolNames, ", ")))
+		return nil
+	}
+
+	// Toggle global yolo.
+	m.session.ToggleYolo()
+	m.statusbar.SetYolo(m.session.IsYolo())
+	if m.session.IsYolo() {
+		m.output.AppendSystem("YOLO mode enabled — all tools auto-approved.")
+	} else {
+		m.output.AppendSystem("YOLO mode disabled — tool permissions restored.")
 	}
 	return nil
 }

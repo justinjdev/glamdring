@@ -33,6 +33,7 @@ type StatusBar struct {
 	turn         int
 	cost         float64
 	width        int
+	yolo         bool
 }
 
 // NewStatusBar creates a status bar with default values.
@@ -57,6 +58,11 @@ func (s *StatusBar) SetWidth(w int) {
 	s.width = w
 }
 
+// SetYolo updates the YOLO indicator state.
+func (s *StatusBar) SetYolo(on bool) {
+	s.yolo = on
+}
+
 // View renders the status bar as a single styled line.
 func (s StatusBar) View() string {
 	sep := s.styles.StatusBarSep.String()
@@ -76,6 +82,10 @@ func (s StatusBar) View() string {
 		s.styles.StatusBarValue.Render(fmt.Sprintf("%d", s.turn))
 
 	left := modelStr + sep + tokIn + sep + tokOut + sep + costStr + sep + turnStr
+
+	if s.yolo {
+		left += sep + s.styles.StatusBarWarning.Render("YOLO")
+	}
 
 	return s.styles.StatusBar.
 		Width(s.width).
