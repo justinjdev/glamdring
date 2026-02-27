@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -37,13 +38,18 @@ type Model struct {
 	width  int
 	height int
 
+	// agent wiring
+	ctx      context.Context
+	agentCfg agent.Config
+	agentCh  <-chan agent.Message
+
 	// cumulative token tracking
 	totalInputTokens  int
 	totalOutputTokens int
 	turn              int
 }
 
-// New creates the root TUI model.
+// New creates the root TUI model without agent wiring.
 func New() Model {
 	styles := DefaultStyles()
 	return Model{
@@ -53,6 +59,14 @@ func New() Model {
 		styles:    styles,
 		state:     StateInput,
 	}
+}
+
+// NewWithAgent creates the root TUI model wired to an agent config.
+func NewWithAgent(ctx context.Context, cfg agent.Config) Model {
+	m := New()
+	m.ctx = ctx
+	m.agentCfg = cfg
+	return m
 }
 
 // Init initializes the TUI.
@@ -80,8 +94,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SubmitMsg:
 		return m.handleSubmit(msg)
 
+	case agentStartedMsg:
+		m.agentCh = msg.ch
+		return m, waitForAgent(msg.ch)
+
 	case AgentMsg:
-		return m.handleAgentMsg(msg)
+		var cmd tea.Cmd
+		m, cmd = m.handleAgentMsg(msg)
+		// Keep draining the agent channel for more messages.
+		if m.agentCh != nil && m.state != StatePermission {
+			return m, tea.Batch(cmd, waitForAgent(m.agentCh))
+		}
+		return m, cmd
+
+	case agentDoneMsg:
+		m.agentCh = nil
+		if m.state != StateInput {
+			m.state = StateInput
+			return m, m.input.Focus()
+		}
+		return m, nil
 	}
 
 	// Pass through to focused component.
@@ -142,7 +174,6 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Display the user message in the output.
 	m.output.AppendUserMessage(msg.Text)
 	m.input.Reset()
 	m.input.Blur()
@@ -150,14 +181,46 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	m.turn++
 	m.state = StateRunning
 
-	// NOTE: actual agent communication is not wired up yet.
-	// In production, this would return a tea.Cmd that starts the agent loop
-	// and delivers AgentMsg values back.
-	return m, nil
+	cfg := m.agentCfg
+	cfg.Prompt = msg.Text
+	ctx := m.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	return m, listenToAgent(ctx, cfg)
 }
 
+// listenToAgent starts the agent loop and returns a Cmd that delivers messages.
+func listenToAgent(ctx context.Context, cfg agent.Config) tea.Cmd {
+	return func() tea.Msg {
+		ch := agent.Run(ctx, cfg)
+		// Return the channel as a message; we'll drain it with waitForAgent.
+		return agentStartedMsg{ch: ch}
+	}
+}
+
+// agentStartedMsg carries the agent output channel.
+type agentStartedMsg struct {
+	ch <-chan agent.Message
+}
+
+// waitForAgent reads the next message from the agent channel.
+func waitForAgent(ch <-chan agent.Message) tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-ch
+		if !ok {
+			return agentDoneMsg{}
+		}
+		return AgentMsg(msg)
+	}
+}
+
+// agentDoneMsg signals the agent channel has closed.
+type agentDoneMsg struct{}
+
 // handleAgentMsg routes agent messages to the appropriate component.
-func (m Model) handleAgentMsg(msg AgentMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 	am := agent.Message(msg)
 
 	switch am.Type {
@@ -178,6 +241,7 @@ func (m Model) handleAgentMsg(msg AgentMsg) (tea.Model, tea.Cmd) {
 		m.state = StatePermission
 		m.permission = &am
 		m.output.AppendToolCall("Permission Required", am.PermissionSummary)
+		// Don't continue draining — wait for user response.
 
 	case agent.MessageError:
 		errMsg := "unknown error"
@@ -189,7 +253,7 @@ func (m Model) handleAgentMsg(msg AgentMsg) (tea.Model, tea.Cmd) {
 	case agent.MessageDone:
 		m.totalInputTokens += am.InputTokens
 		m.totalOutputTokens += am.OutputTokens
-		m.statusbar.Update("claude-opus-4-6", m.totalInputTokens, m.totalOutputTokens, m.turn)
+		m.statusbar.Update(m.agentCfg.Model, m.totalInputTokens, m.totalOutputTokens, m.turn)
 		m.state = StateInput
 		return m, m.input.Focus()
 
@@ -208,6 +272,7 @@ func (m Model) handlePermissionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	var resume bool
 	switch msg.String() {
 	case "y", "Y":
 		if m.permission.PermissionResponse != nil {
@@ -215,16 +280,22 @@ func (m Model) handlePermissionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.permission = nil
 		m.state = StateRunning
+		resume = true
 	case "a", "A":
 		if m.permission.PermissionResponse != nil {
 			m.permission.PermissionResponse <- agent.PermissionAlwaysApprove
 		}
 		m.permission = nil
 		m.state = StateRunning
+		resume = true
 	case "n", "N":
 		m.denyPermission()
+		resume = true
 	}
 
+	if resume && m.agentCh != nil {
+		return m, waitForAgent(m.agentCh)
+	}
 	return m, nil
 }
 
