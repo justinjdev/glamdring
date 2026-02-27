@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justin/glamdring/internal/tui"
 	"github.com/justin/glamdring/pkg/agent"
+	"github.com/justin/glamdring/pkg/agents"
 	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/tools"
 )
@@ -44,8 +45,18 @@ func main() {
 	// Discover CLAUDE.md files.
 	claudeMDProject, claudeMDUser, _ := config.FindClaudeMD(workDir)
 
+	// Discover custom agent definitions.
+	agentDefs := agents.NewRegistry(agents.Discover(workDir))
+
+	// Build the subagent runner: a closure that wraps agent.Run and bridges
+	// the agent.Message channel into the tools.SubagentResult channel.
+	subagentRunner := makeSubagentRunner(apiKey, settings.Model)
+
+	// Build the tool set including Task.
+	taskTool := tools.NewTaskTool(subagentRunner, agentDefs, tools.DefaultTools(workDir))
+	allTools := tools.DefaultToolsWithTask(workDir, taskTool)
+
 	// Build tool descriptions for the system prompt.
-	allTools := tools.DefaultTools(workDir)
 	var toolDescs []config.ToolDescription
 	for _, t := range allTools {
 		toolDescs = append(toolDescs, config.ToolDescription{
@@ -79,5 +90,64 @@ func main() {
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+// makeSubagentRunner returns a SubagentRunner that wraps agent.Run. It
+// captures the API key and model so subagents share the parent's credentials.
+func makeSubagentRunner(apiKey, model string) tools.SubagentRunner {
+	return func(ctx context.Context, opts tools.SubagentOptions) <-chan tools.SubagentResult {
+		resultCh := make(chan tools.SubagentResult, 64)
+
+		cfg := agent.Config{
+			Prompt:       opts.Prompt,
+			SystemPrompt: opts.SystemPrompt,
+			APIKey:       apiKey,
+			Model:        model,
+			Tools:        opts.Tools,
+			MaxTurns:     opts.MaxTurns,
+		}
+
+		agentCh := agent.Run(ctx, cfg)
+
+		go func() {
+			defer close(resultCh)
+
+			for msg := range agentCh {
+				switch msg.Type {
+				case agent.MessageTextDelta:
+					resultCh <- tools.SubagentResult{Text: msg.Text}
+
+				case agent.MessageToolResult:
+					// Include tool results so the parent sees what the
+					// subagent discovered, but only the output text.
+					// Skip this to keep the result focused on final text.
+
+				case agent.MessageError:
+					errText := "unknown error"
+					if msg.Err != nil {
+						errText = msg.Err.Error()
+					}
+					resultCh <- tools.SubagentResult{
+						Text:    fmt.Sprintf("error: %s", errText),
+						IsError: true,
+					}
+
+				case agent.MessageDone:
+					resultCh <- tools.SubagentResult{Done: true}
+					return
+
+				case agent.MessageMaxTurnsReached:
+					resultCh <- tools.SubagentResult{
+						Text:    "subagent reached maximum turns",
+						IsError: true,
+						Done:    true,
+					}
+					return
+				}
+			}
+		}()
+
+		return resultCh
 	}
 }

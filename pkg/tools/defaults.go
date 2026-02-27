@@ -11,3 +11,13 @@ func DefaultTools(cwd string) []Tool {
 		GrepTool{CWD: cwd},
 	}
 }
+
+// DefaultToolsWithTask returns all built-in tools plus the Task tool for
+// subagent spawning. The Task tool is appended to the end of the list.
+func DefaultToolsWithTask(cwd string, taskTool *TaskTool) []Tool {
+	base := DefaultTools(cwd)
+	if taskTool != nil {
+		base = append(base, taskTool)
+	}
+	return base
+}
