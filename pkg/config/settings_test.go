@@ -7,13 +7,15 @@ import (
 	"testing"
 )
 
+func intPtr(v int) *int { return &v }
+
 func TestDefaultSettings(t *testing.T) {
 	s := DefaultSettings()
 	if s.Model != "claude-opus-4-6" {
 		t.Errorf("default model: got %q, want %q", s.Model, "claude-opus-4-6")
 	}
-	if s.MaxTurns != 0 {
-		t.Errorf("default max turns: got %d, want 0", s.MaxTurns)
+	if s.MaxTurns != nil {
+		t.Errorf("default max turns: got %v, want nil", s.MaxTurns)
 	}
 }
 
@@ -34,7 +36,7 @@ func TestLoadSettings_ProjectOverridesDefaults(t *testing.T) {
 
 	settings := Settings{
 		Model:    "claude-sonnet-4-20250514",
-		MaxTurns: 10,
+		MaxTurns: intPtr(10),
 	}
 	data, _ := json.Marshal(settings)
 	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), data, 0o644); err != nil {
@@ -45,8 +47,8 @@ func TestLoadSettings_ProjectOverridesDefaults(t *testing.T) {
 	if s.Model != "claude-sonnet-4-20250514" {
 		t.Errorf("model: got %q, want claude-sonnet-4-20250514", s.Model)
 	}
-	if s.MaxTurns != 10 {
-		t.Errorf("max turns: got %d, want 10", s.MaxTurns)
+	if s.MaxTurns == nil || *s.MaxTurns != 10 {
+		t.Errorf("max turns: got %v, want 10", s.MaxTurns)
 	}
 }
 
@@ -127,7 +129,7 @@ func TestLoadSettings_WalksUp(t *testing.T) {
 func TestMergeSettings(t *testing.T) {
 	base := Settings{
 		Model:    "default-model",
-		MaxTurns: 5,
+		MaxTurns: intPtr(5),
 		MCPServers: map[string]MCPServerConfig{
 			"existing": {Command: "python", Args: []string{"srv.py"}},
 		},
@@ -145,9 +147,9 @@ func TestMergeSettings(t *testing.T) {
 	if base.Model != "override-model" {
 		t.Errorf("model: got %q, want 'override-model'", base.Model)
 	}
-	// MaxTurns should remain since override is zero.
-	if base.MaxTurns != 5 {
-		t.Errorf("max turns: got %d, want 5", base.MaxTurns)
+	// MaxTurns should remain since override is nil.
+	if base.MaxTurns == nil || *base.MaxTurns != 5 {
+		t.Errorf("max turns: got %v, want 5", base.MaxTurns)
 	}
 	// Both MCP servers should exist.
 	if len(base.MCPServers) != 2 {
@@ -158,5 +160,26 @@ func TestMergeSettings(t *testing.T) {
 	}
 	if _, ok := base.MCPServers["new"]; !ok {
 		t.Error("missing 'new' server after merge")
+	}
+}
+
+func TestMergeSettings_ZeroMaxTurnsOverride(t *testing.T) {
+	base := Settings{
+		Model:    "default-model",
+		MaxTurns: intPtr(5),
+	}
+
+	// Explicitly set MaxTurns to 0 (unlimited).
+	override := Settings{
+		MaxTurns: intPtr(0),
+	}
+
+	mergeSettings(&base, &override)
+
+	if base.MaxTurns == nil {
+		t.Fatal("expected MaxTurns to be set after merge")
+	}
+	if *base.MaxTurns != 0 {
+		t.Errorf("max turns: got %d, want 0 (explicitly unlimited)", *base.MaxTurns)
 	}
 }

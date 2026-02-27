@@ -8,8 +8,8 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Built-in tools** — Read, Write, Edit, Bash, Glob, Grep + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
 - **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides
 - **MCP support** — connect external tool servers via stdio transport
-- **CLAUDE.md** — discovers and loads project/user instructions automatically
-- **Hooks** — shell commands triggered by agent lifecycle events (SessionStart hooks fire on launch)
+- **CLAUDE.md** — discovers and loads project/user instructions automatically (bare `CLAUDE.md`, `.claude/CLAUDE.md`, and `.claude/CLAUDE.local.md` at every directory level)
+- **Hooks** — shell commands triggered by agent lifecycle events (SessionStart on launch, SessionEnd on exit)
 - **Checkpoint resume** — detects `tmp/checkpoint.md` from `/compact` and offers to load previous session context
 - **Slash commands** — custom prompts from `.claude/commands/` with tab completion
 - **Custom agents** — define specialized subagents in `.claude/agents/`
@@ -61,8 +61,8 @@ glamdring
 
 Glamdring reads the same configuration as Claude Code:
 
-- **CLAUDE.md** — `~/.claude/CLAUDE.md` (user) and `.claude/CLAUDE.md` (project)
-- **Settings** — `~/.claude/settings.json` and `.claude/settings.json`
+- **CLAUDE.md** — `~/.claude/CLAUDE.md` (user), `CLAUDE.md` and `.claude/CLAUDE.md` (project, all levels concatenated), `.claude/CLAUDE.local.md` (local overrides, gitignored)
+- **Settings** — `~/.claude/settings.json` and `.claude/settings.json` (`max_turns` supports `0` for explicitly unlimited)
 - **Commands** — `.claude/commands/*.md`
 - **Agents** — `.claude/agents/*.md` or `.claude/agents/*.yaml`
 - **Hooks** — `hooks` array in `settings.json`

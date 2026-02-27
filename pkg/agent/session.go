@@ -155,7 +155,7 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 		}
 
 		s.Turns++
-		if s.cfg.MaxTurns > 0 && s.Turns >= s.cfg.MaxTurns {
+		if s.cfg.MaxTurns != nil && *s.cfg.MaxTurns > 0 && s.Turns >= *s.cfg.MaxTurns {
 			emit(ctx, out, Message{Type: MessageMaxTurnsReached})
 			return
 		}
