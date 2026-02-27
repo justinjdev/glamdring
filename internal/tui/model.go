@@ -172,6 +172,14 @@ func (m *Model) SetBaseTools(t []tools.Tool) {
 	m.baseTools = t
 }
 
+// InitMCPStatus initializes the MCP status bar counts. Call this
+// synchronously before tea.NewProgram to ensure the counts are captured.
+func (m *Model) InitMCPStatus() {
+	if m.mcpMgr != nil {
+		m.statusbar.UpdateMCP(m.mcpConfiguredCount, m.mcpMgr.ServerCount())
+	}
+}
+
 // MCPServerDiedMsg signals that an MCP server has exited unexpectedly.
 type MCPServerDiedMsg struct {
 	Name string
@@ -205,11 +213,6 @@ func (m Model) Init() tea.Cmd {
 // startupCmd fires SessionStart hooks and checks for a checkpoint file.
 func (m Model) startupCmd() tea.Cmd {
 	return func() tea.Msg {
-		// Initialize MCP status bar counts.
-		if m.mcpMgr != nil {
-			m.statusbar.UpdateMCP(m.mcpConfiguredCount, m.mcpMgr.ServerCount())
-		}
-
 		// Fire SessionStart hooks.
 		if m.agentCfg.HookRunner != nil {
 			ctx := m.ctx

@@ -129,15 +129,15 @@ func main() {
 	}()
 
 	// Build the tool set including Task, MCP, and index tools.
-	// baseTools are the non-MCP tools, stored on the model so we can rebuild
-	// the full list when MCP servers change at runtime.
+	// baseTools are the non-MCP, non-index tools — stored on the model so
+	// refreshMCPTools() can rebuild the full list without duplicating index tools.
 	taskTool := tools.NewTaskTool(subagentRunner, agentDefs, tools.DefaultTools(workDir))
 	baseTools := tools.DefaultToolsWithTask(workDir, taskTool)
-	if indexDB != nil {
-		baseTools = append(baseTools, index.Tools(indexDB)...)
-	}
 	allTools := make([]tools.Tool, len(baseTools))
 	copy(allTools, baseTools)
+	if indexDB != nil {
+		allTools = append(allTools, index.Tools(indexDB)...)
+	}
 	allTools = append(allTools, mcpMgr.Tools()...)
 
 	// Build tool descriptions for the system prompt.
@@ -186,6 +186,7 @@ func main() {
 	if indexDB != nil {
 		m.SetIndexDB(indexDB)
 	}
+	m.InitMCPStatus()
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 

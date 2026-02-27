@@ -261,22 +261,29 @@ func (m *Manager) Close() {
 func (m *Manager) monitor(name string) {
 	m.mu.Lock()
 	entry, ok := m.servers[name]
-	m.mu.Unlock()
 	if !ok {
+		m.mu.Unlock()
 		return
 	}
-
-	// Block until the client's reader loop signals the process is gone.
-	<-entry.client.done
-
-	m.mu.Lock()
-	delete(m.servers, name)
-	cb := m.OnServerDeath
+	client := entry.client
 	m.mu.Unlock()
 
-	log.Printf("mcp: server %q exited unexpectedly, its tools are no longer available", name)
+	// Block until the client's reader loop signals the process is gone.
+	<-client.done
+
+	m.mu.Lock()
+	// Only remove if the server entry still has our client — a restart may
+	// have replaced it with a new entry while we were waiting.
+	current, stillExists := m.servers[name]
+	var cb func(string)
+	if stillExists && current.client == client {
+		delete(m.servers, name)
+		cb = m.OnServerDeath
+	}
+	m.mu.Unlock()
 
 	if cb != nil {
+		log.Printf("mcp: server %q exited unexpectedly, its tools are no longer available", name)
 		cb(name)
 	}
 }
