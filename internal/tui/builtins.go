@@ -3,10 +3,13 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/justin/glamdring/pkg/index"
 )
 
 // BuiltinHandler processes a built-in slash command. It may modify the model
@@ -22,6 +25,7 @@ var builtinCommands = map[string]BuiltinHandler{
 	"config":  cmdConfig,
 	"model":   cmdModel,
 	"compact": cmdCompact,
+	"index":   cmdIndex,
 }
 
 // builtinDescriptions provides short help text for each built-in command.
@@ -33,6 +37,7 @@ var builtinDescriptions = map[string]string{
 	"config":  "Show current configuration",
 	"model":   "Show or change the model",
 	"compact": "Summarize and compress context",
+	"index":   "Show index status or rebuild (shire)",
 }
 
 // BuiltinNames returns a sorted list of built-in command names.
@@ -167,6 +172,92 @@ func cmdCompact(m *Model, args string) tea.Cmd {
 	}
 
 	return listenToAgent(ctx, cfg)
+}
+
+// cmdIndex shows index status or triggers a rebuild via shire.
+func cmdIndex(m *Model, args string) tea.Cmd {
+	switch strings.TrimSpace(args) {
+	case "rebuild":
+		return cmdIndexRebuild(m)
+	default:
+		return cmdIndexStatus(m)
+	}
+}
+
+func cmdIndexStatus(m *Model) tea.Cmd {
+	if m.indexDB == nil {
+		m.output.AppendSystem("No shire index found. Run /index rebuild or shire build to create one.")
+		return nil
+	}
+	status, err := m.indexDB.IndexStatus()
+	if err != nil {
+		m.output.AppendError(fmt.Sprintf("index status error: %s", err))
+		return nil
+	}
+	var b strings.Builder
+	b.WriteString("Shire index status:\n")
+	if status.IndexedAt != nil {
+		b.WriteString(fmt.Sprintf("  Built:    %s\n", *status.IndexedAt))
+	}
+	if status.GitCommit != nil {
+		b.WriteString(fmt.Sprintf("  Commit:   %s\n", *status.GitCommit))
+	}
+	if status.PackageCount != nil {
+		b.WriteString(fmt.Sprintf("  Packages: %s\n", *status.PackageCount))
+	}
+	if status.SymbolCount != nil {
+		b.WriteString(fmt.Sprintf("  Symbols:  %s\n", *status.SymbolCount))
+	}
+	if status.FileCount != nil {
+		b.WriteString(fmt.Sprintf("  Files:    %s\n", *status.FileCount))
+	}
+	if status.TotalDurationMs != nil {
+		b.WriteString(fmt.Sprintf("  Duration: %sms", *status.TotalDurationMs))
+	}
+	m.output.AppendSystem(strings.TrimRight(b.String(), "\n"))
+	return nil
+}
+
+func cmdIndexRebuild(m *Model) tea.Cmd {
+	shirePath, err := exec.LookPath("shire")
+	if err != nil {
+		m.output.AppendError("shire is not installed. Install with: brew tap justinjdev/shire && brew install shire")
+		return nil
+	}
+
+	cwd := m.agentCfg.CWD
+	if cwd == "" {
+		m.output.AppendError("no working directory set")
+		return nil
+	}
+
+	m.output.AppendSystem("Rebuilding shire index...")
+
+	// Run shire build synchronously (it's fast for incremental builds).
+	cmd := exec.Command(shirePath, "build", "--root", cwd)
+	cmd.Dir = cwd
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		m.output.AppendError(fmt.Sprintf("shire build failed: %s\n%s", err, string(output)))
+		return nil
+	}
+
+	// Reopen the database.
+	dbPath := filepath.Join(cwd, ".shire", "index.db")
+	newDB, err := index.Open(dbPath)
+	if err != nil {
+		m.output.AppendError(fmt.Sprintf("failed to open rebuilt index: %s", err))
+		return nil
+	}
+
+	// Close old DB if any, swap in new one.
+	if m.indexDB != nil {
+		m.indexDB.Close()
+	}
+	m.indexDB = newDB
+
+	// Show updated status.
+	return cmdIndexStatus(m)
 }
 
 const compactPrompt = `Summarize our conversation so far into a compact context block. Be aggressive about compression — discard noise, keep only what matters for continuing work.

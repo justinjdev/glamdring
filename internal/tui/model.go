@@ -16,6 +16,7 @@ import (
 	"github.com/justin/glamdring/pkg/commands"
 	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/hooks"
+	"github.com/justin/glamdring/pkg/index"
 )
 
 // State represents the current UI mode.
@@ -69,6 +70,9 @@ type Model struct {
 
 	// checkpointContent holds the checkpoint file content while in StateCheckpoint.
 	checkpointContent string
+
+	// indexDB is the shire index database, if available.
+	indexDB *index.DB
 }
 
 // New creates the root TUI model without agent wiring.
@@ -98,6 +102,11 @@ func (m *Model) SetCommandRegistry(r *commands.Registry) {
 	names := BuiltinNames()
 	names = append(names, r.Names()...)
 	m.input.SetAvailableCommands(names)
+}
+
+// SetIndexDB stores the shire index database for /index command access.
+func (m *Model) SetIndexDB(db *index.DB) {
+	m.indexDB = db
 }
 
 // SetSettings stores the resolved settings for /config display.

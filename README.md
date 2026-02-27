@@ -5,7 +5,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 ## Features
 
 - **Agentic loop** — streaming responses, multi-turn conversations, adaptive thinking
-- **Built-in tools** — Read, Write, Edit, Bash, Glob, Grep
+- **Built-in tools** — Read, Write, Edit, Bash, Glob, Grep + [shire](https://github.com/justinjdev/shire) index tools (auto-detected)
 - **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides
 - **MCP support** — connect external tool servers via stdio transport
 - **CLAUDE.md** — discovers and loads project/user instructions automatically
@@ -74,6 +74,7 @@ pkg/
   agent/       Core agentic loop + permission system
   api/         Claude Messages API client (HTTP + SSE)
   tools/       Built-in tools + Task tool for subagents
+  index/       Shire index Go bindings (read-only SQLite queries)
   mcp/         MCP client (stdio JSON-RPC)
   config/      CLAUDE.md discovery, system prompt, settings
   hooks/       Event hook system

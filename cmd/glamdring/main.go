@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justin/glamdring/internal/tui"
@@ -16,6 +17,7 @@ import (
 	"github.com/justin/glamdring/pkg/commands"
 	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/hooks"
+	"github.com/justin/glamdring/pkg/index"
 	"github.com/justin/glamdring/pkg/mcp"
 	"github.com/justin/glamdring/pkg/tools"
 )
@@ -95,10 +97,21 @@ func main() {
 	// the agent.Message channel into the tools.SubagentResult channel.
 	subagentRunner := makeSubagentRunner(creds, settings.Model)
 
-	// Build the tool set including Task and MCP tools.
+	// Open shire index if available.
+	var indexDB *index.DB
+	indexDBPath := filepath.Join(workDir, ".shire", "index.db")
+	if db, err := index.Open(indexDBPath); err == nil {
+		indexDB = db
+		defer indexDB.Close()
+	}
+
+	// Build the tool set including Task, MCP, and index tools.
 	taskTool := tools.NewTaskTool(subagentRunner, agentDefs, tools.DefaultTools(workDir))
 	allTools := tools.DefaultToolsWithTask(workDir, taskTool)
 	allTools = append(allTools, mcpMgr.Tools()...)
+	if indexDB != nil {
+		allTools = append(allTools, index.Tools(indexDB)...)
+	}
 
 	// Build tool descriptions for the system prompt.
 	var toolDescs []config.ToolDescription
@@ -129,6 +142,9 @@ func main() {
 	m := tui.NewWithAgent(ctx, cfg)
 	m.SetSettings(settings)
 	m.SetCommandRegistry(cmdRegistry)
+	if indexDB != nil {
+		m.SetIndexDB(indexDB)
+	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
