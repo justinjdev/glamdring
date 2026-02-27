@@ -11,9 +11,6 @@ import (
 )
 
 const (
-	// maxToolResultLines is the max lines to show for a tool result before truncating.
-	maxToolResultLines = 30
-
 	// collapseThreshold is the line count above which tool results are collapsed.
 	collapseThreshold = 20
 

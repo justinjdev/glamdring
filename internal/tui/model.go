@@ -401,15 +401,6 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	)
 }
 
-// listenToAgent starts the agent loop and returns a Cmd that delivers messages.
-func listenToAgent(ctx context.Context, cfg agent.Config) tea.Cmd {
-	return func() tea.Msg {
-		ch := agent.Run(ctx, cfg)
-		// Return the channel as a message; we'll drain it with waitForAgent.
-		return agentStartedMsg{ch: ch}
-	}
-}
-
 // agentStartedMsg carries the agent output channel.
 type agentStartedMsg struct {
 	ch <-chan agent.Message
