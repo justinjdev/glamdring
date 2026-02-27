@@ -59,6 +59,8 @@ func NewInputModel(styles Styles) InputModel {
 	// We handle Enter in Update and use this key map for alt+enter.
 	ta.KeyMap.InsertNewline.SetKeys("alt+enter")
 
+	ta.Focus()
+
 	return InputModel{
 		textarea: ta,
 		styles:   styles,

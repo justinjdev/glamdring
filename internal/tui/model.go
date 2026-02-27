@@ -252,7 +252,7 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.output.AppendText(am.Text)
 
 	case agent.MessageThinkingDelta:
-		m.output.AppendThinking(am.Text)
+		// Thinking is hidden by default; silently discard.
 
 	case agent.MessageToolCall:
 		summary := summarizeToolInput(am.ToolName, am.ToolInput)
