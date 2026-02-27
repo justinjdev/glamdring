@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justin/glamdring/pkg/agent"
@@ -80,17 +81,34 @@ type Model struct {
 
 	// turnModifiedFiles tracks whether the current agent turn used file-modifying tools.
 	turnModifiedFiles bool
+
+	// cancelTurn cancels the context for the current agent turn.
+	cancelTurn context.CancelFunc
+
+	// lastCtrlC records the time of the last Ctrl+C press for double-tap quit.
+	lastCtrlC time.Time
+
+	// spinner and spinning track the thinking/typing indicator.
+	spinner  spinner.Model
+	spinning bool
+
+	// showThinking controls whether thinking blocks are displayed.
+	showThinking bool
 }
 
 // New creates the root TUI model without agent wiring.
 func New() Model {
 	styles := DefaultStyles()
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(colorAmber)
 	return Model{
 		input:     NewInputModel(styles),
 		output:    NewOutputModel(styles, 80, 20),
 		statusbar: NewStatusBar(styles),
 		styles:    styles,
 		state:     StateInput,
+		spinner:   s,
 	}
 }
 
@@ -132,6 +150,7 @@ func (m Model) Init() tea.Cmd {
 		m.input.Init(),
 		m.output.Init(),
 		m.startupCmd(),
+		m.spinner.Tick,
 	)
 }
 
@@ -219,6 +238,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.indexDB = msg.db
 		}
 		return m, nil
+
+	case spinner.TickMsg:
+		if m.spinning {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
+		return m, nil
 	}
 
 	// Pass through to focused component.
@@ -245,11 +272,34 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Global keybindings
 	switch msg.String() {
 	case "ctrl+c":
-		return m, tea.Quit
+		if m.state == StateRunning || m.state == StatePermission {
+			// Cancel the current agent turn.
+			if m.cancelTurn != nil {
+				m.cancelTurn()
+				m.cancelTurn = nil
+			}
+			m.spinning = false
+			m.permission = nil
+			m.agentCh = nil
+			m.state = StateInput
+			m.output.AppendSystem("(interrupted)")
+			return m, m.input.Focus()
+		}
+		// Double Ctrl+C within 1 second quits.
+		if time.Since(m.lastCtrlC) < time.Second {
+			return m, tea.Quit
+		}
+		m.lastCtrlC = time.Now()
+		m.output.AppendSystem("(press Ctrl+C again to quit)")
+		return m, nil
+
 	case "esc":
 		if m.state == StatePermission {
-			// Deny permission on Escape.
+			// Deny permission on Escape — resume draining the agent channel.
 			m.denyPermission()
+			if m.agentCh != nil {
+				return m, waitForAgent(m.agentCh)
+			}
 			return m, nil
 		}
 		if m.state == StateCheckpoint {
@@ -272,6 +322,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleCheckpointKey(msg)
 
 	case StateRunning:
+		// Toggle expand/collapse on tool result blocks.
+		if msg.String() == "e" {
+			m.output.ToggleLastToolResult()
+			return m, nil
+		}
 		// Allow scrolling the viewport while agent is working.
 		var cmd tea.Cmd
 		m.output, cmd = m.output.Update(msg)
@@ -327,26 +382,23 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	m.turn++
 	m.turnModifiedFiles = false
 	m.state = StateRunning
+	m.spinning = true
 
 	ctx := m.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	turnCtx, cancel := context.WithCancel(ctx)
+	m.cancelTurn = cancel
 
 	if m.session == nil {
 		m.session = agent.NewSession(m.agentCfg)
 	}
-	ch := m.session.Turn(ctx, prompt)
-	return m, func() tea.Msg { return agentStartedMsg{ch: ch} }
-}
-
-// listenToAgent starts the agent loop and returns a Cmd that delivers messages.
-func listenToAgent(ctx context.Context, cfg agent.Config) tea.Cmd {
-	return func() tea.Msg {
-		ch := agent.Run(ctx, cfg)
-		// Return the channel as a message; we'll drain it with waitForAgent.
-		return agentStartedMsg{ch: ch}
-	}
+	ch := m.session.Turn(turnCtx, prompt)
+	return m, tea.Batch(
+		func() tea.Msg { return agentStartedMsg{ch: ch} },
+		m.spinner.Tick,
+	)
 }
 
 // agentStartedMsg carries the agent output channel.
@@ -385,12 +437,16 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 
 	switch am.Type {
 	case agent.MessageTextDelta:
+		m.spinning = false
 		m.output.AppendText(am.Text)
 
 	case agent.MessageThinkingDelta:
-		// Thinking is hidden by default; silently discard.
+		if m.showThinking {
+			m.output.AppendThinking(am.Text)
+		}
 
 	case agent.MessageToolCall:
+		m.spinning = false
 		switch am.ToolName {
 		case "Edit", "Write", "Bash":
 			m.turnModifiedFiles = true
@@ -408,6 +464,7 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		// Don't continue draining — wait for user response.
 
 	case agent.MessageError:
+		m.spinning = false
 		errMsg := "unknown error"
 		if am.Err != nil {
 			errMsg = am.Err.Error()
@@ -415,6 +472,7 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.output.AppendError(errMsg)
 
 	case agent.MessageDone:
+		m.spinning = false
 		m.totalInputTokens += am.InputTokens
 		m.totalOutputTokens += am.OutputTokens
 		m.statusbar.Update(m.agentCfg.Model, m.totalInputTokens, m.totalOutputTokens, m.turn)
@@ -604,7 +662,7 @@ func (m *Model) layoutComponents() {
 
 // View renders the full TUI layout.
 func (m Model) View() string {
-	// Layout: output (fills space) | status bar (1 line) | input (bottom)
+	// Layout: output (fills space) | spinner (optional) | status bar (1 line) | input (bottom)
 	output := m.output.View()
 	status := m.statusbar.View()
 
@@ -618,11 +676,14 @@ func (m Model) View() string {
 		input = m.input.View()
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		output,
-		status,
-		input,
-	)
+	parts := []string{output}
+	if m.spinning {
+		spinnerLine := m.styles.SpinnerText.Render(m.spinner.View() + " Thinking...")
+		parts = append(parts, spinnerLine)
+	}
+	parts = append(parts, status, input)
+
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 // renderPermissionPrompt renders the inline permission prompt.

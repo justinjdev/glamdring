@@ -2,15 +2,27 @@ package tui
 
 import (
 	"fmt"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
-// Cost per million tokens for Claude Opus (input / output).
-const (
-	opusInputCostPerMillion  = 5.0
-	opusOutputCostPerMillion = 25.0
-)
+// modelPricing maps model names to [input, output] cost per million tokens.
+var modelPricing = map[string][2]float64{
+	"claude-opus-4-6":   {15.0, 75.0},
+	"claude-sonnet-4-6": {3.0, 15.0},
+	"claude-haiku-4-5":  {0.80, 4.0},
+}
+
+// defaultPricing is used for unknown models (falls back to Opus pricing).
+var defaultPricing = [2]float64{15.0, 75.0}
+
+// costForModel calculates the cost for the given model and token counts.
+func costForModel(model string, inputTokens, outputTokens int) float64 {
+	pricing, ok := modelPricing[model]
+	if !ok {
+		pricing = defaultPricing
+	}
+	return float64(inputTokens)/1_000_000*pricing[0] +
+		float64(outputTokens)/1_000_000*pricing[1]
+}
 
 // StatusBar displays model info, token usage, cost, and turn number.
 type StatusBar struct {
@@ -37,8 +49,7 @@ func (s *StatusBar) Update(model string, inputTokens, outputTokens, turn int) {
 	s.inputTokens = inputTokens
 	s.outputTokens = outputTokens
 	s.turn = turn
-	s.cost = float64(inputTokens)/1_000_000*opusInputCostPerMillion +
-		float64(outputTokens)/1_000_000*opusOutputCostPerMillion
+	s.cost = costForModel(model, inputTokens, outputTokens)
 }
 
 // SetWidth updates the status bar width.
@@ -89,9 +100,4 @@ func (s *StatusBar) Reset() {
 	s.outputTokens = 0
 	s.turn = 0
 	s.cost = 0
-}
-
-// Height returns the rendered height of the status bar (always 1).
-func (s StatusBar) Height() int {
-	return lipgloss.Height(s.View())
 }

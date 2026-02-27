@@ -4,7 +4,10 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 
 ## Features
 
-- **Agentic loop** — streaming responses, multi-turn conversations with persistent session memory, extended thinking, prompt caching support
+- **Agentic loop** — streaming responses, multi-turn conversations with persistent session memory, extended thinking with `/thinking` toggle, prompt caching support
+- **Agent interrupt** — `Ctrl+C` cancels the current turn instead of killing the program; double-press to quit
+- **Thinking spinner** — visual feedback while the agent is processing
+- **Per-model cost tracking** — accurate pricing for Opus, Sonnet, and Haiku
 - **Built-in tools** — Read, Write, Edit, Bash, Glob, Grep + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
 - **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides
 - **MCP support** — connect external tool servers via stdio transport
@@ -52,10 +55,12 @@ glamdring
 | `j` / `k` | Scroll line up/down |
 | `Ctrl+u` / `Ctrl+d` | Scroll half page |
 | `G` / `g` | Jump to bottom/top |
+| `e` | Expand/collapse last tool result (while agent is running) |
 | `y` / `n` / `a` | Permission: yes / no / always |
 | `y` / `n` | Checkpoint prompt: load / skip |
 | `Tab` | Complete slash command |
-| `Ctrl+c` | Quit |
+| `Ctrl+c` | Interrupt agent turn (double-press to quit) |
+| `Esc` | Deny permission request |
 
 ## Configuration
 
