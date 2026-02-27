@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,6 +24,11 @@ import (
 	"github.com/justin/glamdring/pkg/mcp"
 	"github.com/justin/glamdring/pkg/tools"
 )
+
+// version is set at build time via ldflags:
+//
+//	go build -ldflags "-X main.version=v1.0.0"
+var version = "dev"
 
 func main() {
 	// Handle subcommands before flag parsing.
@@ -40,11 +46,15 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "version", "--version":
+			fmt.Printf("glamdring %s\n", version)
+			return
 		}
 	}
 
 	cwd := flag.String("cwd", "", "working directory (defaults to current directory)")
 	model := flag.String("model", "", "Claude model to use (overrides settings)")
+	yolo := flag.Bool("yolo", false, "auto-approve all tool permissions")
 	flag.Parse()
 
 	creds, err := auth.Resolve()
@@ -83,12 +93,10 @@ func main() {
 	hookRunner := hooks.NewHookRunner(hooks.LoadHooks(workDir))
 
 	// Create a cancellable context (needed for MCP servers and agent).
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	// Start MCP servers if configured.
 	mcpMgr := mcp.NewManager()
-	defer mcpMgr.Close()
 	for name, serverCfg := range settings.MCPServers {
 		if err := mcpMgr.StartServer(ctx, name, serverCfg); err != nil {
 			log.Printf("warning: failed to start MCP server %q: %v", name, err)
@@ -106,11 +114,19 @@ func main() {
 		indexDBPath := filepath.Join(workDir, ".shire", "index.db")
 		if db, err := index.Open(indexDBPath); err == nil {
 			indexDB = db
-			defer indexDB.Close()
 		} else if enabled != nil && *enabled {
 			log.Printf("warning: indexer enabled but index not found at %s: %v", indexDBPath, err)
 		}
 	}
+
+	// Consolidated cleanup: cancel context first, then close resources.
+	defer func() {
+		cancel()
+		mcpMgr.Close()
+		if indexDB != nil {
+			indexDB.Close()
+		}
+	}()
 
 	// Build the tool set including Task, MCP, and index tools.
 	taskTool := tools.NewTaskTool(subagentRunner, agentDefs, tools.DefaultTools(workDir))
@@ -153,6 +169,7 @@ func main() {
 		MaxTurns:     settings.MaxTurns,
 		CWD:          workDir,
 		HookRunner:   hookRunner,
+		Yolo:         *yolo,
 	}
 
 	m := tui.NewWithAgent(ctx, cfg)

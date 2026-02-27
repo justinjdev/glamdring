@@ -293,6 +293,18 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.output.AppendSystem("(press Ctrl+C again to quit)")
 		return m, nil
 
+	case "shift+tab":
+		if m.session != nil {
+			m.session.ToggleYolo()
+			m.statusbar.SetYolo(m.session.IsYolo())
+			if m.session.IsYolo() {
+				m.output.AppendSystem("YOLO mode enabled — all tools auto-approved.")
+			} else {
+				m.output.AppendSystem("YOLO mode disabled — tool permissions restored.")
+			}
+		}
+		return m, nil
+
 	case "esc":
 		if m.state == StatePermission {
 			// Deny permission on Escape — resume draining the agent channel.

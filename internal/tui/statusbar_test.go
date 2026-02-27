@@ -2,6 +2,7 @@ package tui
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -44,6 +45,32 @@ func TestCostForModel_SmallTokens(t *testing.T) {
 	expected := 5000.0/1_000_000*15.0 + 1000.0/1_000_000*75.0
 	if math.Abs(cost-expected) > 0.0001 {
 		t.Errorf("expected %f, got %f", expected, cost)
+	}
+}
+
+func TestStatusBarYoloIndicator(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+	sb.SetWidth(120)
+
+	// Without yolo, "YOLO" should not appear.
+	view := sb.View()
+	if strings.Contains(view, "YOLO") {
+		t.Error("expected no YOLO indicator when yolo is off")
+	}
+
+	// With yolo, "YOLO" should appear.
+	sb.SetYolo(true)
+	view = sb.View()
+	if !strings.Contains(view, "YOLO") {
+		t.Error("expected YOLO indicator when yolo is on")
+	}
+
+	// Turn off, should disappear.
+	sb.SetYolo(false)
+	view = sb.View()
+	if strings.Contains(view, "YOLO") {
+		t.Error("expected no YOLO indicator after turning off")
 	}
 }
 

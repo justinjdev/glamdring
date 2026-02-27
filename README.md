@@ -9,7 +9,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Thinking spinner** — visual feedback while the agent is processing
 - **Per-model cost tracking** — accurate pricing for Opus, Sonnet, and Haiku
 - **Built-in tools** — Read, Write, Edit, Bash, Glob, Grep + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
-- **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides
+- **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides and yolo mode for auto-approving all tools
 - **MCP support** — connect external tool servers via stdio transport
 - **CLAUDE.md** — discovers and loads project/user instructions automatically (bare `CLAUDE.md`, `.claude/CLAUDE.md`, and `.claude/CLAUDE.local.md` at every directory level)
 - **Hooks** — shell commands triggered by agent lifecycle events (SessionStart on launch, SessionEnd on exit)
@@ -32,6 +32,12 @@ cd glamdring
 go build -o glamdring ./cmd/glamdring
 ```
 
+To inject a version at build time:
+
+```
+go build -ldflags "-X main.version=v1.0.0" -o glamdring ./cmd/glamdring
+```
+
 ## Usage
 
 ```
@@ -39,12 +45,22 @@ export ANTHROPIC_API_KEY=sk-ant-...
 glamdring
 ```
 
+### Subcommands
+
+| Command | Description |
+|---|---|
+| `glamdring login` | Authenticate with Claude account |
+| `glamdring logout` | Remove credentials |
+| `glamdring version` | Print version |
+
 ### Flags
 
 | Flag | Description |
 |---|---|
 | `--cwd <path>` | Set working directory (defaults to current) |
 | `--model <id>` | Override model (default: `claude-opus-4-6`) |
+| `--yolo` | Auto-approve all tool permissions (no prompts) |
+| `--version` | Print version and exit |
 
 ### Keybindings
 
@@ -59,6 +75,7 @@ glamdring
 | `y` / `n` / `a` | Permission: yes / no / always |
 | `y` / `n` | Checkpoint prompt: load / skip |
 | `Tab` | Complete slash command |
+| `Shift+Tab` | Toggle YOLO mode (auto-approve all tools) |
 | `Ctrl+c` | Interrupt agent turn (double-press to quit) |
 | `Esc` | Deny permission request |
 

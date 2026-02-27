@@ -49,6 +49,9 @@ type Styles struct {
 
 	// Spinner
 	SpinnerText lipgloss.Style
+
+	// Status bar warning (e.g., YOLO indicator)
+	StatusBarWarning lipgloss.Style
 }
 
 // Color palette — a warm, amber-tinted dark theme inspired by aged parchment
@@ -198,5 +201,11 @@ func DefaultStyles() Styles {
 		SpinnerText: lipgloss.NewStyle().
 			Foreground(colorAmber).
 			PaddingLeft(1),
+
+		// Status bar warning (e.g., YOLO indicator)
+		StatusBarWarning: lipgloss.NewStyle().
+			Background(colorSurface1).
+			Foreground(colorRust).
+			Bold(true),
 	}
 }

@@ -283,6 +283,83 @@ func TestCmdThinking_Toggle(t *testing.T) {
 	}
 }
 
+func TestCmdYolo_Toggle(t *testing.T) {
+	m := newTestModel()
+	// Create session so yolo has something to work with.
+	m.session = agent.NewSession(m.agentCfg)
+
+	// Enable yolo.
+	cmd := cmdYolo(&m, "")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	if !m.session.IsYolo() {
+		t.Error("expected yolo to be true after /yolo")
+	}
+	if !m.statusbar.yolo {
+		t.Error("expected statusbar yolo to be true")
+	}
+	if len(m.output.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(m.output.blocks))
+	}
+	if !strings.Contains(m.output.blocks[0].content, "enabled") {
+		t.Errorf("expected 'enabled' in output, got %q", m.output.blocks[0].content)
+	}
+
+	// Disable yolo.
+	cmd = cmdYolo(&m, "")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	if m.session.IsYolo() {
+		t.Error("expected yolo to be false after second /yolo")
+	}
+	if m.statusbar.yolo {
+		t.Error("expected statusbar yolo to be false")
+	}
+	if !strings.Contains(m.output.blocks[1].content, "disabled") {
+		t.Errorf("expected 'disabled' in output, got %q", m.output.blocks[1].content)
+	}
+}
+
+func TestCmdYolo_Scoped(t *testing.T) {
+	m := newTestModel()
+	m.session = agent.NewSession(m.agentCfg)
+
+	cmd := cmdYolo(&m, "Bash,Write")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	// Scoped yolo should NOT set global yolo flag.
+	if m.session.IsYolo() {
+		t.Error("expected global yolo to remain false for scoped /yolo")
+	}
+	if len(m.output.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(m.output.blocks))
+	}
+	if !strings.Contains(m.output.blocks[0].content, "Bash") {
+		t.Errorf("expected 'Bash' in output, got %q", m.output.blocks[0].content)
+	}
+}
+
+func TestCmdYolo_CreatesSessionIfNil(t *testing.T) {
+	m := newTestModel()
+	if m.session != nil {
+		t.Fatal("expected session to be nil initially")
+	}
+
+	cmd := cmdYolo(&m, "")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	if m.session == nil {
+		t.Fatal("expected session to be created by /yolo")
+	}
+	if !m.session.IsYolo() {
+		t.Error("expected yolo to be true")
+	}
+}
+
 func TestCmdCost_PerModelPricing(t *testing.T) {
 	m := newTestModel()
 	m.agentCfg.Model = "claude-sonnet-4-6"
