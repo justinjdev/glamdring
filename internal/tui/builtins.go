@@ -125,8 +125,8 @@ func cmdConfig(m *Model, args string) tea.Cmd {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Model:     %s\n", m.agentCfg.Model))
 
-	if m.agentCfg.MaxTurns > 0 {
-		b.WriteString(fmt.Sprintf("Max turns: %d\n", m.agentCfg.MaxTurns))
+	if m.agentCfg.MaxTurns != nil && *m.agentCfg.MaxTurns > 0 {
+		b.WriteString(fmt.Sprintf("Max turns: %d\n", *m.agentCfg.MaxTurns))
 	} else {
 		b.WriteString("Max turns: unlimited\n")
 	}

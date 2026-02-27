@@ -3,18 +3,23 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // FindClaudeMD searches for CLAUDE.md files and returns their contents.
 // Returns (projectLevel, userLevel string, err error).
 //
 // Project-level: starting from cwd, walk up the directory tree toward the
-// filesystem root. At each directory, check for .claude/CLAUDE.md. Return
-// the first one found.
+// filesystem root. At each directory, check for:
+//   - CLAUDE.md (bare)
+//   - .claude/CLAUDE.md
+//   - .claude/CLAUDE.local.md
+//
+// All found files are concatenated (innermost directory first).
 //
 // User-level: check ~/.claude/CLAUDE.md.
 //
-// If a file doesn't exist, the corresponding return value is empty string
+// If no files are found, the corresponding return value is empty string
 // (not an error).
 func FindClaudeMD(cwd string) (string, string, error) {
 	projectLevel := findProjectClaudeMD(cwd)
@@ -22,18 +27,28 @@ func FindClaudeMD(cwd string) (string, string, error) {
 	return projectLevel, userLevel, nil
 }
 
-// findProjectClaudeMD walks up from dir looking for .claude/CLAUDE.md.
+// findProjectClaudeMD walks up from dir collecting all CLAUDE.md variants.
+// At each directory level it checks bare CLAUDE.md, .claude/CLAUDE.md, and
+// .claude/CLAUDE.local.md. All found contents are concatenated.
 func findProjectClaudeMD(dir string) string {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return ""
 	}
 
+	var parts []string
 	for {
-		candidate := filepath.Join(dir, ".claude", "CLAUDE.md")
-		data, err := os.ReadFile(candidate)
-		if err == nil {
-			return string(data)
+		// Check bare CLAUDE.md at this level.
+		if data, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md")); err == nil {
+			parts = append(parts, string(data))
+		}
+		// Check .claude/CLAUDE.md at this level.
+		if data, err := os.ReadFile(filepath.Join(dir, ".claude", "CLAUDE.md")); err == nil {
+			parts = append(parts, string(data))
+		}
+		// Check .claude/CLAUDE.local.md at this level.
+		if data, err := os.ReadFile(filepath.Join(dir, ".claude", "CLAUDE.local.md")); err == nil {
+			parts = append(parts, string(data))
 		}
 
 		parent := filepath.Dir(dir)
@@ -43,7 +58,7 @@ func findProjectClaudeMD(dir string) string {
 		}
 		dir = parent
 	}
-	return ""
+	return strings.Join(parts, "\n\n")
 }
 
 // findUserClaudeMD reads ~/.claude/CLAUDE.md if it exists.

@@ -9,12 +9,14 @@ import (
 	"github.com/justin/glamdring/pkg/commands"
 )
 
+func intPtr(v int) *int { return &v }
+
 // newTestModel creates a minimal Model for testing built-in commands.
 func newTestModel() Model {
 	m := New()
 	m.agentCfg = agent.Config{
 		Model:    "claude-opus-4-6",
-		MaxTurns: 10,
+		MaxTurns: intPtr(10),
 		CWD:      "/tmp/test",
 	}
 	m.totalInputTokens = 5000

@@ -96,6 +96,27 @@ func TestLoadHooks_MalformedJSON(t *testing.T) {
 	}
 }
 
+func TestLoadHooks_NoDuplicateFromSameDir(t *testing.T) {
+	// Verify that the visited-dir tracking prevents loading hooks twice
+	// from the same directory. The walk-up loop should skip already-visited dirs.
+	root := t.TempDir()
+	claudeDir := filepath.Join(root, ".claude")
+	if err := os.Mkdir(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	settingsJSON := `{"hooks": [{"event": "Stop", "command": "echo bye"}]}`
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(settingsJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Loading from root should produce exactly 1 hook, not duplicates.
+	hooks := LoadHooks(root)
+	if len(hooks) != 1 {
+		t.Errorf("expected 1 hook (no duplicates), got %d", len(hooks))
+	}
+}
+
 func TestLoadHooks_NoHooksKey(t *testing.T) {
 	root := t.TempDir()
 	claudeDir := filepath.Join(root, ".claude")

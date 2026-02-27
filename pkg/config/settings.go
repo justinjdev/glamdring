@@ -10,7 +10,7 @@ import (
 // Settings holds resolved configuration values.
 type Settings struct {
 	Model      string                      `json:"model,omitempty"`
-	MaxTurns   int                         `json:"max_turns,omitempty"`
+	MaxTurns   *int                        `json:"max_turns,omitempty"`
 	MCPServers map[string]MCPServerConfig  `json:"mcp_servers,omitempty"`
 	Indexer    IndexerConfig               `json:"indexer,omitempty"`
 }
@@ -32,8 +32,8 @@ type MCPServerConfig struct {
 // are found.
 func DefaultSettings() Settings {
 	return Settings{
-		Model:    "claude-opus-4-6",
-		MaxTurns: 0, // unlimited
+		Model: "claude-opus-4-6",
+		// MaxTurns nil = unlimited (default).
 	}
 }
 
@@ -130,7 +130,7 @@ func mergeSettings(base, override *Settings) {
 	if override.Model != "" {
 		base.Model = override.Model
 	}
-	if override.MaxTurns != 0 {
+	if override.MaxTurns != nil {
 		base.MaxTurns = override.MaxTurns
 	}
 	if override.MCPServers != nil {

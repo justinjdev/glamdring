@@ -18,7 +18,7 @@ func TestBuildSystemPrompt_AllSections(t *testing.T) {
 		{Name: "Write", Description: "Writes a file."},
 	}
 
-	result := BuildSystemPrompt("Base instructions.", tools, "Project rules.", "User prefs.")
+	result := BuildSystemPrompt("Base instructions.", tools, "Project rules.", "User prefs.", EnvironmentInfo{})
 
 	// Check ordering: base, tools, user, project.
 	baseIdx := strings.Index(result, "Base instructions.")
@@ -45,7 +45,7 @@ func TestBuildSystemPrompt_AllSections(t *testing.T) {
 }
 
 func TestBuildSystemPrompt_NoOptionalSections(t *testing.T) {
-	result := BuildSystemPrompt("Base.", nil, "", "")
+	result := BuildSystemPrompt("Base.", nil, "", "", EnvironmentInfo{})
 
 	if !strings.HasPrefix(result, "Base.") {
 		t.Errorf("expected prompt to start with base instructions, got %q", result[:20])
@@ -62,12 +62,55 @@ func TestBuildSystemPrompt_NoOptionalSections(t *testing.T) {
 }
 
 func TestBuildSystemPrompt_OnlyProjectCLAUDE(t *testing.T) {
-	result := BuildSystemPrompt("Base.", nil, "Project only.", "")
+	result := BuildSystemPrompt("Base.", nil, "Project only.", "", EnvironmentInfo{})
 
 	if !strings.Contains(result, "## Project Instructions") {
 		t.Error("missing project section")
 	}
 	if strings.Contains(result, "## User Instructions") {
 		t.Error("should not include user section when empty")
+	}
+}
+
+func TestBuildSystemPrompt_EnvironmentInfo(t *testing.T) {
+	env := EnvironmentInfo{
+		Platform: "darwin",
+		Shell:    "/bin/zsh",
+		CWD:      "/home/user/project",
+		Date:     "2026-02-27",
+		Model:    "claude-opus-4-6",
+	}
+	tools := []ToolDescription{
+		{Name: "Read", Description: "Reads a file."},
+	}
+
+	result := BuildSystemPrompt("Base.", tools, "", "", env)
+
+	// Environment section should exist.
+	envIdx := strings.Index(result, "## Environment")
+	if envIdx < 0 {
+		t.Fatalf("missing Environment section in prompt:\n%s", result)
+	}
+
+	// Should appear between base and tools.
+	baseIdx := strings.Index(result, "Base.")
+	toolsIdx := strings.Index(result, "## Available Tools")
+	if !(baseIdx < envIdx && envIdx < toolsIdx) {
+		t.Errorf("Environment section not between base and tools: base=%d env=%d tools=%d",
+			baseIdx, envIdx, toolsIdx)
+	}
+
+	// All fields should appear.
+	for _, want := range []string{"darwin", "/bin/zsh", "/home/user/project", "2026-02-27", "claude-opus-4-6"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("expected %q in environment section", want)
+		}
+	}
+}
+
+func TestBuildSystemPrompt_EmptyEnvironment(t *testing.T) {
+	result := BuildSystemPrompt("Base.", nil, "", "", EnvironmentInfo{})
+	if strings.Contains(result, "## Environment") {
+		t.Error("should not include environment section when all fields empty")
 	}
 }

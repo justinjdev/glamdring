@@ -15,19 +15,26 @@ func LoadHooks(cwd string) []Hook {
 	var all []Hook
 
 	// User-level hooks.
-	if home, err := os.UserHomeDir(); err == nil {
-		all = append(all, loadHooksFromFile(filepath.Join(home, ".claude", "settings.json"))...)
+	userHome, _ := os.UserHomeDir()
+	if userHome != "" {
+		all = append(all, loadHooksFromFile(filepath.Join(userHome, ".claude", "settings.json"))...)
 	}
 
 	// Project-level hooks (walk up from cwd).
+	// Skip the user home directory since it was already loaded above.
+	// Track visited directories to prevent duplicates.
 	dir, err := filepath.Abs(cwd)
 	if err != nil {
 		return all
 	}
 
+	visited := map[string]bool{}
 	for {
-		candidate := filepath.Join(dir, ".claude", "settings.json")
-		all = append(all, loadHooksFromFile(candidate)...)
+		if !visited[dir] && dir != userHome {
+			visited[dir] = true
+			candidate := filepath.Join(dir, ".claude", "settings.json")
+			all = append(all, loadHooksFromFile(candidate)...)
+		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {

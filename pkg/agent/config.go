@@ -13,7 +13,7 @@ type Config struct {
 	Creds        auth.Credentials
 	SystemPrompt string
 	Tools        []tools.Tool
-	MaxTurns     int
+	MaxTurns     *int
 	CWD          string
 	HookRunner   *hooks.HookRunner
 }

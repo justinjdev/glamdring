@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justin/glamdring/internal/tui"
@@ -127,11 +129,20 @@ func main() {
 		})
 	}
 
+	envInfo := config.EnvironmentInfo{
+		Platform: runtime.GOOS,
+		Shell:    os.Getenv("SHELL"),
+		CWD:      workDir,
+		Date:     time.Now().Format("2006-01-02"),
+		Model:    settings.Model,
+	}
+
 	systemPrompt := config.BuildSystemPrompt(
 		config.DefaultBaseInstructions(),
 		toolDescs,
 		claudeMDProject,
 		claudeMDUser,
+		envInfo,
 	)
 
 	cfg := agent.Config{
@@ -157,6 +168,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Fire SessionEnd hook on clean exit.
+	// Use Background context since the signal context may already be cancelled.
+	hookRunner.Run(context.Background(), hooks.SessionEnd, "", nil)
 }
 
 // makeSubagentRunner returns a SubagentRunner that wraps agent.Run. It
@@ -165,13 +180,18 @@ func makeSubagentRunner(creds auth.Credentials, model string) tools.SubagentRunn
 	return func(ctx context.Context, opts tools.SubagentOptions) <-chan tools.SubagentResult {
 		resultCh := make(chan tools.SubagentResult, 64)
 
+		var maxTurns *int
+		if opts.MaxTurns > 0 {
+			maxTurns = &opts.MaxTurns
+		}
+
 		cfg := agent.Config{
 			Prompt:       opts.Prompt,
 			SystemPrompt: opts.SystemPrompt,
 			Creds:        creds,
 			Model:        model,
 			Tools:        opts.Tools,
-			MaxTurns:     opts.MaxTurns,
+			MaxTurns:     maxTurns,
 		}
 
 		agentCh := agent.Run(ctx, cfg)
