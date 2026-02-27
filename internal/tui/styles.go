@@ -43,6 +43,10 @@ type Styles struct {
 	// Code blocks
 	CodeBlockBorder lipgloss.Style
 
+	// System message (built-in command output)
+	SystemText   lipgloss.Style
+	SystemBorder lipgloss.Style
+
 	// User message header
 	UserHeader    lipgloss.Style
 	AgentHeader   lipgloss.Style
@@ -178,6 +182,17 @@ func DefaultStyles() Styles {
 		CodeBlockBorder: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorSurface2),
+
+		// System messages (built-in command output)
+		SystemText: lipgloss.NewStyle().
+			Foreground(colorSky).
+			PaddingLeft(1),
+
+		SystemBorder: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(colorSky).
+			PaddingLeft(1).
+			PaddingTop(1),
 
 		// Conversation role headers
 		UserHeader: lipgloss.NewStyle().

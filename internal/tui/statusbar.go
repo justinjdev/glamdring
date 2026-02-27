@@ -83,6 +83,14 @@ func formatTokens(n int) string {
 	}
 }
 
+// Reset zeroes all counters (used by /clear).
+func (s *StatusBar) Reset() {
+	s.inputTokens = 0
+	s.outputTokens = 0
+	s.turn = 0
+	s.cost = 0
+}
+
 // Height returns the rendered height of the status bar (always 1).
 func (s StatusBar) Height() int {
 	return lipgloss.Height(s.View())

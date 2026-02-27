@@ -127,6 +127,7 @@ func main() {
 	}
 
 	m := tui.NewWithAgent(ctx, cfg)
+	m.SetSettings(settings)
 	m.SetCommandRegistry(cmdRegistry)
 
 	p := tea.NewProgram(m, tea.WithAltScreen())

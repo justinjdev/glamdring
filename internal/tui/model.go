@@ -3,11 +3,17 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justin/glamdring/pkg/agent"
 	"github.com/justin/glamdring/pkg/commands"
+	"github.com/justin/glamdring/pkg/config"
 )
 
 // State represents the current UI mode.
@@ -47,10 +53,16 @@ type Model struct {
 	// slash command expansion
 	cmdRegistry *commands.Registry
 
+	// settings holds the resolved config for /config display.
+	settings config.Settings
+
 	// cumulative token tracking
 	totalInputTokens  int
 	totalOutputTokens int
 	turn              int
+
+	// compacting is true when /compact is running (agent summarizing).
+	compacting bool
 }
 
 // New creates the root TUI model without agent wiring.
@@ -76,7 +88,15 @@ func NewWithAgent(ctx context.Context, cfg agent.Config) Model {
 // SetCommandRegistry sets the slash command registry for expansion and tab completion.
 func (m *Model) SetCommandRegistry(r *commands.Registry) {
 	m.cmdRegistry = r
-	m.input.SetAvailableCommands(r.Names())
+	// Merge built-in command names with user-defined for tab completion.
+	names := BuiltinNames()
+	names = append(names, r.Names()...)
+	m.input.SetAvailableCommands(names)
+}
+
+// SetSettings stores the resolved settings for /config display.
+func (m *Model) SetSettings(s config.Settings) {
+	m.settings = s
 }
 
 // Init initializes the TUI.
@@ -184,11 +204,30 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Check for built-in commands first (before displaying the message).
+	if IsSlashCommand(msg.Text) {
+		cmdName := CommandName(msg.Text)
+		args := CommandArgs(msg.Text)
+
+		if handler, ok := DispatchBuiltin(cmdName); ok {
+			m.input.Reset()
+			cmd := handler(&m, args)
+			if m.state != StateRunning {
+				// Normal built-in — stay in input mode.
+				m.state = StateInput
+				return m, tea.Batch(cmd, m.input.Focus())
+			}
+			// Handler started the agent (e.g., /compact).
+			m.input.Blur()
+			return m, cmd
+		}
+	}
+
 	m.output.AppendUserMessage(msg.Text)
 	m.input.Reset()
 	m.input.Blur()
 
-	// Expand slash commands before sending to the agent.
+	// Expand user-defined slash commands before sending to the agent.
 	prompt := msg.Text
 	if IsSlashCommand(prompt) && m.cmdRegistry != nil {
 		cmdName := CommandName(prompt)
@@ -278,6 +317,18 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.totalInputTokens += am.InputTokens
 		m.totalOutputTokens += am.OutputTokens
 		m.statusbar.Update(m.agentCfg.Model, m.totalInputTokens, m.totalOutputTokens, m.turn)
+
+		if m.compacting {
+			m.compacting = false
+			summary := m.extractLastText()
+			m.writeCheckpoint(summary)
+			m.output.Clear()
+			m.output.AppendSystem("Context compacted. Checkpoint saved to tmp/checkpoint.md.")
+			if summary != "" {
+				m.output.AppendSystem(summary)
+			}
+		}
+
 		m.state = StateInput
 		return m, m.input.Focus()
 
@@ -330,6 +381,52 @@ func (m *Model) denyPermission() {
 	}
 	m.permission = nil
 	m.state = StateRunning
+}
+
+// extractLastText returns the content of the last text block in the output,
+// used to capture the agent's compact summary.
+func (m *Model) extractLastText() string {
+	for i := len(m.output.blocks) - 1; i >= 0; i-- {
+		if m.output.blocks[i].kind == blockText {
+			return strings.TrimSpace(m.output.blocks[i].content)
+		}
+	}
+	return ""
+}
+
+// writeCheckpoint writes the compact summary to tmp/checkpoint.md in the CWD.
+func (m *Model) writeCheckpoint(summary string) {
+	cwd := m.agentCfg.CWD
+	if cwd == "" {
+		return
+	}
+
+	dir := filepath.Join(cwd, "tmp")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+
+	branch := currentGitBranch(cwd)
+	ts := time.Now().Format("2006-01-02 15:04")
+
+	var content strings.Builder
+	fmt.Fprintf(&content, "<!-- Checkpoint: %s -->\n", ts)
+	fmt.Fprintf(&content, "<!-- Branch: %s -->\n\n", branch)
+	content.WriteString(summary)
+	content.WriteString("\n")
+
+	_ = os.WriteFile(filepath.Join(dir, "checkpoint.md"), []byte(content.String()), 0o644)
+}
+
+// currentGitBranch returns the current git branch name, or "unknown".
+func currentGitBranch(dir string) string {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // layoutComponents recalculates component dimensions after a resize.

@@ -51,6 +51,7 @@ const (
 	blockThinking
 	blockError
 	blockUserMessage
+	blockSystem
 )
 
 type outputBlock struct {
@@ -242,6 +243,22 @@ func (m *OutputModel) AppendThinking(s string) {
 	m.rerender()
 }
 
+// AppendSystem adds a system message block (for built-in command output).
+func (m *OutputModel) AppendSystem(s string) {
+	m.blocks = append(m.blocks, outputBlock{kind: blockSystem, content: s})
+	m.rerender()
+}
+
+// Clear removes all content blocks and resets the viewport.
+func (m *OutputModel) Clear() {
+	m.blocks = nil
+	m.collapsed = make(map[int]bool)
+	m.userScrolled = false
+	m.hasNewContent = false
+	m.viewport.SetContent("")
+	m.viewport.GotoTop()
+}
+
 // AppendError adds an error message block.
 func (m *OutputModel) AppendError(s string) {
 	m.blocks = append(m.blocks, outputBlock{kind: blockError, content: s})
@@ -315,6 +332,10 @@ func (m *OutputModel) rerender() {
 
 		case blockThinking:
 			parts = append(parts, m.renderThinkingBlock(i, b))
+
+		case blockSystem:
+			styled := m.styles.SystemText.Render(b.content)
+			parts = append(parts, m.styles.SystemBorder.Render(styled))
 
 		case blockError:
 			parts = append(parts, m.styles.ErrorText.Render("error: "+b.content))
