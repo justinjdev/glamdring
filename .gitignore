@@ -23,6 +23,9 @@ vendor/
 .DS_Store
 Thumbs.db
 
+# Ephemeral
+tmp/
+
 # Environment
 .env
 .env.local
