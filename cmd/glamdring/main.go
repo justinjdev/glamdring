@@ -129,12 +129,16 @@ func main() {
 	}()
 
 	// Build the tool set including Task, MCP, and index tools.
+	// baseTools are the non-MCP, non-index tools — stored on the model so
+	// refreshMCPTools() can rebuild the full list without duplicating index tools.
 	taskTool := tools.NewTaskTool(subagentRunner, agentDefs, tools.DefaultTools(workDir))
-	allTools := tools.DefaultToolsWithTask(workDir, taskTool)
-	allTools = append(allTools, mcpMgr.Tools()...)
+	baseTools := tools.DefaultToolsWithTask(workDir, taskTool)
+	allTools := make([]tools.Tool, len(baseTools))
+	copy(allTools, baseTools)
 	if indexDB != nil {
 		allTools = append(allTools, index.Tools(indexDB)...)
 	}
+	allTools = append(allTools, mcpMgr.Tools()...)
 
 	// Build tool descriptions for the system prompt.
 	var toolDescs []config.ToolDescription
@@ -176,11 +180,21 @@ func main() {
 	m.SetSettings(settings)
 	m.SetCommandRegistry(cmdRegistry)
 	m.SetIndexerConfig(settings.Indexer)
+	m.SetMCPManager(mcpMgr)
+	m.SetMCPConfiguredCount(len(settings.MCPServers))
+	m.SetBaseTools(baseTools)
 	if indexDB != nil {
 		m.SetIndexDB(indexDB)
 	}
+	m.InitMCPStatus()
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	// Wire MCP death callback to send bubbletea message.
+	mcpMgr.OnServerDeath = func(name string) {
+		p.Send(tui.MCPServerDiedMsg{Name: name})
+	}
+
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

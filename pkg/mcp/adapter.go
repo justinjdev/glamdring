@@ -11,7 +11,8 @@ import (
 // interface. Tool calls are forwarded to the owning Client.
 type MCPTool struct {
 	client      *Client
-	name        string
+	name        string // qualified: "server_tool"
+	mcpName     string // original MCP tool name
 	description string
 	schema      json.RawMessage
 }
@@ -23,6 +24,7 @@ func NewMCPTool(client *Client, serverName string, def ToolDefinition) *MCPTool 
 	return &MCPTool{
 		client:      client,
 		name:        qualifiedName,
+		mcpName:     def.Name,
 		description: def.Description,
 		schema:      def.InputSchema,
 	}
@@ -34,13 +36,7 @@ func (t *MCPTool) Schema() json.RawMessage    { return t.schema }
 
 // MCPToolName returns the original (unqualified) tool name used in MCP calls.
 func (t *MCPTool) MCPToolName() string {
-	// Strip the server prefix we added.
-	for i := 0; i < len(t.name); i++ {
-		if t.name[i] == '_' {
-			return t.name[i+1:]
-		}
-	}
-	return t.name
+	return t.mcpName
 }
 
 func (t *MCPTool) Execute(ctx context.Context, input json.RawMessage) (tools.Result, error) {

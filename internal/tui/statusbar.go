@@ -34,6 +34,8 @@ type StatusBar struct {
 	cost         float64
 	width        int
 	yolo         bool
+	mcpTotal     int // total configured MCP servers
+	mcpAlive     int // currently running MCP servers
 }
 
 // NewStatusBar creates a status bar with default values.
@@ -87,6 +89,18 @@ func (s StatusBar) View() string {
 		left += sep + s.styles.StatusBarWarning.Render("YOLO")
 	}
 
+	if s.mcpTotal > 0 {
+		var mcpVal string
+		if s.mcpAlive == s.mcpTotal {
+			mcpVal = fmt.Sprintf("%d", s.mcpAlive)
+		} else {
+			mcpVal = fmt.Sprintf("%d/%d", s.mcpAlive, s.mcpTotal)
+		}
+		mcpStr := s.styles.StatusBarKey.Render("mcp:") + " " +
+			s.styles.StatusBarValue.Render(mcpVal)
+		left += sep + mcpStr
+	}
+
 	return s.styles.StatusBar.
 		Width(s.width).
 		Render(left)
@@ -102,6 +116,12 @@ func formatTokens(n int) string {
 	default:
 		return fmt.Sprintf("%d", n)
 	}
+}
+
+// UpdateMCP sets the MCP server counts for the status bar.
+func (s *StatusBar) UpdateMCP(total, alive int) {
+	s.mcpTotal = total
+	s.mcpAlive = alive
 }
 
 // Reset zeroes all counters (used by /clear).

@@ -24,8 +24,32 @@ type IndexerConfig struct {
 
 // MCPServerConfig describes how to launch an MCP server process.
 type MCPServerConfig struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env,omitempty"`
+	Tools   MCPToolsConfig    `json:"tools,omitempty"`
+}
+
+// MCPToolsConfig controls which tools are exposed from an MCP server.
+// If Enabled is set, only those tools are registered (allowlist).
+// If Disabled is set, those tools are excluded (denylist).
+// Enabled takes precedence if both are set.
+// Neither set = register all tools (default behavior).
+type MCPToolsConfig struct {
+	Enabled  []string `json:"enabled,omitempty"`
+	Disabled []string `json:"disabled,omitempty"`
+}
+
+// EnvSlice converts the Env map to a slice of "KEY=VALUE" strings.
+func (c MCPServerConfig) EnvSlice() []string {
+	if len(c.Env) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(c.Env))
+	for k, v := range c.Env {
+		out = append(out, k+"="+v)
+	}
+	return out
 }
 
 // DefaultSettings returns the baseline settings used when no config files

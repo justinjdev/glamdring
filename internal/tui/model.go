@@ -18,6 +18,8 @@ import (
 	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/hooks"
 	"github.com/justin/glamdring/pkg/index"
+	"github.com/justin/glamdring/pkg/mcp"
+	"github.com/justin/glamdring/pkg/tools"
 )
 
 // State represents the current UI mode.
@@ -94,6 +96,17 @@ type Model struct {
 
 	// showThinking controls whether thinking blocks are displayed.
 	showThinking bool
+
+	// mcpMgr manages MCP server lifecycles, used by /mcp command.
+	mcpMgr *mcp.Manager
+
+	// mcpConfiguredCount tracks the total configured MCP servers (including dead)
+	// for the status bar denominator.
+	mcpConfiguredCount int
+
+	// baseTools holds non-MCP tools so we can rebuild the full tool list
+	// when MCP servers change (restart, disconnect, enable/disable).
+	baseTools []tools.Tool
 }
 
 // New creates the root TUI model without agent wiring.
@@ -142,6 +155,49 @@ func (m *Model) SetIndexerConfig(cfg config.IndexerConfig) {
 // SetSettings stores the resolved settings for /config display.
 func (m *Model) SetSettings(s config.Settings) {
 	m.settings = s
+}
+
+// SetMCPManager stores the MCP manager for /mcp command and status bar updates.
+func (m *Model) SetMCPManager(mgr *mcp.Manager) {
+	m.mcpMgr = mgr
+}
+
+// SetMCPConfiguredCount sets the total configured MCP server count.
+func (m *Model) SetMCPConfiguredCount(n int) {
+	m.mcpConfiguredCount = n
+}
+
+// SetBaseTools stores the non-MCP tools for use by refreshMCPTools.
+func (m *Model) SetBaseTools(t []tools.Tool) {
+	m.baseTools = t
+}
+
+// InitMCPStatus initializes the MCP status bar counts. Call this
+// synchronously before tea.NewProgram to ensure the counts are captured.
+func (m *Model) InitMCPStatus() {
+	if m.mcpMgr != nil {
+		m.statusbar.UpdateMCP(m.mcpConfiguredCount, m.mcpMgr.ServerCount())
+	}
+}
+
+// MCPServerDiedMsg signals that an MCP server has exited unexpectedly.
+type MCPServerDiedMsg struct {
+	Name string
+}
+
+// refreshMCPTools rebuilds the agent tool list with current MCP tools and
+// resets the session so the next turn picks up the changes.
+func (m *Model) refreshMCPTools() {
+	var newTools []tools.Tool
+	newTools = append(newTools, m.baseTools...)
+	if m.mcpMgr != nil {
+		newTools = append(newTools, m.mcpMgr.Tools()...)
+	}
+	if m.indexDB != nil {
+		newTools = append(newTools, index.Tools(m.indexDB)...)
+	}
+	m.agentCfg.Tools = newTools
+	m.session = nil
 }
 
 // Init initializes the TUI.
@@ -224,6 +280,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.output.AppendSystem(msg.content)
 		m.checkpointContent = msg.content
 		m.state = StateCheckpoint
+		return m, nil
+
+	case MCPServerDiedMsg:
+		m.output.AppendError(fmt.Sprintf("MCP server %q died unexpectedly", msg.Name))
+		if m.mcpMgr != nil {
+			m.statusbar.UpdateMCP(m.mcpConfiguredCount, m.mcpMgr.ServerCount())
+		}
+		m.refreshMCPTools()
 		return m, nil
 
 	case indexRebuildDoneMsg:

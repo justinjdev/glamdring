@@ -163,6 +163,79 @@ func TestMergeSettings(t *testing.T) {
 	}
 }
 
+func TestLoadSettings_MCPServerEnv(t *testing.T) {
+	root := t.TempDir()
+	claudeDir := filepath.Join(root, ".claude")
+	if err := os.Mkdir(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	settings := Settings{
+		MCPServers: map[string]MCPServerConfig{
+			"myserver": {
+				Command: "node",
+				Args:    []string{"server.js"},
+				Env:     map[string]string{"API_KEY": "secret123"},
+			},
+		},
+	}
+	data, _ := json.Marshal(settings)
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := LoadSettings(root)
+	srv := s.MCPServers["myserver"]
+	if srv.Env == nil || srv.Env["API_KEY"] != "secret123" {
+		t.Errorf("expected Env with API_KEY=secret123, got %v", srv.Env)
+	}
+
+	envSlice := srv.EnvSlice()
+	if len(envSlice) != 1 || envSlice[0] != "API_KEY=secret123" {
+		t.Errorf("EnvSlice() = %v, want [API_KEY=secret123]", envSlice)
+	}
+}
+
+func TestLoadSettings_MCPToolsConfig(t *testing.T) {
+	root := t.TempDir()
+	claudeDir := filepath.Join(root, ".claude")
+	if err := os.Mkdir(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	settings := Settings{
+		MCPServers: map[string]MCPServerConfig{
+			"myserver": {
+				Command: "node",
+				Args:    []string{"server.js"},
+				Tools: MCPToolsConfig{
+					Enabled: []string{"read", "write"},
+				},
+			},
+		},
+	}
+	data, _ := json.Marshal(settings)
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := LoadSettings(root)
+	srv := s.MCPServers["myserver"]
+	if len(srv.Tools.Enabled) != 2 {
+		t.Errorf("expected 2 enabled tools, got %d", len(srv.Tools.Enabled))
+	}
+	if srv.Tools.Enabled[0] != "read" || srv.Tools.Enabled[1] != "write" {
+		t.Errorf("expected [read, write], got %v", srv.Tools.Enabled)
+	}
+}
+
+func TestEnvSlice_Empty(t *testing.T) {
+	cfg := MCPServerConfig{Command: "echo"}
+	if got := cfg.EnvSlice(); got != nil {
+		t.Errorf("expected nil for empty Env, got %v", got)
+	}
+}
+
 func TestMergeSettings_ZeroMaxTurnsOverride(t *testing.T) {
 	base := Settings{
 		Model:    "default-model",
