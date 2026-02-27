@@ -5,24 +5,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 // OAuthTokens holds the OAuth token data stored in ~/.claude.json.
 type OAuthTokens struct {
-	AccessToken  string `json:"accessToken"`
-	RefreshToken string `json:"refreshToken"`
-	ExpiresAt    string `json:"expiresAt"`
-	Scopes       string `json:"scopes"`
+	AccessToken  string   `json:"accessToken"`
+	RefreshToken string   `json:"refreshToken"`
+	ExpiresAt    int64    `json:"expiresAt"` // Unix milliseconds
+	Scopes       []string `json:"scopes"`
 }
 
 // IsExpired returns true if the access token has expired or will expire within 5 minutes.
 func (t *OAuthTokens) IsExpired() bool {
-	exp, err := time.Parse(time.RFC3339, t.ExpiresAt)
-	if err != nil {
-		return true
-	}
+	exp := time.UnixMilli(t.ExpiresAt)
 	return time.Now().After(exp.Add(-5 * time.Minute))
+}
+
+// ScopesString returns scopes as a space-separated string.
+func (t *OAuthTokens) ScopesString() string {
+	return strings.Join(t.Scopes, " ")
 }
 
 // claudeJSONPath returns the path to ~/.claude.json.

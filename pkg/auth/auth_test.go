@@ -71,8 +71,8 @@ func sampleTokens() *OAuthTokens {
 	return &OAuthTokens{
 		AccessToken:  "access-abc",
 		RefreshToken: "refresh-xyz",
-		ExpiresAt:    time.Now().Add(time.Hour).Format(time.RFC3339),
-		Scopes:       "org:read user:read",
+		ExpiresAt:    time.Now().Add(time.Hour).UnixMilli(),
+		Scopes:       []string{"org:read", "user:read"},
 	}
 }
 
@@ -95,8 +95,8 @@ func TestWriteReadTokens_RoundTrip(t *testing.T) {
 	if got.RefreshToken != tok.RefreshToken {
 		t.Errorf("RefreshToken = %q, want %q", got.RefreshToken, tok.RefreshToken)
 	}
-	if got.Scopes != tok.Scopes {
-		t.Errorf("Scopes = %q, want %q", got.Scopes, tok.Scopes)
+	if len(got.Scopes) != len(tok.Scopes) {
+		t.Errorf("Scopes length = %d, want %d", len(got.Scopes), len(tok.Scopes))
 	}
 }
 
@@ -206,8 +206,8 @@ func TestResolve_OAuthFromClaudeJSON(t *testing.T) {
 	tok := &OAuthTokens{
 		AccessToken:  "oauth-access",
 		RefreshToken: "oauth-refresh",
-		ExpiresAt:    time.Now().Add(time.Hour).Format(time.RFC3339),
-		Scopes:       "org:read",
+		ExpiresAt:    time.Now().Add(time.Hour).UnixMilli(),
+		Scopes:       []string{"org:read"},
 	}
 	if err := WriteTokens(tok); err != nil {
 		t.Fatalf("WriteTokens() error: %v", err)
@@ -244,7 +244,7 @@ func TestResolve_NoCredentials(t *testing.T) {
 
 func TestIsExpired_PastToken(t *testing.T) {
 	tok := &OAuthTokens{
-		ExpiresAt: time.Now().Add(-time.Hour).Format(time.RFC3339),
+		ExpiresAt: time.Now().Add(-time.Hour).UnixMilli(),
 	}
 	if !tok.IsExpired() {
 		t.Error("token with ExpiresAt in the past should be expired")
@@ -253,7 +253,7 @@ func TestIsExpired_PastToken(t *testing.T) {
 
 func TestIsExpired_WithinFiveMinutes(t *testing.T) {
 	tok := &OAuthTokens{
-		ExpiresAt: time.Now().Add(3 * time.Minute).Format(time.RFC3339),
+		ExpiresAt: time.Now().Add(3 * time.Minute).UnixMilli(),
 	}
 	if !tok.IsExpired() {
 		t.Error("token expiring within 5 minutes should be treated as expired")
@@ -262,7 +262,7 @@ func TestIsExpired_WithinFiveMinutes(t *testing.T) {
 
 func TestIsExpired_FutureToken(t *testing.T) {
 	tok := &OAuthTokens{
-		ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339),
+		ExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	}
 	if tok.IsExpired() {
 		t.Error("token expiring in 1 hour should not be expired")

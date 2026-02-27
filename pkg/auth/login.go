@@ -106,8 +106,8 @@ func exchangeCode(code, verifier string) (*OAuthTokens, error) {
 	return &OAuthTokens{
 		AccessToken:  tokResp.AccessToken,
 		RefreshToken: tokResp.RefreshToken,
-		ExpiresAt:    expiresAt.Format(time.RFC3339),
-		Scopes:       tokResp.Scope,
+		ExpiresAt:    expiresAt.UnixMilli(),
+		Scopes:       strings.Fields(tokResp.Scope),
 	}, nil
 }
 

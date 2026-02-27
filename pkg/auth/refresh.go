@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -70,8 +71,8 @@ func RefreshAccessToken(refreshToken string) (*OAuthTokens, error) {
 	tokens := &OAuthTokens{
 		AccessToken:  tokResp.AccessToken,
 		RefreshToken: tokResp.RefreshToken,
-		ExpiresAt:    expiresAt.Format(time.RFC3339),
-		Scopes:       tokResp.Scope,
+		ExpiresAt:    expiresAt.UnixMilli(),
+		Scopes:       strings.Fields(tokResp.Scope),
 	}
 
 	// Store the new tokens.
