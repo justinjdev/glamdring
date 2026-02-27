@@ -96,10 +96,8 @@ func cmdClear(m *Model, args string) tea.Cmd {
 	m.statusbar.Reset()
 	m.totalInputTokens = 0
 	m.totalOutputTokens = 0
-	m.totalCacheCreationTokens = 0
-	m.totalCacheReadTokens = 0
 	m.turn = 0
-	m.statusbar.Update(m.agentCfg.Model, 0, 0, 0, 0, 0)
+	m.statusbar.Update(m.agentCfg.Model, 0, 0, 0)
 	if m.session != nil {
 		m.session.Reset()
 	}
@@ -118,12 +116,6 @@ func cmdCost(m *Model, args string) tea.Cmd {
 		cost,
 		m.turn,
 	)
-	if m.totalCacheCreationTokens > 0 || m.totalCacheReadTokens > 0 {
-		text += fmt.Sprintf("\n  Cache:  %s read / %s created",
-			formatTokens(m.totalCacheReadTokens),
-			formatTokens(m.totalCacheCreationTokens),
-		)
-	}
 	m.output.AppendSystem(text)
 	return nil
 }
@@ -171,7 +163,7 @@ func cmdModel(m *Model, args string) tea.Cmd {
 
 	m.agentCfg.Model = args
 	m.session = nil // force recreation with new model on next submit
-	m.statusbar.Update(args, m.totalInputTokens, m.totalOutputTokens, m.totalCacheCreationTokens, m.totalCacheReadTokens, m.turn)
+	m.statusbar.Update(args, m.totalInputTokens, m.totalOutputTokens, m.turn)
 	m.output.AppendSystem(fmt.Sprintf("Model changed to: %s", args))
 	return nil
 }

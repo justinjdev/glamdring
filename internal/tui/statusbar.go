@@ -14,15 +14,13 @@ const (
 
 // StatusBar displays model info, token usage, cost, and turn number.
 type StatusBar struct {
-	styles              Styles
-	model               string
-	inputTokens         int
-	outputTokens        int
-	cacheCreationTokens int
-	cacheReadTokens     int
-	turn                int
-	cost                float64
-	width               int
+	styles       Styles
+	model        string
+	inputTokens  int
+	outputTokens int
+	turn         int
+	cost         float64
+	width        int
 }
 
 // NewStatusBar creates a status bar with default values.
@@ -34,12 +32,10 @@ func NewStatusBar(styles Styles) StatusBar {
 }
 
 // Update recalculates the status bar with new values.
-func (s *StatusBar) Update(model string, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, turn int) {
+func (s *StatusBar) Update(model string, inputTokens, outputTokens, turn int) {
 	s.model = model
 	s.inputTokens = inputTokens
 	s.outputTokens = outputTokens
-	s.cacheCreationTokens = cacheCreationTokens
-	s.cacheReadTokens = cacheReadTokens
 	s.turn = turn
 	s.cost = float64(inputTokens)/1_000_000*opusInputCostPerMillion +
 		float64(outputTokens)/1_000_000*opusOutputCostPerMillion
@@ -70,12 +66,6 @@ func (s StatusBar) View() string {
 
 	left := modelStr + sep + tokIn + sep + tokOut + sep + costStr + sep + turnStr
 
-	if s.cacheCreationTokens > 0 || s.cacheReadTokens > 0 {
-		cacheStr := s.styles.StatusBarKey.Render("cache:") + " " +
-			s.styles.StatusBarValue.Render(formatTokens(s.cacheReadTokens)+"/"+formatTokens(s.cacheCreationTokens))
-		left += sep + cacheStr
-	}
-
 	return s.styles.StatusBar.
 		Width(s.width).
 		Render(left)
@@ -97,8 +87,6 @@ func formatTokens(n int) string {
 func (s *StatusBar) Reset() {
 	s.inputTokens = 0
 	s.outputTokens = 0
-	s.cacheCreationTokens = 0
-	s.cacheReadTokens = 0
 	s.turn = 0
 	s.cost = 0
 }
