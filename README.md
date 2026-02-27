@@ -89,4 +89,4 @@ cmd/
 
 ## License
 
-Private. Not yet licensed for distribution.
+Apache License 2.0. See [LICENSE](LICENSE).
