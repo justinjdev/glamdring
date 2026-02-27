@@ -29,6 +29,7 @@ var builtinCommands = map[string]BuiltinHandler{
 	"index":    cmdIndex,
 	"thinking": cmdThinking,
 	"yolo":     cmdYolo,
+	"mcp":      cmdMCP,
 }
 
 // builtinDescriptions provides short help text for each built-in command.
@@ -43,6 +44,7 @@ var builtinDescriptions = map[string]string{
 	"index":    "Show index status or rebuild (shire)",
 	"thinking": "Toggle thinking block display",
 	"yolo":     "Toggle auto-approve (optionally scope: /yolo bash,write)",
+	"mcp":      "Manage MCP servers and tools",
 }
 
 // BuiltinNames returns a sorted list of built-in command names.
@@ -317,6 +319,151 @@ func cmdYolo(m *Model, args string) tea.Cmd {
 	} else {
 		m.output.AppendSystem("YOLO mode disabled — tool permissions restored.")
 	}
+	return nil
+}
+
+// cmdMCP shows MCP server status or manages servers and tools.
+// Subcommands:
+//
+//	/mcp               - list servers
+//	/mcp restart <name> - restart a server
+//	/mcp disconnect <name> - disconnect a server
+//	/mcp tools <name>  - list tools on a server
+//	/mcp enable <server> <tool> - re-enable a disabled tool
+//	/mcp disable <server> <tool> - disable a tool
+func cmdMCP(m *Model, args string) tea.Cmd {
+	if m.mcpMgr == nil {
+		m.output.AppendSystem("No MCP servers configured.")
+		return nil
+	}
+
+	parts := strings.Fields(args)
+	if len(parts) == 0 {
+		return cmdMCPList(m)
+	}
+
+	switch parts[0] {
+	case "restart":
+		if len(parts) < 2 {
+			m.output.AppendError("Usage: /mcp restart <server-name>")
+			return nil
+		}
+		return cmdMCPRestart(m, parts[1])
+	case "disconnect":
+		if len(parts) < 2 {
+			m.output.AppendError("Usage: /mcp disconnect <server-name>")
+			return nil
+		}
+		return cmdMCPDisconnect(m, parts[1])
+	case "tools":
+		if len(parts) < 2 {
+			m.output.AppendError("Usage: /mcp tools <server-name>")
+			return nil
+		}
+		return cmdMCPTools(m, parts[1])
+	case "enable":
+		if len(parts) < 3 {
+			m.output.AppendError("Usage: /mcp enable <server-name> <tool-name>")
+			return nil
+		}
+		return cmdMCPEnableTool(m, parts[1], parts[2])
+	case "disable":
+		if len(parts) < 3 {
+			m.output.AppendError("Usage: /mcp disable <server-name> <tool-name>")
+			return nil
+		}
+		return cmdMCPDisableTool(m, parts[1], parts[2])
+	default:
+		m.output.AppendError(fmt.Sprintf("Unknown /mcp subcommand: %s", parts[0]))
+		m.output.AppendSystem("Usage: /mcp [restart|disconnect|tools|enable|disable] ...")
+		return nil
+	}
+}
+
+func cmdMCPList(m *Model) tea.Cmd {
+	servers := m.mcpMgr.ServerStatus()
+	if len(servers) == 0 {
+		m.output.AppendSystem("No MCP servers running.")
+		return nil
+	}
+
+	var b strings.Builder
+	b.WriteString("MCP servers:\n")
+	for _, s := range servers {
+		status := "alive"
+		if !s.Alive {
+			status = "dead"
+		}
+		b.WriteString(fmt.Sprintf("  %s — %s (%d tools)\n", s.Name, status, s.Tools))
+	}
+	m.output.AppendSystem(strings.TrimRight(b.String(), "\n"))
+	return nil
+}
+
+func cmdMCPRestart(m *Model, name string) tea.Cmd {
+	ctx := m.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := m.mcpMgr.RestartServer(ctx, name); err != nil {
+		m.output.AppendError(fmt.Sprintf("Failed to restart %q: %s", name, err))
+		return nil
+	}
+	m.output.AppendSystem(fmt.Sprintf("Restarted MCP server %q", name))
+	m.statusbar.UpdateMCP(m.mcpConfiguredCount, m.mcpMgr.ServerCount())
+	m.refreshMCPTools()
+	return nil
+}
+
+func cmdMCPDisconnect(m *Model, name string) tea.Cmd {
+	if err := m.mcpMgr.DisconnectServer(name); err != nil {
+		m.output.AppendError(fmt.Sprintf("Failed to disconnect %q: %s", name, err))
+		return nil
+	}
+	m.mcpConfiguredCount--
+	m.output.AppendSystem(fmt.Sprintf("Disconnected MCP server %q", name))
+	m.statusbar.UpdateMCP(m.mcpConfiguredCount, m.mcpMgr.ServerCount())
+	m.refreshMCPTools()
+	return nil
+}
+
+func cmdMCPTools(m *Model, serverName string) tea.Cmd {
+	toolInfos, err := m.mcpMgr.ListServerTools(serverName)
+	if err != nil {
+		m.output.AppendError(err.Error())
+		return nil
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Tools for %s:\n", serverName))
+	for _, t := range toolInfos {
+		status := "enabled"
+		if t.Disabled {
+			status = "disabled"
+		}
+		b.WriteString(fmt.Sprintf("  %s — %s\n", t.Name, status))
+	}
+	m.output.AppendSystem(strings.TrimRight(b.String(), "\n"))
+	return nil
+}
+
+func cmdMCPEnableTool(m *Model, serverName, toolName string) tea.Cmd {
+	if err := m.mcpMgr.EnableTool(serverName, toolName); err != nil {
+		m.output.AppendError(err.Error())
+		return nil
+	}
+	m.output.AppendSystem(fmt.Sprintf("Enabled tool %q on server %q", toolName, serverName))
+	m.refreshMCPTools()
+	return nil
+}
+
+func cmdMCPDisableTool(m *Model, serverName, toolName string) tea.Cmd {
+	if err := m.mcpMgr.DisableTool(serverName, toolName); err != nil {
+		m.output.AppendError(err.Error())
+		return nil
+	}
+	m.output.AppendSystem(fmt.Sprintf("Disabled tool %q on server %q", toolName, serverName))
+	m.refreshMCPTools()
 	return nil
 }
 

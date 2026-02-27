@@ -10,7 +10,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Per-model cost tracking** — accurate pricing for Opus, Sonnet, and Haiku
 - **Built-in tools** — Read (2000-line default limit, line truncation), Write (read-before-write safety), Edit (permission-preserving, no-op rejection), Bash (timeout detection, 1MB output limit, background execution), Glob (noise directory filtering, result limits), Grep (full ripgrep-style flags, binary detection, type filters) + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
 - **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides and yolo mode for auto-approving all tools
-- **MCP support** — connect external tool servers via stdio transport
+- **MCP support** — connect external tool servers via stdio transport, with health monitoring, `/mcp` management command, per-tool enable/disable, and environment variable passthrough
 - **CLAUDE.md** — discovers and loads project/user instructions automatically (bare `CLAUDE.md`, `.claude/CLAUDE.md`, and `.claude/CLAUDE.local.md` at every directory level)
 - **Hooks** — shell commands triggered by agent lifecycle events (SessionStart on launch, SessionEnd on exit)
 - **Checkpoint resume** — detects `tmp/checkpoint.md` from `/compact` and offers to load previous session context
@@ -89,6 +89,48 @@ Glamdring reads the same configuration as Claude Code:
 - **Agents** — `.claude/agents/*.md` or `.claude/agents/*.yaml`
 - **Hooks** — `hooks` array in `settings.json`
 - **Indexer** — `indexer` object in `settings.json`
+
+### MCP Server Configuration
+
+Configure MCP servers in `settings.json`:
+
+```json
+{
+  "mcp_servers": {
+    "myserver": {
+      "command": "node",
+      "args": ["server.js"],
+      "env": {
+        "API_KEY": "secret123"
+      },
+      "tools": {
+        "enabled": ["read", "write"]
+      }
+    }
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `command` | Server binary to launch |
+| `args` | Command-line arguments |
+| `env` | Environment variables passed to the server process |
+| `tools.enabled` | Allowlist: only register these tools (takes precedence) |
+| `tools.disabled` | Denylist: register all tools except these |
+
+**Runtime management** via `/mcp`:
+
+| Command | Description |
+|---|---|
+| `/mcp` | List all servers with status and tool count |
+| `/mcp restart <name>` | Restart a server |
+| `/mcp disconnect <name>` | Stop and remove a server |
+| `/mcp tools <name>` | List tools on a server with enabled/disabled status |
+| `/mcp enable <server> <tool>` | Re-enable a disabled tool (session-only) |
+| `/mcp disable <server> <tool>` | Disable a tool (session-only) |
+
+The status bar shows `mcp: N` when servers are connected, or `mcp: N/M` if some have died. Server deaths are surfaced inline in the output.
 
 ### Indexer Configuration
 

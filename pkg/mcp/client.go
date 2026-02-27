@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"sync"
 	"sync/atomic"
@@ -28,9 +29,14 @@ type Client struct {
 
 // NewClient creates a Client that will spawn the given command.
 // The process is not started until Start is called.
-func NewClient(command string, args []string) (*Client, error) {
+// If env is non-empty, it is appended to the parent process environment.
+func NewClient(command string, args []string, env []string) (*Client, error) {
 	cmd := exec.Command(command, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Stderr = io.Discard
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -201,7 +207,10 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 
 	// Wait for the response or context cancellation.
 	select {
-	case resp := <-ch:
+	case resp, ok := <-ch:
+		if !ok {
+			return fmt.Errorf("mcp server process exited while waiting for response")
+		}
 		if resp.Error != nil {
 			return resp.Error
 		}
