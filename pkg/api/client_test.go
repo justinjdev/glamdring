@@ -1,11 +1,105 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
+	"testing"
+	"time"
+
+	"github.com/justin/glamdring/pkg/auth"
 )
+
+func TestStreamNoGoroutineLeak(t *testing.T) {
+	server := newMockSSEServer(buildSSEResponse("hello", "end_turn"))
+	defer server.Close()
+
+	client := NewClient(&auth.APIKeyCredentials{Key: "test-key"}, "test-model")
+	client.SetEndpoint(server.URL)
+
+	// Stabilize goroutine count.
+	runtime.GC()
+	time.Sleep(10 * time.Millisecond)
+	before := runtime.NumGoroutine()
+
+	ctx := context.Background()
+	events, err := client.Stream(ctx, &MessageRequest{
+		MaxTokens: 1024,
+		Messages:  []RequestMessage{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error: %v", err)
+	}
+
+	// Drain all events.
+	for range events {
+	}
+
+	// Close the server so its goroutines clean up before measuring.
+	server.Close()
+
+	// Wait for goroutines to clean up.
+	time.Sleep(100 * time.Millisecond)
+	runtime.GC()
+	time.Sleep(10 * time.Millisecond)
+	after := runtime.NumGoroutine()
+
+	// Allow +1 tolerance for runtime background goroutines.
+	if after > before+1 {
+		t.Errorf("goroutine leak: before=%d, after=%d", before, after)
+	}
+}
+
+func TestStreamContextCancellation(t *testing.T) {
+	// Server that sends events slowly — we cancel mid-stream.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+
+		// Send message_start.
+		fmt.Fprint(w, "event: message_start\n")
+		fmt.Fprint(w, `data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","content":[],"model":"test","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":0}}}`)
+		fmt.Fprint(w, "\n\n")
+		flusher.Flush()
+
+		// Block until client disconnects.
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	client := NewClient(&auth.APIKeyCredentials{Key: "test-key"}, "test-model")
+	client.SetEndpoint(server.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	events, err := client.Stream(ctx, &MessageRequest{
+		MaxTokens: 1024,
+		Messages:  []RequestMessage{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error: %v", err)
+	}
+
+	// Read one event, then cancel.
+	<-events
+	cancel()
+
+	// Channel should close promptly.
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-events:
+			if !ok {
+				return // success — channel closed
+			}
+		case <-timeout:
+			t.Fatal("events channel not closed after context cancellation")
+		}
+	}
+}
 
 // newMockSSEServer creates a test server that returns canned SSE responses.
 // Each call to the server returns the next response in the sequence.
