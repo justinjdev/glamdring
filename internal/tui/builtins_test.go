@@ -248,3 +248,53 @@ func TestBuiltinNames(t *testing.T) {
 		}
 	}
 }
+
+func TestCmdThinking_Toggle(t *testing.T) {
+	m := newTestModel()
+	if m.showThinking {
+		t.Fatal("expected showThinking to be false by default")
+	}
+
+	// Enable thinking.
+	cmd := cmdThinking(&m, "")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	if !m.showThinking {
+		t.Error("expected showThinking to be true after toggle")
+	}
+	if len(m.output.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(m.output.blocks))
+	}
+	if !strings.Contains(m.output.blocks[0].content, "enabled") {
+		t.Errorf("expected 'enabled' in output, got %q", m.output.blocks[0].content)
+	}
+
+	// Disable thinking.
+	cmd = cmdThinking(&m, "")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	if m.showThinking {
+		t.Error("expected showThinking to be false after second toggle")
+	}
+	if !strings.Contains(m.output.blocks[1].content, "disabled") {
+		t.Errorf("expected 'disabled' in output, got %q", m.output.blocks[1].content)
+	}
+}
+
+func TestCmdCost_PerModelPricing(t *testing.T) {
+	m := newTestModel()
+	m.agentCfg.Model = "claude-sonnet-4-6"
+	cmd := cmdCost(&m, "")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+
+	content := m.output.blocks[0].content
+	// With 5000 input and 1000 output at Sonnet pricing (3.0/15.0):
+	// cost = 5000/1M * 3.0 + 1000/1M * 15.0 = 0.015 + 0.015 = 0.0300
+	if !strings.Contains(content, "$0.0300") {
+		t.Errorf("expected Sonnet pricing in cost output, got %q", content)
+	}
+}

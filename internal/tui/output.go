@@ -279,6 +279,17 @@ func (m *OutputModel) ToggleCollapse(blockIdx int) bool {
 	return true
 }
 
+// ToggleLastToolResult finds the last tool result block and toggles its
+// collapsed state. Used by the 'e' key binding during StateRunning.
+func (m *OutputModel) ToggleLastToolResult() bool {
+	for i := len(m.blocks) - 1; i >= 0; i-- {
+		if m.blocks[i].kind == blockToolResult {
+			return m.ToggleCollapse(i)
+		}
+	}
+	return false
+}
+
 // SetSize updates the viewport and re-renders content.
 func (m *OutputModel) SetSize(width, height int) {
 	m.width = width
@@ -354,7 +365,7 @@ func (m *OutputModel) rerender() {
 	}
 }
 
-// renderToolResult renders a tool result block, handling collapse and truncation.
+// renderToolResult renders a tool result block, handling collapse.
 func (m *OutputModel) renderToolResult(idx int, b outputBlock) string {
 	output := b.content
 	lines := strings.Split(output, "\n")
@@ -364,13 +375,7 @@ func (m *OutputModel) renderToolResult(idx int, b outputBlock) string {
 	if m.collapsed[idx] && totalLines > collapseThreshold {
 		preview := strings.Join(lines[:collapsePreviewLines], "\n")
 		remaining := totalLines - collapsePreviewLines
-		return preview + fmt.Sprintf("\n... (%d more lines, press Enter to expand)", remaining)
-	}
-
-	// Even when expanded, hard-truncate extremely long output.
-	if totalLines > maxToolResultLines {
-		output = strings.Join(lines[:maxToolResultLines], "\n")
-		output += fmt.Sprintf("\n... (%d lines truncated)", totalLines-maxToolResultLines)
+		return preview + fmt.Sprintf("\n... (%d more lines, press 'e' to expand)", remaining)
 	}
 
 	return output

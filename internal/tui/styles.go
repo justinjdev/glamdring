@@ -40,16 +40,15 @@ type Styles struct {
 	// Error
 	ErrorText lipgloss.Style
 
-	// Code blocks
-	CodeBlockBorder lipgloss.Style
-
 	// System message (built-in command output)
 	SystemText   lipgloss.Style
 	SystemBorder lipgloss.Style
 
 	// User message header
-	UserHeader    lipgloss.Style
-	AgentHeader   lipgloss.Style
+	UserHeader lipgloss.Style
+
+	// Spinner
+	SpinnerText lipgloss.Style
 }
 
 // Color palette — a warm, amber-tinted dark theme inspired by aged parchment
@@ -178,11 +177,6 @@ func DefaultStyles() Styles {
 			Foreground(colorRust).
 			Bold(true),
 
-		// Code block border
-		CodeBlockBorder: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorSurface2),
-
 		// System messages (built-in command output)
 		SystemText: lipgloss.NewStyle().
 			Foreground(colorSky).
@@ -200,9 +194,9 @@ func DefaultStyles() Styles {
 			Bold(true).
 			PaddingTop(1),
 
-		AgentHeader: lipgloss.NewStyle().
+		// Spinner indicator
+		SpinnerText: lipgloss.NewStyle().
 			Foreground(colorAmber).
-			Bold(true).
-			PaddingTop(1),
+			PaddingLeft(1),
 	}
 }

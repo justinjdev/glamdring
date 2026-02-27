@@ -19,26 +19,28 @@ type BuiltinHandler func(m *Model, args string) tea.Cmd
 
 // builtinCommands maps command names to their handlers.
 var builtinCommands = map[string]BuiltinHandler{
-	"help":    cmdHelp,
-	"quit":    cmdQuit,
-	"clear":   cmdClear,
-	"cost":    cmdCost,
-	"config":  cmdConfig,
-	"model":   cmdModel,
-	"compact": cmdCompact,
-	"index":   cmdIndex,
+	"help":     cmdHelp,
+	"quit":     cmdQuit,
+	"clear":    cmdClear,
+	"cost":     cmdCost,
+	"config":   cmdConfig,
+	"model":    cmdModel,
+	"compact":  cmdCompact,
+	"index":    cmdIndex,
+	"thinking": cmdThinking,
 }
 
 // builtinDescriptions provides short help text for each built-in command.
 var builtinDescriptions = map[string]string{
-	"help":    "Show available commands",
-	"quit":    "Exit glamdring",
-	"clear":   "Clear output and reset counters",
-	"cost":    "Show token usage and cost",
-	"config":  "Show current configuration",
-	"model":   "Show or change the model",
-	"compact": "Summarize and compress context",
-	"index":   "Show index status or rebuild (shire)",
+	"help":     "Show available commands",
+	"quit":     "Exit glamdring",
+	"clear":    "Clear output and reset counters",
+	"cost":     "Show token usage and cost",
+	"config":   "Show current configuration",
+	"model":    "Show or change the model",
+	"compact":  "Summarize and compress context",
+	"index":    "Show index status or rebuild (shire)",
+	"thinking": "Toggle thinking block display",
 }
 
 // BuiltinNames returns a sorted list of built-in command names.
@@ -106,8 +108,7 @@ func cmdClear(m *Model, args string) tea.Cmd {
 
 // cmdCost displays cumulative token usage and estimated cost.
 func cmdCost(m *Model, args string) tea.Cmd {
-	cost := float64(m.totalInputTokens)/1_000_000*opusInputCostPerMillion +
-		float64(m.totalOutputTokens)/1_000_000*opusOutputCostPerMillion
+	cost := costForModel(m.agentCfg.Model, m.totalInputTokens, m.totalOutputTokens)
 
 	text := fmt.Sprintf(
 		"Token usage:\n  Input:  %s\n  Output: %s\n  Cost:   $%.4f\n  Turns:  %d",
@@ -172,17 +173,23 @@ func cmdModel(m *Model, args string) tea.Cmd {
 func cmdCompact(m *Model, args string) tea.Cmd {
 	m.compacting = true
 	m.state = StateRunning
+	m.spinning = true
 
 	ctx := m.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	turnCtx, cancel := context.WithCancel(ctx)
+	m.cancelTurn = cancel
 
 	if m.session == nil {
 		m.session = agent.NewSession(m.agentCfg)
 	}
-	ch := m.session.Turn(ctx, compactPrompt)
-	return func() tea.Msg { return agentStartedMsg{ch: ch} }
+	ch := m.session.Turn(turnCtx, compactPrompt)
+	return tea.Batch(
+		func() tea.Msg { return agentStartedMsg{ch: ch} },
+		m.spinner.Tick,
+	)
 }
 
 // cmdIndex shows index status or triggers a rebuild via shire.
@@ -269,6 +276,17 @@ func cmdIndexRebuild(m *Model) tea.Cmd {
 
 	// Show updated status.
 	return cmdIndexStatus(m)
+}
+
+// cmdThinking toggles display of thinking blocks.
+func cmdThinking(m *Model, args string) tea.Cmd {
+	m.showThinking = !m.showThinking
+	if m.showThinking {
+		m.output.AppendSystem("Thinking display enabled.")
+	} else {
+		m.output.AppendSystem("Thinking display disabled.")
+	}
+	return nil
 }
 
 const compactPrompt = `Summarize our conversation so far into a compact context block. Be aggressive about compression — discard noise, keep only what matters for continuing work.
