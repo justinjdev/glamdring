@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/justin/glamdring/pkg/agent"
 	"github.com/justin/glamdring/pkg/commands"
 	"github.com/justin/glamdring/pkg/config"
+	"github.com/justin/glamdring/pkg/hooks"
 )
 
 // State represents the current UI mode.
@@ -23,6 +25,7 @@ const (
 	StateInput      State = iota // user can type
 	StateRunning                 // agent is working
 	StatePermission              // waiting for permission response
+	StateCheckpoint              // checkpoint found, awaiting user decision
 )
 
 // AgentMsg wraps an agent.Message for delivery through the bubbletea message system.
@@ -63,6 +66,9 @@ type Model struct {
 
 	// compacting is true when /compact is running (agent summarizing).
 	compacting bool
+
+	// checkpointContent holds the checkpoint file content while in StateCheckpoint.
+	checkpointContent string
 }
 
 // New creates the root TUI model without agent wiring.
@@ -104,7 +110,35 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.input.Init(),
 		m.output.Init(),
+		m.startupCmd(),
 	)
+}
+
+// startupCmd fires SessionStart hooks and checks for a checkpoint file.
+func (m Model) startupCmd() tea.Cmd {
+	return func() tea.Msg {
+		// Fire SessionStart hooks.
+		if m.agentCfg.HookRunner != nil {
+			ctx := m.ctx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			if err := m.agentCfg.HookRunner.Run(ctx, hooks.SessionStart, "N/A", nil); err != nil {
+				log.Printf("warning: SessionStart hooks: %v", err)
+			}
+		}
+
+		// Check for checkpoint file.
+		if m.agentCfg.CWD != "" {
+			path := filepath.Join(m.agentCfg.CWD, "tmp", "checkpoint.md")
+			data, err := os.ReadFile(path)
+			if err == nil && len(data) > 0 {
+				return checkpointFoundMsg{content: string(data)}
+			}
+		}
+
+		return nil
+	}
 }
 
 // Update handles all incoming messages.
@@ -144,6 +178,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.input.Focus()
 		}
 		return m, nil
+
+	case checkpointFoundMsg:
+		m.output.AppendSystem("Found checkpoint from previous session:")
+		m.output.AppendSystem(msg.content)
+		m.checkpointContent = msg.content
+		m.state = StateCheckpoint
+		return m, nil
 	}
 
 	// Pass through to focused component.
@@ -177,6 +218,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.denyPermission()
 			return m, nil
 		}
+		if m.state == StateCheckpoint {
+			m.checkpointContent = ""
+			m.state = StateInput
+			return m, m.input.Focus()
+		}
 	}
 
 	switch m.state {
@@ -187,6 +233,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case StatePermission:
 		return m.handlePermissionKey(msg)
+
+	case StateCheckpoint:
+		return m.handleCheckpointKey(msg)
 
 	case StateRunning:
 		// Allow scrolling the viewport while agent is working.
@@ -281,6 +330,11 @@ func waitForAgent(ch <-chan agent.Message) tea.Cmd {
 
 // agentDoneMsg signals the agent channel has closed.
 type agentDoneMsg struct{}
+
+// checkpointFoundMsg carries checkpoint content discovered at startup.
+type checkpointFoundMsg struct {
+	content string
+}
 
 // handleAgentMsg routes agent messages to the appropriate component.
 func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
@@ -383,6 +437,22 @@ func (m *Model) denyPermission() {
 	m.state = StateRunning
 }
 
+// handleCheckpointKey processes key presses during the checkpoint prompt.
+func (m Model) handleCheckpointKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		m.agentCfg.SystemPrompt += "\n\n## Previous Session Context\n\n" + m.checkpointContent
+		m.checkpointContent = ""
+		m.state = StateInput
+		return m, m.input.Focus()
+	case "n", "N":
+		m.checkpointContent = ""
+		m.state = StateInput
+		return m, m.input.Focus()
+	}
+	return m, nil
+}
+
 // extractLastText returns the content of the last text block in the output,
 // used to capture the agent's compact summary.
 func (m *Model) extractLastText() string {
@@ -457,6 +527,8 @@ func (m Model) View() string {
 	switch m.state {
 	case StatePermission:
 		input = m.renderPermissionPrompt()
+	case StateCheckpoint:
+		input = m.renderCheckpointPrompt()
 	default:
 		input = m.input.View()
 	}
@@ -472,6 +544,17 @@ func (m Model) View() string {
 func (m Model) renderPermissionPrompt() string {
 	title := m.styles.PermissionTitle.Render("Allow this action?")
 	help := m.styles.PermissionHelp.Render("[y]es  [n]o  [a]lways")
+
+	content := title + "\n" + help
+	return m.styles.PermissionBorder.
+		Width(m.width - 4).
+		Render(content)
+}
+
+// renderCheckpointPrompt renders the inline checkpoint load prompt.
+func (m Model) renderCheckpointPrompt() string {
+	title := m.styles.PermissionTitle.Render("Load checkpoint from previous session?")
+	help := m.styles.PermissionHelp.Render("[y]es  [n]o")
 
 	content := title + "\n" + help
 	return m.styles.PermissionBorder.

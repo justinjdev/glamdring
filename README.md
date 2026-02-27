@@ -9,7 +9,8 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides
 - **MCP support** — connect external tool servers via stdio transport
 - **CLAUDE.md** — discovers and loads project/user instructions automatically
-- **Hooks** — shell commands triggered by agent lifecycle events
+- **Hooks** — shell commands triggered by agent lifecycle events (SessionStart hooks fire on launch)
+- **Checkpoint resume** — detects `tmp/checkpoint.md` from `/compact` and offers to load previous session context
 - **Slash commands** — custom prompts from `.claude/commands/` with tab completion
 - **Custom agents** — define specialized subagents in `.claude/agents/`
 - **Subagents** — parallel task spawning via the Task tool
@@ -52,6 +53,7 @@ glamdring
 | `Ctrl+u` / `Ctrl+d` | Scroll half page |
 | `G` / `g` | Jump to bottom/top |
 | `y` / `n` / `a` | Permission: yes / no / always |
+| `y` / `n` | Checkpoint prompt: load / skip |
 | `Tab` | Complete slash command |
 | `Ctrl+c` | Quit |
 
