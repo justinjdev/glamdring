@@ -18,15 +18,6 @@ var retryableStatusCodes = map[int]bool{
 	529: true, // Overloaded
 }
 
-// nonRetryableStatusCodes are errors that should never be retried.
-var nonRetryableStatusCodes = map[int]bool{
-	400: true, // Bad request
-	401: true, // Unauthorized
-	403: true, // Forbidden
-	404: true, // Not found
-	413: true, // Payload too large
-}
-
 // shouldRetry returns true if the given status code is retryable.
 func shouldRetry(statusCode int) bool {
 	return retryableStatusCodes[statusCode]

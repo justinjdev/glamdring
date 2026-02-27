@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/justin/glamdring/pkg/auth"
 )
@@ -78,27 +79,22 @@ func (c *Client) Stream(ctx context.Context, req *MessageRequest) (<-chan Stream
 		return nil, err
 	}
 
-	// Set up a done channel that closes when the context is cancelled.
-	// This signals the SSE parser goroutine to stop.
-	done := make(chan struct{})
-	go func() {
-		<-ctx.Done()
-		close(done)
-		// Close the response body to unblock the scanner.
-		resp.Body.Close()
-	}()
+	var closeOnce sync.Once
+	closeBody := func() { closeOnce.Do(func() { resp.Body.Close() }) }
 
+	done := make(chan struct{})
 	events := parseSSE(resp.Body, done)
 
-	// Wrap in a goroutine that ensures the body is closed when the stream ends.
 	out := make(chan StreamEvent, 16)
 	go func() {
 		defer close(out)
-		defer resp.Body.Close()
+		defer closeBody()
 		for ev := range events {
 			select {
 			case out <- ev:
 			case <-ctx.Done():
+				close(done)
+				closeBody() // unblock scanner
 				return
 			}
 		}

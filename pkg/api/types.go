@@ -1,13 +1,16 @@
 package api
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // MessageRequest is the request body for POST /v1/messages.
 type MessageRequest struct {
 	Model     string            `json:"model"`
 	MaxTokens int               `json:"max_tokens"`
 	Messages  []RequestMessage  `json:"messages"`
-	System    string            `json:"system,omitempty"`
+	System    any               `json:"system,omitempty"`
 	Tools     []json.RawMessage `json:"tools,omitempty"`
 	Stream    bool              `json:"stream"`
 	Thinking  *ThinkingConfig   `json:"thinking,omitempty"`
@@ -17,6 +20,19 @@ type MessageRequest struct {
 type ThinkingConfig struct {
 	Type         string `json:"type"`
 	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
+// SystemBlock is a structured system prompt block with optional cache control.
+// Use []SystemBlock as the System field in MessageRequest for cache control support.
+type SystemBlock struct {
+	Type         string        `json:"type"`
+	Text         string        `json:"text,omitempty"`
+	CacheControl *CacheControl `json:"cache_control,omitempty"`
+}
+
+// CacheControl specifies caching behavior for a content block.
+type CacheControl struct {
+	Type string `json:"type"` // "ephemeral"
 }
 
 // RequestMessage is a single message in the conversation history.
@@ -63,8 +79,10 @@ type ContentBlock struct {
 
 // Usage tracks token consumption.
 type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 }
 
 // StreamEvent represents a single server-sent event from the streaming API.
@@ -156,5 +174,5 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	return e.Message
+	return fmt.Sprintf("api error %d (%s): %s", e.StatusCode, e.Type, e.Message)
 }

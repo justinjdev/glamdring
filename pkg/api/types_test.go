@@ -91,3 +91,160 @@ func TestContentBlockSignatureRoundTrip(t *testing.T) {
 		t.Errorf("signature = %q, want %q", decoded.Signature, "sig456")
 	}
 }
+
+func TestMessageRequestSystemString(t *testing.T) {
+	req := MessageRequest{
+		Model:     "test",
+		MaxTokens: 1024,
+		Messages:  []RequestMessage{{Role: "user", Content: "hi"}},
+		System:    "You are helpful.",
+		Stream:    true,
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	sys, ok := decoded["system"].(string)
+	if !ok {
+		t.Fatalf("system is %T, want string", decoded["system"])
+	}
+	if sys != "You are helpful." {
+		t.Errorf("system = %q, want %q", sys, "You are helpful.")
+	}
+}
+
+func TestMessageRequestSystemBlocks(t *testing.T) {
+	req := MessageRequest{
+		Model:     "test",
+		MaxTokens: 1024,
+		Messages:  []RequestMessage{{Role: "user", Content: "hi"}},
+		System: []SystemBlock{
+			{Type: "text", Text: "You are helpful."},
+			{
+				Type: "text",
+				Text: "Be concise.",
+				CacheControl: &CacheControl{Type: "ephemeral"},
+			},
+		},
+		Stream: true,
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	blocks, ok := decoded["system"].([]any)
+	if !ok {
+		t.Fatalf("system is %T, want []any", decoded["system"])
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("len(system) = %d, want 2", len(blocks))
+	}
+
+	block1 := blocks[1].(map[string]any)
+	cc, ok := block1["cache_control"].(map[string]any)
+	if !ok {
+		t.Fatalf("cache_control is %T, want map", block1["cache_control"])
+	}
+	if cc["type"] != "ephemeral" {
+		t.Errorf("cache_control.type = %v, want %q", cc["type"], "ephemeral")
+	}
+}
+
+func TestMessageRequestSystemOmittedWhenNil(t *testing.T) {
+	req := MessageRequest{
+		Model:     "test",
+		MaxTokens: 1024,
+		Messages:  []RequestMessage{{Role: "user", Content: "hi"}},
+		Stream:    true,
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if _, exists := decoded["system"]; exists {
+		t.Error("system should be omitted when nil")
+	}
+}
+
+func TestUsageCacheFieldsSerialization(t *testing.T) {
+	usage := Usage{
+		InputTokens:              1000,
+		OutputTokens:             500,
+		CacheCreationInputTokens: 200,
+		CacheReadInputTokens:     300,
+	}
+
+	data, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded Usage
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if decoded.CacheCreationInputTokens != 200 {
+		t.Errorf("CacheCreationInputTokens = %d, want 200", decoded.CacheCreationInputTokens)
+	}
+	if decoded.CacheReadInputTokens != 300 {
+		t.Errorf("CacheReadInputTokens = %d, want 300", decoded.CacheReadInputTokens)
+	}
+}
+
+func TestUsageCacheFieldsOmittedWhenZero(t *testing.T) {
+	usage := Usage{
+		InputTokens:  1000,
+		OutputTokens: 500,
+	}
+
+	data, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if _, exists := decoded["cache_creation_input_tokens"]; exists {
+		t.Error("cache_creation_input_tokens should be omitted when zero")
+	}
+	if _, exists := decoded["cache_read_input_tokens"]; exists {
+		t.Error("cache_read_input_tokens should be omitted when zero")
+	}
+}
+
+func TestAPIErrorFormat(t *testing.T) {
+	err := &APIError{
+		StatusCode: 429,
+		Type:       "rate_limit_error",
+		Message:    "too many requests",
+	}
+	want := "api error 429 (rate_limit_error): too many requests"
+	if got := err.Error(); got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+}

@@ -18,6 +18,7 @@ func parseSSE(r io.Reader, done <-chan struct{}) <-chan StreamEvent {
 		defer close(ch)
 
 		scanner := bufio.NewScanner(r)
+		scanner.Buffer(make([]byte, 0, 1<<20), 10<<20) // 1MB initial, 10MB max
 		var eventType string
 
 		for scanner.Scan() {

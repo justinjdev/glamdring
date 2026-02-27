@@ -37,11 +37,13 @@ func Run(ctx context.Context, cfg Config) <-chan Message {
 
 // turnResult holds the collected state from processing a single streamed response.
 type turnResult struct {
-	contentBlocks []api.ContentBlock
-	toolCalls     []toolCall
-	stopReason    string
-	inputTokens   int
-	outputTokens  int
+	contentBlocks        []api.ContentBlock
+	toolCalls            []toolCall
+	stopReason           string
+	inputTokens          int
+	outputTokens         int
+	cacheCreationTokens  int
+	cacheReadTokens      int
 }
 
 // toolCall represents a single tool_use block extracted from the assistant response.
@@ -75,6 +77,8 @@ func processTurn(ctx context.Context, events <-chan api.StreamEvent, out chan<- 
 			if ev.Message != nil {
 				result.inputTokens += ev.Message.Usage.InputTokens
 				result.outputTokens += ev.Message.Usage.OutputTokens
+				result.cacheCreationTokens += ev.Message.Usage.CacheCreationInputTokens
+				result.cacheReadTokens += ev.Message.Usage.CacheReadInputTokens
 			}
 
 		case "content_block_start":
@@ -137,6 +141,8 @@ func processTurn(ctx context.Context, events <-chan api.StreamEvent, out chan<- 
 			}
 			if ev.Usage != nil {
 				result.outputTokens += ev.Usage.OutputTokens
+				result.cacheCreationTokens += ev.Usage.CacheCreationInputTokens
+				result.cacheReadTokens += ev.Usage.CacheReadInputTokens
 			}
 
 		case "message_stop":

@@ -16,9 +16,11 @@ type Session struct {
 	registry     *tools.Registry
 	sessionAllow map[string]bool
 	messages     []api.RequestMessage
-	TotalInput   int
-	TotalOutput  int
-	Turns        int
+	TotalInput         int
+	TotalOutput        int
+	TotalCacheCreation int
+	TotalCacheRead     int
+	Turns              int
 }
 
 // NewSession creates a new Session from the given Config.
@@ -77,6 +79,8 @@ func (s *Session) Reset() {
 func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 	turnInputBefore := s.TotalInput
 	turnOutputBefore := s.TotalOutput
+	turnCacheCreationBefore := s.TotalCacheCreation
+	turnCacheReadBefore := s.TotalCacheRead
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -105,6 +109,8 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 
 		s.TotalInput += turnResult.inputTokens
 		s.TotalOutput += turnResult.outputTokens
+		s.TotalCacheCreation += turnResult.cacheCreationTokens
+		s.TotalCacheRead += turnResult.cacheReadTokens
 
 		s.messages = append(s.messages, api.RequestMessage{
 			Role:    "assistant",
@@ -114,9 +120,11 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 		switch turnResult.stopReason {
 		case "end_turn", "refusal":
 			emit(ctx, out, Message{
-				Type:         MessageDone,
-				InputTokens:  s.TotalInput - turnInputBefore,
-				OutputTokens: s.TotalOutput - turnOutputBefore,
+				Type:                     MessageDone,
+				InputTokens:              s.TotalInput - turnInputBefore,
+				OutputTokens:             s.TotalOutput - turnOutputBefore,
+				CacheCreationInputTokens: s.TotalCacheCreation - turnCacheCreationBefore,
+				CacheReadInputTokens:     s.TotalCacheRead - turnCacheReadBefore,
 			})
 			return
 
@@ -147,9 +155,11 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 		default:
 			// Unknown stop reason -- treat as done.
 			emit(ctx, out, Message{
-				Type:         MessageDone,
-				InputTokens:  s.TotalInput - turnInputBefore,
-				OutputTokens: s.TotalOutput - turnOutputBefore,
+				Type:                     MessageDone,
+				InputTokens:              s.TotalInput - turnInputBefore,
+				OutputTokens:             s.TotalOutput - turnOutputBefore,
+				CacheCreationInputTokens: s.TotalCacheCreation - turnCacheCreationBefore,
+				CacheReadInputTokens:     s.TotalCacheRead - turnCacheReadBefore,
 			})
 			return
 		}
