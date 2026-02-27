@@ -10,7 +10,7 @@ type MessageRequest struct {
 	Model     string            `json:"model"`
 	MaxTokens int               `json:"max_tokens"`
 	Messages  []RequestMessage  `json:"messages"`
-	System    string            `json:"system,omitempty"`
+	System    any               `json:"system,omitempty"`
 	Tools     []json.RawMessage `json:"tools,omitempty"`
 	Stream    bool              `json:"stream"`
 	Thinking  *ThinkingConfig   `json:"thinking,omitempty"`
@@ -20,6 +20,19 @@ type MessageRequest struct {
 type ThinkingConfig struct {
 	Type         string `json:"type"`
 	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
+// SystemBlock is a structured system prompt block with optional cache control.
+// Use []SystemBlock as the System field in MessageRequest for cache control support.
+type SystemBlock struct {
+	Type         string        `json:"type"`
+	Text         string        `json:"text,omitempty"`
+	CacheControl *CacheControl `json:"cache_control,omitempty"`
+}
+
+// CacheControl specifies caching behavior for a content block.
+type CacheControl struct {
+	Type string `json:"type"` // "ephemeral"
 }
 
 // RequestMessage is a single message in the conversation history.
