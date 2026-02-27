@@ -1,30 +1,32 @@
 ## 1. Database Layer
 
-- [ ] 1.1 Add `modernc.org/sqlite` dependency and create `pkg/index/` package
-- [ ] 1.2 Implement `Open(dbPath string) (*DB, error)` — open existing `.shire/index.db` in read-only WAL mode, verify schema version from `shire_meta` table
-- [ ] 1.3 Implement query functions: `SearchPackages`, `GetPackage`, `ListPackages`
-- [ ] 1.4 Implement query functions: `PackageDependencies`, `PackageDependents`, `DependencyGraph` (BFS traversal)
-- [ ] 1.5 Implement query functions: `SearchSymbols`, `GetPackageSymbols`, `GetSymbol`, `GetFileSymbols`
-- [ ] 1.6 Implement query functions: `SearchFiles`, `ListPackageFiles`
-- [ ] 1.7 Implement query function: `IndexStatus` (read from `shire_meta` table + count queries)
+- [x] 1.1 Add `modernc.org/sqlite` dependency and create `pkg/index/` package
+- [x] 1.2 Implement `Open(dbPath string) (*DB, error)` — open existing `.shire/index.db` in read-only WAL mode, verify schema version from `shire_meta` table
+- [x] 1.3 Implement query functions: `SearchPackages`, `GetPackage`, `ListPackages`
+- [x] 1.4 Implement query functions: `PackageDependencies`, `PackageDependents`, `DependencyGraph` (BFS traversal)
+- [x] 1.5 Implement query functions: `SearchSymbols`, `GetPackageSymbols`, `GetSymbol`, `GetFileSymbols`
+- [x] 1.6 Implement query functions: `SearchFiles`, `ListPackageFiles`
+- [x] 1.7 Implement query function: `IndexStatus` (read from `shire_meta` table + count queries)
 
 ## 2. Tool Implementations
 
-- [ ] 2.1 Create tool wrapper structs implementing the `Tool` interface for each of the 13 query functions
-- [ ] 2.2 Define JSON schemas for each tool's input parameters (matching shire's MCP tool schemas)
-- [ ] 2.3 Implement JSON result formatting for each tool's output
+- [x] 2.1 Create tool wrapper structs implementing the `Tool` interface for each of the 13 query functions
+- [x] 2.2 Define JSON schemas for each tool's input parameters (matching shire's MCP tool schemas)
+- [x] 2.3 Implement JSON result formatting for each tool's output
 
 ## 3. Startup Integration
 
-- [ ] 3.1 Add index detection in startup: check for `.shire/index.db` in CWD, open database if present
-- [ ] 3.2 Conditionally register index tools in the tool registry when database is available
-- [ ] 3.3 Pass database handle through `agent.Config` (new optional field)
+- [x] 3.1 Add index detection in startup: check for `.shire/index.db` in CWD, open database if present
+- [x] 3.2 Conditionally register index tools in the tool registry when database is available
+- [x] 3.3 Pass database handle through `agent.Config` (new optional field)
 
 ## 4. TUI Integration
 
-- [ ] 4.1 Implement `/index` built-in command — display status from `IndexStatus` query
-- [ ] 4.2 Implement `/index rebuild` — shell out to `shire build --root <cwd>`, reopen database, re-register tools
-- [ ] 4.3 Handle shire-not-on-PATH gracefully with install instructions
+- [x] 4.1 Implement `/index` built-in command — display status from `IndexStatus` query
+- [x] 4.2 Implement `/index rebuild` — shell out to `shire build --root <cwd>`, reopen database, re-register tools
+- [x] 4.3 Handle shire-not-on-PATH gracefully with install instructions
+- [x] 4.4 Post-turn auto-rebuild — after agent turns with file-modifying tools (Edit/Write/Bash), async rebuild index and reopen DB
+- [x] 4.5 Configurable indexer — `IndexerConfig` in settings (enabled, command, auto_rebuild) with auto-detect default
 
 ## 5. Tests
 

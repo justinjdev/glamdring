@@ -131,6 +131,12 @@ func cmdConfig(m *Model, args string) tea.Cmd {
 		b.WriteString(fmt.Sprintf("CWD:       %s\n", m.agentCfg.CWD))
 	}
 
+	if m.indexDB != nil {
+		b.WriteString(fmt.Sprintf("Indexer:    %s (auto-rebuild: %v)\n", m.indexerCfg.IndexerCommand(), m.indexerCfg.IndexerAutoRebuild()))
+	} else if enabled := m.indexerCfg.IndexerEnabled(); enabled != nil && !*enabled {
+		b.WriteString("Indexer:    disabled\n")
+	}
+
 	if m.settings.MCPServers != nil && len(m.settings.MCPServers) > 0 {
 		names := make([]string, 0, len(m.settings.MCPServers))
 		for name := range m.settings.MCPServers {
@@ -219,9 +225,10 @@ func cmdIndexStatus(m *Model) tea.Cmd {
 }
 
 func cmdIndexRebuild(m *Model) tea.Cmd {
-	shirePath, err := exec.LookPath("shire")
+	cmdName := m.indexerCfg.IndexerCommand()
+	binPath, err := exec.LookPath(cmdName)
 	if err != nil {
-		m.output.AppendError("shire is not installed. Install with: brew tap justinjdev/shire && brew install shire")
+		m.output.AppendError(fmt.Sprintf("%s is not installed. Install with: brew tap justinjdev/shire && brew install shire", cmdName))
 		return nil
 	}
 
@@ -231,14 +238,13 @@ func cmdIndexRebuild(m *Model) tea.Cmd {
 		return nil
 	}
 
-	m.output.AppendSystem("Rebuilding shire index...")
+	m.output.AppendSystem(fmt.Sprintf("Rebuilding index via %s...", cmdName))
 
-	// Run shire build synchronously (it's fast for incremental builds).
-	cmd := exec.Command(shirePath, "build", "--root", cwd)
+	cmd := exec.Command(binPath, "build", "--root", cwd)
 	cmd.Dir = cwd
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		m.output.AppendError(fmt.Sprintf("shire build failed: %s\n%s", err, string(output)))
+		m.output.AppendError(fmt.Sprintf("%s build failed: %s\n%s", cmdName, err, string(output)))
 		return nil
 	}
 

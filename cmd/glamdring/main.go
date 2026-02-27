@@ -97,12 +97,17 @@ func main() {
 	// the agent.Message channel into the tools.SubagentResult channel.
 	subagentRunner := makeSubagentRunner(creds, settings.Model)
 
-	// Open shire index if available.
+	// Open shire index if configured/available.
 	var indexDB *index.DB
-	indexDBPath := filepath.Join(workDir, ".shire", "index.db")
-	if db, err := index.Open(indexDBPath); err == nil {
-		indexDB = db
-		defer indexDB.Close()
+	if enabled := settings.Indexer.IndexerEnabled(); enabled == nil || *enabled {
+		// nil = auto-detect (try to open), true = force on.
+		indexDBPath := filepath.Join(workDir, ".shire", "index.db")
+		if db, err := index.Open(indexDBPath); err == nil {
+			indexDB = db
+			defer indexDB.Close()
+		} else if enabled != nil && *enabled {
+			log.Printf("warning: indexer enabled but index not found at %s: %v", indexDBPath, err)
+		}
 	}
 
 	// Build the tool set including Task, MCP, and index tools.
@@ -142,6 +147,7 @@ func main() {
 	m := tui.NewWithAgent(ctx, cfg)
 	m.SetSettings(settings)
 	m.SetCommandRegistry(cmdRegistry)
+	m.SetIndexerConfig(settings.Indexer)
 	if indexDB != nil {
 		m.SetIndexDB(indexDB)
 	}

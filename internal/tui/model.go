@@ -73,6 +73,12 @@ type Model struct {
 
 	// indexDB is the shire index database, if available.
 	indexDB *index.DB
+
+	// indexerCfg holds indexer settings (command name, auto-rebuild).
+	indexerCfg config.IndexerConfig
+
+	// turnModifiedFiles tracks whether the current agent turn used file-modifying tools.
+	turnModifiedFiles bool
 }
 
 // New creates the root TUI model without agent wiring.
@@ -107,6 +113,11 @@ func (m *Model) SetCommandRegistry(r *commands.Registry) {
 // SetIndexDB stores the shire index database for /index command access.
 func (m *Model) SetIndexDB(db *index.DB) {
 	m.indexDB = db
+}
+
+// SetIndexerConfig stores the indexer configuration.
+func (m *Model) SetIndexerConfig(cfg config.IndexerConfig) {
+	m.indexerCfg = cfg
 }
 
 // SetSettings stores the resolved settings for /config display.
@@ -193,6 +204,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.output.AppendSystem(msg.content)
 		m.checkpointContent = msg.content
 		m.state = StateCheckpoint
+		return m, nil
+
+	case indexRebuildDoneMsg:
+		if msg.err != nil {
+			log.Printf("index rebuild: %v", msg.err)
+			return m, nil
+		}
+		if msg.db != nil {
+			if m.indexDB != nil {
+				m.indexDB.Close()
+			}
+			m.indexDB = msg.db
+		}
 		return m, nil
 	}
 
@@ -300,6 +324,7 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.turn++
+	m.turnModifiedFiles = false
 	m.state = StateRunning
 
 	cfg := m.agentCfg
@@ -345,6 +370,12 @@ type checkpointFoundMsg struct {
 	content string
 }
 
+// indexRebuildDoneMsg carries the result of an async shire index rebuild.
+type indexRebuildDoneMsg struct {
+	db  *index.DB
+	err error
+}
+
 // handleAgentMsg routes agent messages to the appropriate component.
 func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 	am := agent.Message(msg)
@@ -357,6 +388,10 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		// Thinking is hidden by default; silently discard.
 
 	case agent.MessageToolCall:
+		switch am.ToolName {
+		case "Edit", "Write", "Bash":
+			m.turnModifiedFiles = true
+		}
 		summary := summarizeToolInput(am.ToolName, am.ToolInput)
 		m.output.AppendToolCall(am.ToolName, summary)
 
@@ -392,7 +427,16 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 			}
 		}
 
+		var rebuildCmd tea.Cmd
+		if m.turnModifiedFiles && m.indexDB != nil && m.indexerCfg.IndexerAutoRebuild() {
+			rebuildCmd = m.rebuildIndexCmd()
+		}
+		m.turnModifiedFiles = false
+
 		m.state = StateInput
+		if rebuildCmd != nil {
+			return m, tea.Batch(m.input.Focus(), rebuildCmd)
+		}
 		return m, m.input.Focus()
 
 	case agent.MessageMaxTurnsReached:
@@ -495,6 +539,32 @@ func (m *Model) writeCheckpoint(summary string) {
 	content.WriteString("\n")
 
 	_ = os.WriteFile(filepath.Join(dir, "checkpoint.md"), []byte(content.String()), 0o644)
+}
+
+// rebuildIndexCmd returns a tea.Cmd that runs the indexer in the background
+// and reopens the index DB. Triggered after agent turns that modified files.
+func (m Model) rebuildIndexCmd() tea.Cmd {
+	cwd := m.agentCfg.CWD
+	cmdName := m.indexerCfg.IndexerCommand()
+	return func() tea.Msg {
+		binPath, err := exec.LookPath(cmdName)
+		if err != nil {
+			return indexRebuildDoneMsg{err: fmt.Errorf("%s not found: %w", cmdName, err)}
+		}
+
+		cmd := exec.Command(binPath, "build", "--root", cwd)
+		cmd.Dir = cwd
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return indexRebuildDoneMsg{err: fmt.Errorf("%s build: %s\n%s", cmdName, err, out)}
+		}
+
+		dbPath := filepath.Join(cwd, ".shire", "index.db")
+		db, err := index.Open(dbPath)
+		if err != nil {
+			return indexRebuildDoneMsg{err: fmt.Errorf("reopen index: %w", err)}
+		}
+		return indexRebuildDoneMsg{db: db}
+	}
 }
 
 // currentGitBranch returns the current git branch name, or "unknown".

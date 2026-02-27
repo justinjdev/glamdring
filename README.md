@@ -5,7 +5,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 ## Features
 
 - **Agentic loop** — streaming responses, multi-turn conversations, adaptive thinking
-- **Built-in tools** — Read, Write, Edit, Bash, Glob, Grep + [shire](https://github.com/justinjdev/shire) index tools (auto-detected)
+- **Built-in tools** — Read, Write, Edit, Bash, Glob, Grep + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
 - **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides
 - **MCP support** — connect external tool servers via stdio transport
 - **CLAUDE.md** — discovers and loads project/user instructions automatically
@@ -66,6 +66,27 @@ Glamdring reads the same configuration as Claude Code:
 - **Commands** — `.claude/commands/*.md`
 - **Agents** — `.claude/agents/*.md` or `.claude/agents/*.yaml`
 - **Hooks** — `hooks` array in `settings.json`
+- **Indexer** — `indexer` object in `settings.json`
+
+### Indexer Configuration
+
+The shire code indexer is auto-detected by default. Configure via `settings.json`:
+
+```json
+{
+  "indexer": {
+    "enabled": true,
+    "command": "shire",
+    "auto_rebuild": true
+  }
+}
+```
+
+| Field | Default | Description |
+|---|---|---|
+| `enabled` | auto-detect | `true` = force on, `false` = disable, omit = auto-detect `.shire/index.db` |
+| `command` | `"shire"` | Binary name for the indexer |
+| `auto_rebuild` | `true` | Rebuild index after agent turns that modify files |
 
 ## Architecture
 
