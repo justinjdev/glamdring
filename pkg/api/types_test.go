@@ -91,3 +91,15 @@ func TestContentBlockSignatureRoundTrip(t *testing.T) {
 		t.Errorf("signature = %q, want %q", decoded.Signature, "sig456")
 	}
 }
+
+func TestAPIErrorFormat(t *testing.T) {
+	err := &APIError{
+		StatusCode: 429,
+		Type:       "rate_limit_error",
+		Message:    "too many requests",
+	}
+	want := "api error 429 (rate_limit_error): too many requests"
+	if got := err.Error(); got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+}

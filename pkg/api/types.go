@@ -1,6 +1,9 @@
 package api
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // MessageRequest is the request body for POST /v1/messages.
 type MessageRequest struct {
@@ -156,5 +159,5 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	return e.Message
+	return fmt.Sprintf("api error %d (%s): %s", e.StatusCode, e.Type, e.Message)
 }
