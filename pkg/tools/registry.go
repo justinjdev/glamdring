@@ -9,6 +9,7 @@ import (
 // Registry holds all registered tools and dispatches calls by name.
 type Registry struct {
 	tools map[string]Tool
+	order []string
 }
 
 // NewRegistry creates an empty tool registry.
@@ -18,7 +19,11 @@ func NewRegistry() *Registry {
 
 // Register adds a tool to the registry.
 func (r *Registry) Register(t Tool) {
-	r.tools[t.Name()] = t
+	name := t.Name()
+	if _, exists := r.tools[name]; !exists {
+		r.order = append(r.order, name)
+	}
+	r.tools[name] = t
 }
 
 // Get returns a tool by name, or nil if not found.
@@ -35,19 +40,25 @@ func (r *Registry) Execute(ctx context.Context, name string, input json.RawMessa
 	return t.Execute(ctx, input)
 }
 
-// All returns all registered tools.
+// All returns all registered tools in registration order.
 func (r *Registry) All() []Tool {
-	out := make([]Tool, 0, len(r.tools))
-	for _, t := range r.tools {
-		out = append(out, t)
+	out := make([]Tool, 0, len(r.order))
+	for _, name := range r.order {
+		if t, ok := r.tools[name]; ok {
+			out = append(out, t)
+		}
 	}
 	return out
 }
 
-// Schemas returns the tool definitions for the API request.
+// Schemas returns the tool definitions for the API request in registration order.
 func (r *Registry) Schemas() []json.RawMessage {
-	out := make([]json.RawMessage, 0, len(r.tools))
-	for _, t := range r.tools {
+	out := make([]json.RawMessage, 0, len(r.order))
+	for _, name := range r.order {
+		t, ok := r.tools[name]
+		if !ok {
+			continue
+		}
 		schema := map[string]any{
 			"name":         t.Name(),
 			"description":  t.Description(),

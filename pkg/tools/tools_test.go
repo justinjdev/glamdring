@@ -5,8 +5,6 @@ import "testing"
 func TestDefaultToolsPascalCaseNames(t *testing.T) {
 	allTools := DefaultTools("/tmp")
 
-	// All tool names should be PascalCase and match the alwaysAllowTools keys
-	// or permission-required tool names used throughout the codebase.
 	expected := map[string]bool{
 		"Read":  true,
 		"Write": true,
@@ -25,7 +23,6 @@ func TestDefaultToolsPascalCaseNames(t *testing.T) {
 		if !expected[name] {
 			t.Errorf("unexpected tool name %q; expected PascalCase name in %v", name, expected)
 		}
-		// Verify first character is uppercase.
 		if name[0] < 'A' || name[0] > 'Z' {
 			t.Errorf("tool name %q does not start with uppercase letter", name)
 		}
@@ -36,5 +33,36 @@ func TestTaskToolName(t *testing.T) {
 	tt := &TaskTool{}
 	if tt.Name() != "Task" {
 		t.Errorf("TaskTool.Name() = %q, want %q", tt.Name(), "Task")
+	}
+}
+
+func TestDefaultToolsShareTracker(t *testing.T) {
+	allTools := DefaultTools("/tmp")
+
+	var readTool *ReadTool
+	var writeTool *WriteTool
+	for _, tool := range allTools {
+		switch v := tool.(type) {
+		case ReadTool:
+			readTool = &v
+		case WriteTool:
+			writeTool = &v
+		}
+	}
+
+	if readTool == nil {
+		t.Fatal("ReadTool not found in default tools")
+	}
+	if writeTool == nil {
+		t.Fatal("WriteTool not found in default tools")
+	}
+	if readTool.Tracker == nil {
+		t.Fatal("ReadTool.Tracker is nil")
+	}
+	if writeTool.Tracker == nil {
+		t.Fatal("WriteTool.Tracker is nil")
+	}
+	if readTool.Tracker != writeTool.Tracker {
+		t.Error("ReadTool and WriteTool do not share the same tracker")
 	}
 }

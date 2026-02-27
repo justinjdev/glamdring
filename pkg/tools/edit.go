@@ -55,6 +55,18 @@ func (EditTool) Execute(_ context.Context, input json.RawMessage) (Result, error
 		return Result{Output: "file_path is required", IsError: true}, nil
 	}
 
+	// Reject no-op edits.
+	if in.OldString == in.NewString {
+		return Result{Output: "old_string and new_string are identical", IsError: true}, nil
+	}
+
+	// Stat the file to preserve permissions.
+	info, err := os.Stat(in.FilePath)
+	if err != nil {
+		return Result{Output: fmt.Sprintf("failed to stat file: %s", err), IsError: true}, nil
+	}
+	fileMode := info.Mode()
+
 	data, err := os.ReadFile(in.FilePath)
 	if err != nil {
 		return Result{Output: fmt.Sprintf("failed to read file: %s", err), IsError: true}, nil
@@ -81,7 +93,7 @@ func (EditTool) Execute(_ context.Context, input json.RawMessage) (Result, error
 		newContent = strings.Replace(content, in.OldString, in.NewString, 1)
 	}
 
-	if err := os.WriteFile(in.FilePath, []byte(newContent), 0o644); err != nil {
+	if err := os.WriteFile(in.FilePath, []byte(newContent), fileMode); err != nil {
 		return Result{Output: fmt.Sprintf("failed to write file: %s", err), IsError: true}, nil
 	}
 

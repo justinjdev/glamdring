@@ -8,7 +8,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Agent interrupt** — `Ctrl+C` cancels the current turn instead of killing the program; double-press to quit
 - **Thinking spinner** — visual feedback while the agent is processing
 - **Per-model cost tracking** — accurate pricing for Opus, Sonnet, and Haiku
-- **Built-in tools** — Read, Write, Edit, Bash, Glob, Grep + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
+- **Built-in tools** — Read (2000-line default limit, line truncation), Write (read-before-write safety), Edit (permission-preserving, no-op rejection), Bash (timeout detection, 1MB output limit, background execution), Glob (noise directory filtering, result limits), Grep (full ripgrep-style flags, binary detection, type filters) + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
 - **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides and yolo mode for auto-approving all tools
 - **MCP support** — connect external tool servers via stdio transport
 - **CLAUDE.md** — discovers and loads project/user instructions automatically (bare `CLAUDE.md`, `.claude/CLAUDE.md`, and `.claude/CLAUDE.local.md` at every directory level)

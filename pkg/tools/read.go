@@ -8,8 +8,15 @@ import (
 	"strings"
 )
 
+const (
+	defaultLineLimit = 2000
+	maxLineLength    = 2000
+)
+
 // ReadTool reads file contents with line numbers.
-type ReadTool struct{}
+type ReadTool struct {
+	Tracker *ReadTracker
+}
 
 type readInput struct {
 	FilePath string `json:"file_path"`
@@ -41,7 +48,7 @@ func (ReadTool) Schema() json.RawMessage {
 	}`)
 }
 
-func (ReadTool) Execute(_ context.Context, input json.RawMessage) (Result, error) {
+func (t ReadTool) Execute(_ context.Context, input json.RawMessage) (Result, error) {
 	var in readInput
 	if err := json.Unmarshal(input, &in); err != nil {
 		return Result{Output: fmt.Sprintf("invalid input: %s", err), IsError: true}, nil
@@ -56,6 +63,7 @@ func (ReadTool) Execute(_ context.Context, input json.RawMessage) (Result, error
 	}
 
 	lines := strings.Split(string(data), "\n")
+	totalLines := len(lines)
 
 	// Apply offset (1-based).
 	start := 0
@@ -66,14 +74,34 @@ func (ReadTool) Execute(_ context.Context, input json.RawMessage) (Result, error
 		start = len(lines)
 	}
 
-	end := len(lines)
-	if in.Limit > 0 && start+in.Limit < end {
-		end = start + in.Limit
+	// Apply limit: use explicit limit if provided, otherwise default to 2000.
+	userLimit := in.Limit
+	if userLimit <= 0 {
+		userLimit = defaultLineLimit
 	}
+
+	end := len(lines)
+	if start+userLimit < end {
+		end = start + userLimit
+	}
+
+	truncated := end < len(lines) && in.Limit <= 0
 
 	var buf strings.Builder
 	for i := start; i < end; i++ {
-		fmt.Fprintf(&buf, "%6d\t%s\n", i+1, lines[i])
+		line := lines[i]
+		if len(line) > maxLineLength {
+			line = line[:maxLineLength] + "... (line truncated)"
+		}
+		fmt.Fprintf(&buf, "%6d\t%s\n", i+1, line)
+	}
+
+	if truncated {
+		fmt.Fprintf(&buf, "\n... (truncated, showing first %d of %d lines)\n", defaultLineLimit, totalLines)
+	}
+
+	if t.Tracker != nil {
+		t.Tracker.Record(in.FilePath)
 	}
 
 	return Result{Output: buf.String()}, nil

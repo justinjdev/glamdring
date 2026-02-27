@@ -9,7 +9,9 @@ import (
 )
 
 // WriteTool creates or overwrites a file.
-type WriteTool struct{}
+type WriteTool struct {
+	Tracker *ReadTracker
+}
 
 type writeInput struct {
 	FilePath string `json:"file_path"`
@@ -36,13 +38,24 @@ func (WriteTool) Schema() json.RawMessage {
 	}`)
 }
 
-func (WriteTool) Execute(_ context.Context, input json.RawMessage) (Result, error) {
+func (t WriteTool) Execute(_ context.Context, input json.RawMessage) (Result, error) {
 	var in writeInput
 	if err := json.Unmarshal(input, &in); err != nil {
 		return Result{Output: fmt.Sprintf("invalid input: %s", err), IsError: true}, nil
 	}
 	if in.FilePath == "" {
 		return Result{Output: "file_path is required", IsError: true}, nil
+	}
+
+	// Safety check: require read before overwriting existing files.
+	if _, err := os.Stat(in.FilePath); err == nil {
+		// File exists — check if it was read first.
+		if t.Tracker != nil && !t.Tracker.HasRead(in.FilePath) {
+			return Result{
+				Output:  "File has not been read in this session. Read it first to avoid accidental overwrites.",
+				IsError: true,
+			}, nil
+		}
 	}
 
 	dir := filepath.Dir(in.FilePath)

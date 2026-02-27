@@ -7,8 +7,15 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+)
+
+const (
+	maxTimeout    = 600000 // milliseconds
+	maxOutputSize = 1 << 20 // 1MB
+	tailLines     = 500
 )
 
 // BashTool executes shell commands.
@@ -17,9 +24,24 @@ type BashTool struct {
 }
 
 type bashInput struct {
-	Command string `json:"command"`
-	Timeout int    `json:"timeout"` // milliseconds
+	Command        string `json:"command"`
+	Timeout        int    `json:"timeout"`
+	RunInBackground bool  `json:"run_in_background"`
 }
+
+// bgProcess tracks a background process.
+type bgProcess struct {
+	PID     int
+	Command string
+	Done    chan struct{}
+	Output  string
+	Err     error
+}
+
+var (
+	bgMu        sync.Mutex
+	bgProcesses = make(map[int]*bgProcess)
+)
 
 func (BashTool) Name() string        { return "Bash" }
 func (BashTool) Description() string { return "Execute a shell command" }
@@ -35,7 +57,11 @@ func (BashTool) Schema() json.RawMessage {
 			},
 			"timeout": {
 				"type": "integer",
-				"description": "Timeout in milliseconds (default 120000)"
+				"description": "Timeout in milliseconds (default 120000, max 600000)"
+			},
+			"run_in_background": {
+				"type": "boolean",
+				"description": "Run the command in the background and return immediately with the PID"
 			}
 		}
 	}`)
@@ -52,7 +78,15 @@ func (t BashTool) Execute(ctx context.Context, input json.RawMessage) (Result, e
 
 	timeout := 120 * time.Second
 	if in.Timeout > 0 {
-		timeout = time.Duration(in.Timeout) * time.Millisecond
+		t := in.Timeout
+		if t > maxTimeout {
+			t = maxTimeout
+		}
+		timeout = time.Duration(t) * time.Millisecond
+	}
+
+	if in.RunInBackground {
+		return t.executeBackground(ctx, in.Command)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -60,7 +94,6 @@ func (t BashTool) Execute(ctx context.Context, input json.RawMessage) (Result, e
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", in.Command)
 	cmd.Dir = t.CWD
-	// Use process group so we can kill the entire tree on timeout.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	var stdout, stderr bytes.Buffer
@@ -69,36 +102,96 @@ func (t BashTool) Execute(ctx context.Context, input json.RawMessage) (Result, e
 
 	err := cmd.Run()
 
+	// Check for timeout BEFORE checking ExitError.
+	if ctx.Err() == context.DeadlineExceeded {
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		return Result{Output: "command timed out", IsError: true}, nil
+	}
+
 	exitCode := 0
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
-		} else if ctx.Err() == context.DeadlineExceeded {
-			// Kill the process group on timeout.
-			if cmd.Process != nil {
-				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-			}
-			return Result{Output: "command timed out", IsError: true}, nil
 		} else {
 			return Result{Output: fmt.Sprintf("failed to run command: %s", err), IsError: true}, nil
 		}
 	}
 
-	var out strings.Builder
-	if stdout.Len() > 0 {
-		out.WriteString(stdout.String())
+	output := buildOutput(stdout.Bytes(), stderr.Bytes(), exitCode)
+	output = truncateOutput(output)
+
+	return Result{Output: output, IsError: exitCode != 0}, nil
+}
+
+func (t BashTool) executeBackground(_ context.Context, command string) (Result, error) {
+	cmd := exec.Command("bash", "-c", command)
+	cmd.Dir = t.CWD
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		return Result{Output: fmt.Sprintf("failed to start background command: %s", err), IsError: true}, nil
 	}
-	if stderr.Len() > 0 {
+
+	pid := cmd.Process.Pid
+	bp := &bgProcess{
+		PID:     pid,
+		Command: command,
+		Done:    make(chan struct{}),
+	}
+
+	bgMu.Lock()
+	bgProcesses[pid] = bp
+	bgMu.Unlock()
+
+	go func() {
+		defer close(bp.Done)
+		err := cmd.Wait()
+		bp.Output = buildOutput(stdout.Bytes(), stderr.Bytes(), 0)
+		if err != nil {
+			bp.Err = err
+		}
+		bp.Output = truncateOutput(bp.Output)
+	}()
+
+	return Result{Output: fmt.Sprintf("background process started with PID %d", pid)}, nil
+}
+
+// buildOutput combines stdout and stderr into a single output string.
+func buildOutput(stdout, stderr []byte, exitCode int) string {
+	var out strings.Builder
+	if len(stdout) > 0 {
+		out.Write(stdout)
+	}
+	if len(stderr) > 0 {
 		if out.Len() > 0 {
 			out.WriteString("\n")
 		}
 		out.WriteString("STDERR:\n")
-		out.WriteString(stderr.String())
+		out.Write(stderr)
 	}
-
 	if exitCode != 0 {
 		fmt.Fprintf(&out, "\nexit code: %d", exitCode)
 	}
+	return out.String()
+}
 
-	return Result{Output: out.String(), IsError: exitCode != 0}, nil
+// truncateOutput caps output at maxOutputSize, keeping the last tailLines.
+func truncateOutput(output string) string {
+	if len(output) <= maxOutputSize {
+		return output
+	}
+
+	lines := strings.Split(output, "\n")
+	start := len(lines) - tailLines
+	if start < 0 {
+		start = 0
+	}
+	kept := lines[start:]
+	return fmt.Sprintf("... (output truncated, showing last %d lines)\n%s", len(kept), strings.Join(kept, "\n"))
 }
