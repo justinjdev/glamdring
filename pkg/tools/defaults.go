@@ -2,9 +2,10 @@ package tools
 
 // DefaultTools returns all built-in tools, configured with the given working directory.
 func DefaultTools(cwd string) []Tool {
+	tracker := NewReadTracker()
 	return []Tool{
-		ReadTool{},
-		WriteTool{},
+		ReadTool{Tracker: tracker},
+		WriteTool{Tracker: tracker},
 		EditTool{},
 		BashTool{CWD: cwd},
 		GlobTool{CWD: cwd},
