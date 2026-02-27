@@ -19,8 +19,12 @@ type Styles struct {
 	ToolResultErr  lipgloss.Style
 
 	// Thinking
-	ThinkingText   lipgloss.Style
-	ThinkingBorder lipgloss.Style
+	ThinkingText      lipgloss.Style
+	ThinkingBorder    lipgloss.Style
+	ThinkingSeparator lipgloss.Style
+
+	// Scroll indicator
+	NewContentIndicator lipgloss.Style
 
 	// Status bar
 	StatusBar      lipgloss.Style
@@ -117,6 +121,19 @@ func DefaultStyles() Styles {
 			Border(lipgloss.NormalBorder(), false, false, false, true).
 			BorderForeground(colorLavender).
 			PaddingLeft(1),
+
+		// Thinking separator — subtle dotted line between thinking and response
+		ThinkingSeparator: lipgloss.NewStyle().
+			Foreground(colorLavender).
+			Faint(true).
+			PaddingLeft(2),
+
+		// New content indicator — shown when user has scrolled up
+		NewContentIndicator: lipgloss.NewStyle().
+			Background(colorAmber).
+			Foreground(colorBg).
+			Bold(true).
+			Padding(0, 1),
 
 		// Status bar — full-width surface strip
 		StatusBar: lipgloss.NewStyle().

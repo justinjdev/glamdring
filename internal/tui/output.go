@@ -13,6 +13,12 @@ import (
 const (
 	// maxToolResultLines is the max lines to show for a tool result before truncating.
 	maxToolResultLines = 30
+
+	// collapseThreshold is the line count above which tool results are collapsed.
+	collapseThreshold = 20
+
+	// collapsePreviewLines is the number of lines to show when a tool result is collapsed.
+	collapsePreviewLines = 5
 )
 
 // OutputModel wraps a bubbles viewport for displaying conversation output.
@@ -26,6 +32,12 @@ type OutputModel struct {
 	blocks []outputBlock
 	// userScrolled tracks whether the user has scrolled up from the bottom.
 	userScrolled bool
+	// hasNewContent is true when new content arrived while user is scrolled up.
+	hasNewContent bool
+
+	// collapsed tracks whether each tool result block is collapsed.
+	// Keyed by the block's index in the blocks slice.
+	collapsed map[int]bool
 
 	width int
 }
@@ -58,10 +70,11 @@ func NewOutputModel(styles Styles, width, height int) OutputModel {
 	)
 
 	return OutputModel{
-		viewport: vp,
-		styles:   styles,
-		renderer: r,
-		width:    width,
+		viewport:  vp,
+		styles:    styles,
+		renderer:  r,
+		width:     width,
+		collapsed: make(map[int]bool),
 	}
 }
 
@@ -77,13 +90,26 @@ func (m OutputModel) Update(msg tea.Msg) (OutputModel, tea.Cmd) {
 	// Track whether user has scrolled away from the bottom before updating.
 	atBottom := m.viewport.AtBottom()
 
-	m.viewport, cmd = m.viewport.Update(msg)
-
-	// After the viewport processes the message, determine if the user scrolled up.
-	switch msg.(type) {
-	case tea.KeyMsg, tea.MouseMsg:
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		cmd = m.handleScrollKey(msg)
 		m.userScrolled = !m.viewport.AtBottom()
+		// If user scrolled back to bottom, clear the new-content indicator.
+		if m.viewport.AtBottom() {
+			m.hasNewContent = false
+		}
+		return m, cmd
+
+	case tea.MouseMsg:
+		m.viewport, cmd = m.viewport.Update(msg)
+		m.userScrolled = !m.viewport.AtBottom()
+		if m.viewport.AtBottom() {
+			m.hasNewContent = false
+		}
+		return m, cmd
+
 	default:
+		m.viewport, cmd = m.viewport.Update(msg)
 		// For non-user messages, preserve the previous state.
 		if !atBottom {
 			m.userScrolled = true
@@ -93,9 +119,72 @@ func (m OutputModel) Update(msg tea.Msg) (OutputModel, tea.Cmd) {
 	return m, cmd
 }
 
-// View renders the output viewport.
+// handleScrollKey processes keyboard input for viewport scrolling.
+// Returns a tea.Cmd (always nil for scroll operations).
+func (m *OutputModel) handleScrollKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyUp:
+		m.viewport.LineUp(1)
+	case tea.KeyDown:
+		m.viewport.LineDown(1)
+	case tea.KeyPgUp:
+		m.viewport.ViewUp()
+	case tea.KeyPgDown:
+		m.viewport.ViewDown()
+	case tea.KeyHome:
+		m.viewport.GotoTop()
+	case tea.KeyEnd:
+		m.viewport.GotoBottom()
+	default:
+		switch msg.String() {
+		case "k":
+			m.viewport.LineUp(1)
+		case "j":
+			m.viewport.LineDown(1)
+		case "ctrl+u":
+			m.viewport.HalfViewUp()
+		case "ctrl+d":
+			m.viewport.HalfViewDown()
+		case "G":
+			m.viewport.GotoBottom()
+		case "g":
+			m.viewport.GotoTop()
+		default:
+			// Let the viewport handle anything else (mouse, etc.)
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			return cmd
+		}
+	}
+	return nil
+}
+
+// View renders the output viewport, plus a "new content below" indicator
+// when the user has scrolled up and new content has arrived.
 func (m OutputModel) View() string {
-	return m.viewport.View()
+	view := m.viewport.View()
+	if m.userScrolled && m.hasNewContent {
+		indicator := m.styles.NewContentIndicator.Render(" new content below ")
+		// Overlay the indicator at the bottom-right of the viewport.
+		viewLines := strings.Split(view, "\n")
+		if len(viewLines) > 0 {
+			lastIdx := len(viewLines) - 1
+			lastLine := viewLines[lastIdx]
+			indicatorWidth := lipgloss.Width(indicator)
+			lastLineWidth := lipgloss.Width(lastLine)
+			if lastLineWidth+indicatorWidth < m.width {
+				padding := m.width - indicatorWidth - 1
+				if padding < 0 {
+					padding = 0
+				}
+				viewLines[lastIdx] = strings.Repeat(" ", padding) + indicator
+			} else {
+				viewLines = append(viewLines, strings.Repeat(" ", m.width-indicatorWidth-1)+indicator)
+			}
+			return strings.Join(viewLines, "\n")
+		}
+	}
+	return view
 }
 
 // AppendUserMessage adds a styled user message header and text.
@@ -125,13 +214,20 @@ func (m *OutputModel) AppendToolCall(name, summary string) {
 	m.rerender()
 }
 
-// AppendToolResult adds a tool result block, truncating large output.
+// AppendToolResult adds a tool result block.
+// Results over collapseThreshold lines are collapsed by default.
 func (m *OutputModel) AppendToolResult(output string, isError bool) {
+	idx := len(m.blocks)
 	m.blocks = append(m.blocks, outputBlock{
 		kind:    blockToolResult,
 		content: output,
 		isError: isError,
 	})
+	// Auto-collapse large tool results.
+	lines := strings.Split(output, "\n")
+	if len(lines) > collapseThreshold {
+		m.collapsed[idx] = true
+	}
 	m.rerender()
 }
 
@@ -150,6 +246,20 @@ func (m *OutputModel) AppendThinking(s string) {
 func (m *OutputModel) AppendError(s string) {
 	m.blocks = append(m.blocks, outputBlock{kind: blockError, content: s})
 	m.rerender()
+}
+
+// ToggleCollapse toggles the collapsed state of the tool result block at
+// the given block index. Returns true if the index was valid and toggled.
+func (m *OutputModel) ToggleCollapse(blockIdx int) bool {
+	if blockIdx < 0 || blockIdx >= len(m.blocks) {
+		return false
+	}
+	if m.blocks[blockIdx].kind != blockToolResult {
+		return false
+	}
+	m.collapsed[blockIdx] = !m.collapsed[blockIdx]
+	m.rerender()
+	return true
 }
 
 // SetSize updates the viewport and re-renders content.
@@ -174,7 +284,7 @@ func (m *OutputModel) SetSize(width, height int) {
 func (m *OutputModel) rerender() {
 	var parts []string
 
-	for _, b := range m.blocks {
+	for i, b := range m.blocks {
 		switch b.kind {
 		case blockUserMessage:
 			header := m.styles.UserHeader.Render("\u2500\u2500 You ")
@@ -196,12 +306,7 @@ func (m *OutputModel) rerender() {
 			parts = append(parts, icon+" "+header)
 
 		case blockToolResult:
-			output := b.content
-			lines := strings.Split(output, "\n")
-			if len(lines) > maxToolResultLines {
-				output = strings.Join(lines[:maxToolResultLines], "\n")
-				output += fmt.Sprintf("\n... (%d lines truncated)", len(lines)-maxToolResultLines)
-			}
+			output := m.renderToolResult(i, b)
 			if b.isError {
 				parts = append(parts, m.styles.ToolResultErr.Render(output))
 			} else {
@@ -209,8 +314,7 @@ func (m *OutputModel) rerender() {
 			}
 
 		case blockThinking:
-			styled := m.styles.ThinkingText.Render(b.content)
-			parts = append(parts, m.styles.ThinkingBorder.Render(styled))
+			parts = append(parts, m.renderThinkingBlock(i, b))
 
 		case blockError:
 			parts = append(parts, m.styles.ErrorText.Render("error: "+b.content))
@@ -223,7 +327,57 @@ func (m *OutputModel) rerender() {
 	// Auto-scroll to bottom unless user has scrolled up.
 	if !m.userScrolled {
 		m.viewport.GotoBottom()
+	} else {
+		// Mark that there is new content the user hasn't seen.
+		m.hasNewContent = true
 	}
+}
+
+// renderToolResult renders a tool result block, handling collapse and truncation.
+func (m *OutputModel) renderToolResult(idx int, b outputBlock) string {
+	output := b.content
+	lines := strings.Split(output, "\n")
+	totalLines := len(lines)
+
+	// Check if this block is collapsed.
+	if m.collapsed[idx] && totalLines > collapseThreshold {
+		preview := strings.Join(lines[:collapsePreviewLines], "\n")
+		remaining := totalLines - collapsePreviewLines
+		return preview + fmt.Sprintf("\n... (%d more lines, press Enter to expand)", remaining)
+	}
+
+	// Even when expanded, hard-truncate extremely long output.
+	if totalLines > maxToolResultLines {
+		output = strings.Join(lines[:maxToolResultLines], "\n")
+		output += fmt.Sprintf("\n... (%d lines truncated)", totalLines-maxToolResultLines)
+	}
+
+	return output
+}
+
+// renderThinkingBlock renders a thinking block with lavender border, italic text,
+// and a visual separator between thinking and subsequent content.
+func (m *OutputModel) renderThinkingBlock(idx int, b outputBlock) string {
+	styled := m.styles.ThinkingText.Render(b.content)
+	block := m.styles.ThinkingBorder.Render(styled)
+
+	// Add a visual separator after the thinking block to distinguish it
+	// from the response text that follows.
+	separator := m.styles.ThinkingSeparator.Render(
+		strings.Repeat("\u2508", clamp(m.width/2, 1, 40)),
+	)
+	return block + "\n" + separator
+}
+
+// clamp constrains val between lo and hi.
+func clamp(val, lo, hi int) int {
+	if val < lo {
+		return lo
+	}
+	if val > hi {
+		return hi
+	}
+	return val
 }
 
 // renderMarkdown renders markdown text via glamour, falling back to plain text on error.

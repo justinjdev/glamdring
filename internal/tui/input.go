@@ -17,6 +17,9 @@ type InputModel struct {
 	textarea textarea.Model
 	styles   Styles
 	width    int
+
+	// slashCmd tracks tab-completion state for slash commands.
+	slashCmd SlashCommandState
 }
 
 // NewInputModel creates a configured input component.
@@ -59,6 +62,7 @@ func NewInputModel(styles Styles) InputModel {
 	return InputModel{
 		textarea: ta,
 		styles:   styles,
+		slashCmd: NewSlashCommandState(),
 	}
 }
 
@@ -81,6 +85,20 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 			}
 			return m, func() tea.Msg {
 				return SubmitMsg{Text: value}
+			}
+
+		case tea.KeyTab:
+			// Tab completion for slash commands.
+			value := m.textarea.Value()
+			if IsSlashCommand(value) {
+				completed := m.slashCmd.TabComplete(value)
+				if completed != value {
+					m.textarea.Reset()
+					m.textarea.SetValue(completed)
+					// Move cursor to end.
+					m.textarea.CursorEnd()
+				}
+				return m, nil
 			}
 		}
 	}
@@ -128,4 +146,19 @@ func (m *InputModel) SetWidth(w int) {
 // SetHeight updates the visible rows of the textarea.
 func (m *InputModel) SetHeight(h int) {
 	m.textarea.SetHeight(h)
+}
+
+// IsSlashCmd returns true if the current input text is a slash command.
+func (m InputModel) IsSlashCmd() bool {
+	return IsSlashCommand(m.textarea.Value())
+}
+
+// CmdName returns the command name if the input is a slash command.
+func (m InputModel) CmdName() string {
+	return CommandName(m.textarea.Value())
+}
+
+// SetAvailableCommands sets the list of slash command names for tab completion.
+func (m *InputModel) SetAvailableCommands(names []string) {
+	m.slashCmd.SetCommands(names)
 }
