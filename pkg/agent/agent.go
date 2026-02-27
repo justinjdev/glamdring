@@ -18,122 +18,21 @@ var alwaysAllowTools = map[string]bool{
 	"Grep": true,
 }
 
-// Run starts the agentic loop. It returns a channel of Messages that the
-// consumer reads to receive text deltas, tool calls, permission requests,
-// errors, and the final done signal. The channel is closed when the loop
-// terminates.
+// Run starts the agentic loop as a one-shot operation (no multi-turn memory).
+// It returns a channel of Messages that the consumer reads to receive text
+// deltas, tool calls, permission requests, errors, and the final done signal.
+// The channel is closed when the loop terminates.
+//
+// For multi-turn conversations with memory, use NewSession and Session.Turn.
 func Run(ctx context.Context, cfg Config) <-chan Message {
+	s := NewSession(cfg)
+	s.messages = []api.RequestMessage{{Role: "user", Content: cfg.Prompt}}
 	out := make(chan Message, 64)
-
 	go func() {
 		defer close(out)
-		run(ctx, cfg, out)
+		s.runTurn(ctx, out)
 	}()
-
 	return out
-}
-
-func run(ctx context.Context, cfg Config, out chan<- Message) {
-	// Create API client.
-	model := cfg.Model
-	if model == "" {
-		model = DefaultModel
-	}
-	client := api.NewClient(cfg.Creds, model)
-
-	// Create tool registry and register tools.
-	registry := tools.NewRegistry()
-	for _, t := range cfg.Tools {
-		registry.Register(t)
-	}
-
-	// Session-level set of tools that have been always-approved by the user.
-	sessionAllow := make(map[string]bool)
-
-	// Build initial conversation messages.
-	messages := []api.RequestMessage{
-		{Role: "user", Content: cfg.Prompt},
-	}
-
-	// Cumulative token usage across turns.
-	var totalInput, totalOutput int
-
-	turns := 0
-	for {
-		// Check context before starting a new turn.
-		if err := ctx.Err(); err != nil {
-			emit(ctx, out, Message{Type: MessageError, Err: fmt.Errorf("context cancelled: %w", err)})
-			return
-		}
-
-		// Build the API request.
-		req := &api.MessageRequest{
-			MaxTokens: 16384,
-			Messages:  messages,
-			System:    cfg.SystemPrompt,
-			Tools:     registry.Schemas(),
-		}
-
-		// Stream the response.
-		events, err := client.Stream(ctx, req)
-		if err != nil {
-			emit(ctx, out, Message{Type: MessageError, Err: fmt.Errorf("api stream: %w", err)})
-			return
-		}
-
-		// Process the stream for this turn.
-		turnResult, err := processTurn(ctx, events, out)
-		if err != nil {
-			emit(ctx, out, Message{Type: MessageError, Err: err})
-			return
-		}
-
-		// Accumulate token usage.
-		totalInput += turnResult.inputTokens
-		totalOutput += turnResult.outputTokens
-
-		// Append the assistant response to the conversation.
-		messages = append(messages, api.RequestMessage{
-			Role:    "assistant",
-			Content: turnResult.contentBlocks,
-		})
-
-		// If stop reason is end_turn or refusal, we're done.
-		if turnResult.stopReason == "end_turn" || turnResult.stopReason == "refusal" {
-			emit(ctx, out, Message{
-				Type:         MessageDone,
-				InputTokens:  totalInput,
-				OutputTokens: totalOutput,
-			})
-			return
-		}
-
-		// If stop reason is tool_use, execute the tools.
-		if turnResult.stopReason == "tool_use" {
-			toolResults, err := executeTools(ctx, out, registry, turnResult.toolCalls, sessionAllow, cfg.HookRunner)
-			if err != nil {
-				emit(ctx, out, Message{Type: MessageError, Err: err})
-				return
-			}
-
-			// Append tool results as a user message.
-			resultBlocks := make([]api.ContentBlock, len(toolResults))
-			for i, r := range toolResults {
-				resultBlocks[i] = r
-			}
-			messages = append(messages, api.RequestMessage{
-				Role:    "user",
-				Content: resultBlocks,
-			})
-		}
-
-		// Increment turn counter and check limit.
-		turns++
-		if cfg.MaxTurns > 0 && turns >= cfg.MaxTurns {
-			emit(ctx, out, Message{Type: MessageMaxTurnsReached})
-			return
-		}
-	}
 }
 
 // turnResult holds the collected state from processing a single streamed response.

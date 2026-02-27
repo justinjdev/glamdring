@@ -17,7 +17,7 @@ type readInput struct {
 	Limit    int    `json:"limit"`
 }
 
-func (ReadTool) Name() string        { return "read" }
+func (ReadTool) Name() string        { return "Read" }
 func (ReadTool) Description() string { return "Read file contents with line numbers" }
 
 func (ReadTool) Schema() json.RawMessage {

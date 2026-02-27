@@ -30,7 +30,7 @@ type grepInput struct {
 	CaseInsensitive bool   `json:"case_insensitive"`
 }
 
-func (GrepTool) Name() string        { return "grep" }
+func (GrepTool) Name() string        { return "Grep" }
 func (GrepTool) Description() string { return "Search file contents with regex" }
 
 func (GrepTool) Schema() json.RawMessage {

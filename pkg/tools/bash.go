@@ -21,7 +21,7 @@ type bashInput struct {
 	Timeout int    `json:"timeout"` // milliseconds
 }
 
-func (BashTool) Name() string        { return "bash" }
+func (BashTool) Name() string        { return "Bash" }
 func (BashTool) Description() string { return "Execute a shell command" }
 
 func (BashTool) Schema() json.RawMessage {

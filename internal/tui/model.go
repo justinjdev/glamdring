@@ -52,6 +52,7 @@ type Model struct {
 	// agent wiring
 	ctx      context.Context
 	agentCfg agent.Config
+	session  *agent.Session
 	agentCh  <-chan agent.Message
 
 	// slash command expansion
@@ -327,14 +328,16 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	m.turnModifiedFiles = false
 	m.state = StateRunning
 
-	cfg := m.agentCfg
-	cfg.Prompt = prompt
 	ctx := m.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	return m, listenToAgent(ctx, cfg)
+	if m.session == nil {
+		m.session = agent.NewSession(m.agentCfg)
+	}
+	ch := m.session.Turn(ctx, prompt)
+	return m, func() tea.Msg { return agentStartedMsg{ch: ch} }
 }
 
 // listenToAgent starts the agent loop and returns a Cmd that delivers messages.
@@ -424,6 +427,9 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 			m.output.AppendSystem("Context compacted. Checkpoint saved to tmp/checkpoint.md.")
 			if summary != "" {
 				m.output.AppendSystem(summary)
+			}
+			if m.session != nil {
+				m.session.Reset()
 			}
 		}
 

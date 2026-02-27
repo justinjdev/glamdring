@@ -18,7 +18,7 @@ type editInput struct {
 	ReplaceAll bool   `json:"replace_all"`
 }
 
-func (EditTool) Name() string        { return "edit" }
+func (EditTool) Name() string        { return "Edit" }
 func (EditTool) Description() string { return "Exact string replacement in a file" }
 
 func (EditTool) Schema() json.RawMessage {

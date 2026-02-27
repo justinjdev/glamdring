@@ -16,7 +16,7 @@ type writeInput struct {
 	Content  string `json:"content"`
 }
 
-func (WriteTool) Name() string        { return "write" }
+func (WriteTool) Name() string        { return "Write" }
 func (WriteTool) Description() string { return "Create or overwrite a file" }
 
 func (WriteTool) Schema() json.RawMessage {

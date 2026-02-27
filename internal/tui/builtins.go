@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/justin/glamdring/pkg/agent"
 	"github.com/justin/glamdring/pkg/index"
 )
 
@@ -89,7 +90,7 @@ func cmdQuit(m *Model, args string) tea.Cmd {
 	return tea.Quit
 }
 
-// cmdClear resets the output viewport and token counters.
+// cmdClear resets the output viewport, token counters, and conversation history.
 func cmdClear(m *Model, args string) tea.Cmd {
 	m.output.Clear()
 	m.statusbar.Reset()
@@ -97,6 +98,9 @@ func cmdClear(m *Model, args string) tea.Cmd {
 	m.totalOutputTokens = 0
 	m.turn = 0
 	m.statusbar.Update(m.agentCfg.Model, 0, 0, 0)
+	if m.session != nil {
+		m.session.Reset()
+	}
 	return nil
 }
 
@@ -158,6 +162,7 @@ func cmdModel(m *Model, args string) tea.Cmd {
 	}
 
 	m.agentCfg.Model = args
+	m.session = nil // force recreation with new model on next submit
 	m.statusbar.Update(args, m.totalInputTokens, m.totalOutputTokens, m.turn)
 	m.output.AppendSystem(fmt.Sprintf("Model changed to: %s", args))
 	return nil
@@ -168,16 +173,16 @@ func cmdCompact(m *Model, args string) tea.Cmd {
 	m.compacting = true
 	m.state = StateRunning
 
-	cfg := m.agentCfg
-	cfg.Prompt = compactPrompt
-	cfg.MaxTurns = 1
-
 	ctx := m.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	return listenToAgent(ctx, cfg)
+	if m.session == nil {
+		m.session = agent.NewSession(m.agentCfg)
+	}
+	ch := m.session.Turn(ctx, compactPrompt)
+	return func() tea.Msg { return agentStartedMsg{ch: ch} }
 }
 
 // cmdIndex shows index status or triggers a rebuild via shire.
