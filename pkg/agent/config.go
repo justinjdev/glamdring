@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/justin/glamdring/pkg/auth"
 	"github.com/justin/glamdring/pkg/hooks"
 	"github.com/justin/glamdring/pkg/tools"
 )
@@ -9,7 +10,7 @@ import (
 type Config struct {
 	Prompt       string
 	Model        string
-	APIKey       string
+	Creds        auth.Credentials
 	SystemPrompt string
 	Tools        []tools.Tool
 	MaxTurns     int

@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/justin/glamdring/pkg/auth"
 )
 
 const (
@@ -17,16 +19,16 @@ const (
 
 // Client is the HTTP client for the Claude Messages API.
 type Client struct {
-	apiKey     string
+	creds      auth.Credentials
 	model      string
 	httpClient *http.Client
 	endpoint   string
 }
 
-// NewClient creates a new API client for the given API key and model.
-func NewClient(apiKey, model string) *Client {
+// NewClient creates a new API client for the given credentials and model.
+func NewClient(creds auth.Credentials, model string) *Client {
 	return &Client{
-		apiKey:     apiKey,
+		creds:      creds,
 		model:      model,
 		httpClient: &http.Client{},
 		endpoint:   defaultEndpoint,
@@ -107,7 +109,9 @@ func (c *Client) doWithRetry(ctx context.Context, body []byte) (*http.Response, 
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("x-api-key", c.apiKey)
+		if err := c.creds.SetAuthHeaders(req); err != nil {
+			return nil, fmt.Errorf("set auth headers: %w", err)
+		}
 		req.Header.Set("anthropic-version", anthropicVersion)
 
 		resp, err := c.httpClient.Do(req)
@@ -130,6 +134,36 @@ func (c *Client) doWithRetry(ctx context.Context, body []byte) (*http.Response, 
 		// Read the error body for the error message.
 		errBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+
+		// OAuth 401 handling: refresh token and retry exactly once.
+		if resp.StatusCode == http.StatusUnauthorized && c.creds.IsOAuth() {
+			oauthCreds := c.creds.(*auth.OAuthCredentials)
+			if err := oauthCreds.Refresh(); err != nil {
+				return nil, parseAPIError(resp.StatusCode, errBody)
+			}
+
+			// Retry the request with refreshed credentials.
+			retryReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+			if err != nil {
+				return nil, fmt.Errorf("create retry request: %w", err)
+			}
+			retryReq.Header.Set("Content-Type", "application/json")
+			if err := c.creds.SetAuthHeaders(retryReq); err != nil {
+				return nil, fmt.Errorf("set auth headers on retry: %w", err)
+			}
+			retryReq.Header.Set("anthropic-version", anthropicVersion)
+
+			retryResp, err := c.httpClient.Do(retryReq)
+			if err != nil {
+				return nil, fmt.Errorf("http request after token refresh: %w", err)
+			}
+			if retryResp.StatusCode == http.StatusOK {
+				return retryResp, nil
+			}
+			retryBody, _ := io.ReadAll(retryResp.Body)
+			retryResp.Body.Close()
+			return nil, parseAPIError(retryResp.StatusCode, retryBody)
+		}
 
 		// Non-retryable error — return immediately.
 		if !shouldRetry(resp.StatusCode) {

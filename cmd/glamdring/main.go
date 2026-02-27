@@ -12,6 +12,7 @@ import (
 	"github.com/justin/glamdring/internal/tui"
 	"github.com/justin/glamdring/pkg/agent"
 	"github.com/justin/glamdring/pkg/agents"
+	"github.com/justin/glamdring/pkg/auth"
 	"github.com/justin/glamdring/pkg/commands"
 	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/hooks"
@@ -20,13 +21,32 @@ import (
 )
 
 func main() {
+	// Handle subcommands before flag parsing.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "login":
+			if err := auth.Login(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "logout":
+			if err := auth.Logout(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+
 	cwd := flag.String("cwd", "", "working directory (defaults to current directory)")
 	model := flag.String("model", "", "Claude model to use (overrides settings)")
 	flag.Parse()
 
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		fmt.Fprintln(os.Stderr, "error: ANTHROPIC_API_KEY environment variable is not set")
+	creds, err := auth.Resolve()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Run 'glamdring login' to authenticate with your Claude account, or set ANTHROPIC_API_KEY.")
 		os.Exit(1)
 	}
 
@@ -73,7 +93,7 @@ func main() {
 
 	// Build the subagent runner: a closure that wraps agent.Run and bridges
 	// the agent.Message channel into the tools.SubagentResult channel.
-	subagentRunner := makeSubagentRunner(apiKey, settings.Model)
+	subagentRunner := makeSubagentRunner(creds, settings.Model)
 
 	// Build the tool set including Task and MCP tools.
 	taskTool := tools.NewTaskTool(subagentRunner, agentDefs, tools.DefaultTools(workDir))
@@ -98,7 +118,7 @@ func main() {
 
 	cfg := agent.Config{
 		Model:        settings.Model,
-		APIKey:       apiKey,
+		Creds:        creds,
 		SystemPrompt: systemPrompt,
 		Tools:        allTools,
 		MaxTurns:     settings.MaxTurns,
@@ -117,15 +137,15 @@ func main() {
 }
 
 // makeSubagentRunner returns a SubagentRunner that wraps agent.Run. It
-// captures the API key and model so subagents share the parent's credentials.
-func makeSubagentRunner(apiKey, model string) tools.SubagentRunner {
+// captures the credentials and model so subagents share the parent's auth.
+func makeSubagentRunner(creds auth.Credentials, model string) tools.SubagentRunner {
 	return func(ctx context.Context, opts tools.SubagentOptions) <-chan tools.SubagentResult {
 		resultCh := make(chan tools.SubagentResult, 64)
 
 		cfg := agent.Config{
 			Prompt:       opts.Prompt,
 			SystemPrompt: opts.SystemPrompt,
-			APIKey:       apiKey,
+			Creds:        creds,
 			Model:        model,
 			Tools:        opts.Tools,
 			MaxTurns:     opts.MaxTurns,

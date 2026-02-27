@@ -39,7 +39,7 @@ func run(ctx context.Context, cfg Config, out chan<- Message) {
 	if model == "" {
 		model = DefaultModel
 	}
-	client := api.NewClient(cfg.APIKey, model)
+	client := api.NewClient(cfg.Creds, model)
 
 	// Create tool registry and register tools.
 	registry := tools.NewRegistry()
