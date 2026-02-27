@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 
@@ -11,7 +12,10 @@ import (
 	"github.com/justin/glamdring/internal/tui"
 	"github.com/justin/glamdring/pkg/agent"
 	"github.com/justin/glamdring/pkg/agents"
+	"github.com/justin/glamdring/pkg/commands"
 	"github.com/justin/glamdring/pkg/config"
+	"github.com/justin/glamdring/pkg/hooks"
+	"github.com/justin/glamdring/pkg/mcp"
 	"github.com/justin/glamdring/pkg/tools"
 )
 
@@ -48,13 +52,33 @@ func main() {
 	// Discover custom agent definitions.
 	agentDefs := agents.NewRegistry(agents.Discover(workDir))
 
+	// Discover slash commands.
+	cmdRegistry := commands.NewRegistry(commands.Discover(workDir))
+
+	// Load hooks.
+	hookRunner := hooks.NewHookRunner(hooks.LoadHooks(workDir))
+
+	// Create a cancellable context (needed for MCP servers and agent).
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	// Start MCP servers if configured.
+	mcpMgr := mcp.NewManager()
+	defer mcpMgr.Close()
+	for name, serverCfg := range settings.MCPServers {
+		if err := mcpMgr.StartServer(ctx, name, serverCfg); err != nil {
+			log.Printf("warning: failed to start MCP server %q: %v", name, err)
+		}
+	}
+
 	// Build the subagent runner: a closure that wraps agent.Run and bridges
 	// the agent.Message channel into the tools.SubagentResult channel.
 	subagentRunner := makeSubagentRunner(apiKey, settings.Model)
 
-	// Build the tool set including Task.
+	// Build the tool set including Task and MCP tools.
 	taskTool := tools.NewTaskTool(subagentRunner, agentDefs, tools.DefaultTools(workDir))
 	allTools := tools.DefaultToolsWithTask(workDir, taskTool)
+	allTools = append(allTools, mcpMgr.Tools()...)
 
 	// Build tool descriptions for the system prompt.
 	var toolDescs []config.ToolDescription
@@ -72,9 +96,6 @@ func main() {
 		claudeMDUser,
 	)
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
 	cfg := agent.Config{
 		Model:        settings.Model,
 		APIKey:       apiKey,
@@ -82,9 +103,11 @@ func main() {
 		Tools:        allTools,
 		MaxTurns:     settings.MaxTurns,
 		CWD:          workDir,
+		HookRunner:   hookRunner,
 	}
 
 	m := tui.NewWithAgent(ctx, cfg)
+	m.SetCommandRegistry(cmdRegistry)
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

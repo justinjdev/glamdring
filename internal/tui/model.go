@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justin/glamdring/pkg/agent"
+	"github.com/justin/glamdring/pkg/commands"
 )
 
 // State represents the current UI mode.
@@ -43,6 +44,9 @@ type Model struct {
 	agentCfg agent.Config
 	agentCh  <-chan agent.Message
 
+	// slash command expansion
+	cmdRegistry *commands.Registry
+
 	// cumulative token tracking
 	totalInputTokens  int
 	totalOutputTokens int
@@ -67,6 +71,12 @@ func NewWithAgent(ctx context.Context, cfg agent.Config) Model {
 	m.ctx = ctx
 	m.agentCfg = cfg
 	return m
+}
+
+// SetCommandRegistry sets the slash command registry for expansion and tab completion.
+func (m *Model) SetCommandRegistry(r *commands.Registry) {
+	m.cmdRegistry = r
+	m.input.SetAvailableCommands(r.Names())
 }
 
 // Init initializes the TUI.
@@ -178,11 +188,25 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	m.input.Reset()
 	m.input.Blur()
 
+	// Expand slash commands before sending to the agent.
+	prompt := msg.Text
+	if IsSlashCommand(prompt) && m.cmdRegistry != nil {
+		cmdName := CommandName(prompt)
+		args := CommandArgs(prompt)
+		expanded, err := m.cmdRegistry.Expand(cmdName, args)
+		if err != nil {
+			m.output.AppendError(fmt.Sprintf("unknown command: /%s", cmdName))
+			m.state = StateInput
+			return m, m.input.Focus()
+		}
+		prompt = expanded
+	}
+
 	m.turn++
 	m.state = StateRunning
 
 	cfg := m.agentCfg
-	cfg.Prompt = msg.Text
+	cfg.Prompt = prompt
 	ctx := m.ctx
 	if ctx == nil {
 		ctx = context.Background()

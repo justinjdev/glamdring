@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/justin/glamdring/pkg/api"
+	"github.com/justin/glamdring/pkg/hooks"
 	"github.com/justin/glamdring/pkg/tools"
 )
 
@@ -109,7 +110,7 @@ func run(ctx context.Context, cfg Config, out chan<- Message) {
 
 		// If stop reason is tool_use, execute the tools.
 		if turnResult.stopReason == "tool_use" {
-			toolResults, err := executeTools(ctx, out, registry, turnResult.toolCalls, sessionAllow)
+			toolResults, err := executeTools(ctx, out, registry, turnResult.toolCalls, sessionAllow, cfg.HookRunner)
 			if err != nil {
 				emit(ctx, out, Message{Type: MessageError, Err: err})
 				return
@@ -266,6 +267,7 @@ func executeTools(
 	registry *tools.Registry,
 	calls []toolCall,
 	sessionAllow map[string]bool,
+	hookRunner *hooks.HookRunner,
 ) ([]api.ContentBlock, error) {
 	results := make([]api.ContentBlock, 0, len(calls))
 
@@ -288,6 +290,27 @@ func executeTools(
 			ToolID:    tc.id,
 			ToolInput: inputMap,
 		})
+
+		// Run PreToolUse hooks. A failure blocks the tool.
+		if hookRunner != nil {
+			if err := hookRunner.Run(ctx, hooks.PreToolUse, tc.name, tc.input); err != nil {
+				errMsg := fmt.Sprintf("blocked by hook: %s", err.Error())
+				results = append(results, api.ContentBlock{
+					Type:      "tool_result",
+					ToolUseID: tc.id,
+					Content:   errMsg,
+					IsError:   true,
+				})
+				emit(ctx, out, Message{
+					Type:        MessageToolResult,
+					ToolName:    tc.name,
+					ToolID:      tc.id,
+					ToolOutput:  errMsg,
+					ToolIsError: true,
+				})
+				continue
+			}
+		}
 
 		// Check permissions.
 		if !isAllowed(tc.name, sessionAllow) {
@@ -368,6 +391,11 @@ func executeTools(
 			ToolOutput:  toolResult.Output,
 			ToolIsError: toolResult.IsError,
 		})
+
+		// Run PostToolUse hooks (failures are warnings, not blocking).
+		if hookRunner != nil {
+			_ = hookRunner.Run(ctx, hooks.PostToolUse, tc.name, tc.input)
+		}
 	}
 
 	return results, nil
