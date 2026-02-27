@@ -92,15 +92,6 @@ func (t GlobTool) Execute(ctx context.Context, input json.RawMessage) (Result, e
 		limit = defaultGlobLimit
 	}
 
-	// Check if pattern explicitly targets a noise directory.
-	patternTargetsNoise := false
-	for dir := range noiseDirectories {
-		if strings.Contains(in.Pattern, dir+"/") || strings.HasPrefix(in.Pattern, dir) {
-			patternTargetsNoise = true
-			break
-		}
-	}
-
 	var matches []fileWithTime
 	hitLimit := false
 
@@ -114,9 +105,11 @@ func (t GlobTool) Execute(ctx context.Context, input json.RawMessage) (Result, e
 
 		if d.IsDir() {
 			name := d.Name()
-			// Skip noise directories unless pattern explicitly targets them.
-			if !patternTargetsNoise && noiseDirectories[name] && path != root {
-				return filepath.SkipDir
+			// Skip noise directories unless pattern explicitly targets this specific dir.
+			if noiseDirectories[name] && path != root {
+				if !strings.Contains(in.Pattern, name+"/") && !strings.HasPrefix(in.Pattern, name) {
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}

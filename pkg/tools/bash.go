@@ -152,11 +152,16 @@ func (t BashTool) executeBackground(_ context.Context, command string) (Result, 
 	go func() {
 		defer close(bp.Done)
 		err := cmd.Wait()
-		bp.Output = buildOutput(stdout.Bytes(), stderr.Bytes(), 0)
-		if err != nil {
-			bp.Err = err
+		exitCode := 0
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
 		}
-		bp.Output = truncateOutput(bp.Output)
+		output := truncateOutput(buildOutput(stdout.Bytes(), stderr.Bytes(), exitCode))
+
+		bgMu.Lock()
+		bp.Output = output
+		bp.Err = err
+		bgMu.Unlock()
 	}()
 
 	return Result{Output: fmt.Sprintf("background process started with PID %d", pid)}, nil
@@ -193,5 +198,11 @@ func truncateOutput(output string) string {
 		start = 0
 	}
 	kept := lines[start:]
-	return fmt.Sprintf("... (output truncated, showing last %d lines)\n%s", len(kept), strings.Join(kept, "\n"))
+	result := fmt.Sprintf("... (output truncated, showing last %d lines)\n%s", len(kept), strings.Join(kept, "\n"))
+
+	// Enforce byte size cap — line selection alone may not be enough for long lines.
+	if len(result) > maxOutputSize {
+		result = "... (output truncated)\n" + result[len(result)-maxOutputSize:]
+	}
+	return result
 }
