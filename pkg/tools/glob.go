@@ -23,7 +23,7 @@ type globInput struct {
 	Path    string `json:"path"`
 }
 
-func (GlobTool) Name() string        { return "glob" }
+func (GlobTool) Name() string        { return "Glob" }
 func (GlobTool) Description() string { return "Find files matching a glob pattern" }
 
 func (GlobTool) Schema() json.RawMessage {

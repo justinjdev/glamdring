@@ -15,7 +15,8 @@ type MessageRequest struct {
 
 // ThinkingConfig controls extended thinking behavior.
 type ThinkingConfig struct {
-	Type string `json:"type"`
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
 }
 
 // RequestMessage is a single message in the conversation history.
@@ -46,7 +47,8 @@ type ContentBlock struct {
 	Text string `json:"text,omitempty"`
 
 	// type: "thinking"
-	Thinking string `json:"thinking,omitempty"`
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"`
 
 	// type: "tool_use"
 	ID    string          `json:"id,omitempty"`

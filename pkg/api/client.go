@@ -40,6 +40,12 @@ func (c *Client) Model() string {
 	return c.model
 }
 
+// SetEndpoint overrides the API endpoint URL. This is intended for testing
+// with httptest servers.
+func (c *Client) SetEndpoint(url string) {
+	c.endpoint = url
+}
+
 // supportsThinking returns true if the model supports adaptive thinking.
 func (c *Client) supportsThinking() bool {
 	m := strings.ToLower(c.model)
@@ -56,7 +62,10 @@ func (c *Client) Stream(ctx context.Context, req *MessageRequest) (<-chan Stream
 
 	// Enable adaptive thinking for supported models.
 	if c.supportsThinking() && req.Thinking == nil {
-		req.Thinking = &ThinkingConfig{Type: "adaptive"}
+		req.Thinking = &ThinkingConfig{
+			Type:         "enabled",
+			BudgetTokens: 10000,
+		}
 	}
 
 	body, err := json.Marshal(req)
