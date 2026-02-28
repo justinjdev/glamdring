@@ -125,6 +125,7 @@ func (s *StatusBar) UpdateMCP(total, alive int) {
 }
 
 // Reset zeroes all counters (used by /clear).
+// MCP counts intentionally preserved — servers survive /clear.
 func (s *StatusBar) Reset() {
 	s.inputTokens = 0
 	s.outputTokens = 0

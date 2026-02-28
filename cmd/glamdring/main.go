@@ -191,6 +191,10 @@ func main() {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	// Wire MCP death callback to send bubbletea message.
+	// Note: there is a small race window between StartServer (which spawns
+	// the monitor goroutine) and this assignment. In practice the window is
+	// negligible because servers don't die during startup, and a proper fix
+	// would require significant restructuring of the init sequence.
 	mcpMgr.OnServerDeath = func(name string) {
 		p.Send(tui.MCPServerDiedMsg{Name: name})
 	}

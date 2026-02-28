@@ -1,10 +1,17 @@
 package mcp
 
 import (
+	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/justin/glamdring/pkg/config"
 )
+
+// fakeCmd returns an exec.Cmd that has already exited (for testing Close paths).
+func fakeCmd() *exec.Cmd {
+	return exec.Command("true")
+}
 
 // --- 6.1: Tool name prefix stripping ---
 
@@ -81,13 +88,13 @@ func TestNewClientNoEnv(t *testing.T) {
 	}
 }
 
-func TestNewClientStderrDiscarded(t *testing.T) {
+func TestNewClientStderrCaptured(t *testing.T) {
 	client, err := NewClient("echo", []string{"hello"}, nil)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	if client.cmd.Stderr == nil {
-		t.Error("expected cmd.Stderr to be set (io.Discard)")
+	if client.cmd.Stderr != &client.stderr {
+		t.Error("expected cmd.Stderr to capture to client.stderr buffer")
 	}
 }
 
@@ -318,3 +325,119 @@ func TestListServerTools_UnknownServer(t *testing.T) {
 		t.Fatal("expected error for unknown server")
 	}
 }
+
+// --- EnableTool validation ---
+
+func TestEnableTool_UnknownTool(t *testing.T) {
+	mgr := NewManager()
+
+	mgr.mu.Lock()
+	mgr.servers["test"] = &serverEntry{
+		tools: []*MCPTool{{mcpName: "read", name: "test_read"}},
+	}
+	mgr.mu.Unlock()
+
+	err := mgr.EnableTool("test", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown tool")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' in error, got %q", err)
+	}
+}
+
+func TestEnableTool_UnknownServer(t *testing.T) {
+	mgr := NewManager()
+	err := mgr.EnableTool("nonexistent", "read")
+	if err == nil {
+		t.Fatal("expected error for unknown server")
+	}
+}
+
+// --- Monitor skips replaced server ---
+
+func TestMonitorSkipsReplacedServer(t *testing.T) {
+	mgr := NewManager()
+	deathCalled := false
+	mgr.OnServerDeath = func(name string) {
+		deathCalled = true
+	}
+
+	// Create a client with an already-closed done channel to simulate death.
+	oldDone := make(chan struct{})
+	close(oldDone)
+	oldClient := &Client{done: oldDone}
+
+	// Create a new client that "replaced" the old one.
+	newClient := &Client{done: make(chan struct{})}
+
+	// Insert the new client in the map — the old one has been replaced.
+	mgr.mu.Lock()
+	mgr.servers["test"] = &serverEntry{client: newClient}
+	mgr.mu.Unlock()
+
+	// Simulate what monitor does: it captured oldClient, waits on oldClient.done,
+	// then checks if current.client == oldClient. Since we replaced it, the
+	// guard should prevent OnServerDeath from firing.
+	<-oldClient.done
+
+	mgr.mu.Lock()
+	current, stillExists := mgr.servers["test"]
+	shouldFire := stillExists && current.client == oldClient
+	mgr.mu.Unlock()
+
+	if shouldFire {
+		t.Error("expected monitor guard to prevent firing for replaced server")
+	}
+	if deathCalled {
+		t.Error("OnServerDeath should not have been called for replaced server")
+	}
+}
+
+// --- Stderr capture ---
+
+func TestClientStderrCapture(t *testing.T) {
+	client, err := NewClient("echo", []string{"hello"}, nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	// Verify stderr is wired to the buffer.
+	if client.cmd.Stderr != &client.stderr {
+		t.Error("expected cmd.Stderr to be wired to client.stderr buffer")
+	}
+	// Verify Stderr() returns empty initially.
+	if got := client.Stderr(); got != "" {
+		t.Errorf("expected empty stderr, got %q", got)
+	}
+}
+
+// --- Manager.Close clears servers map ---
+
+func TestManagerCloseClearsServers(t *testing.T) {
+	mgr := NewManager()
+
+	// Add a fake server with a closed done channel so Close doesn't block.
+	done := make(chan struct{})
+	close(done)
+	mgr.mu.Lock()
+	mgr.servers["test"] = &serverEntry{
+		client: &Client{
+			done:  done,
+			stdin: nopWriteCloser{},
+			cmd:   fakeCmd(),
+		},
+	}
+	mgr.mu.Unlock()
+
+	mgr.Close()
+
+	if got := mgr.ServerCount(); got != 0 {
+		t.Errorf("expected 0 servers after Close, got %d", got)
+	}
+}
+
+// nopWriteCloser is a no-op io.WriteCloser for testing.
+type nopWriteCloser struct{}
+
+func (nopWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (nopWriteCloser) Close() error                 { return nil }

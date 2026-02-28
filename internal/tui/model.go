@@ -187,17 +187,21 @@ type MCPServerDiedMsg struct {
 
 // refreshMCPTools rebuilds the agent tool list with current MCP tools and
 // resets the session so the next turn picks up the changes.
+// Tool order matches main.go: base -> index -> MCP.
 func (m *Model) refreshMCPTools() {
 	var newTools []tools.Tool
 	newTools = append(newTools, m.baseTools...)
-	if m.mcpMgr != nil {
-		newTools = append(newTools, m.mcpMgr.Tools()...)
-	}
 	if m.indexDB != nil {
 		newTools = append(newTools, index.Tools(m.indexDB)...)
 	}
+	if m.mcpMgr != nil {
+		newTools = append(newTools, m.mcpMgr.Tools()...)
+	}
 	m.agentCfg.Tools = newTools
-	m.session = nil
+	if m.session != nil {
+		m.session = nil
+		m.output.AppendSystem("(session reset — tool configuration changed)")
+	}
 }
 
 // Init initializes the TUI.
