@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
+	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/tools"
 )
 
@@ -39,6 +39,17 @@ func (s *ScopedTool) Execute(ctx context.Context, input json.RawMessage) (tools.
 	return s.inner.Execute(ctx, input)
 }
 
+// ExecuteStreaming implements tools.StreamingTool if the inner tool supports it.
+func (s *ScopedTool) ExecuteStreaming(ctx context.Context, input json.RawMessage, onOutput func(string)) (tools.Result, error) {
+	if err := s.checkPath(input); err != "" {
+		return tools.Result{Output: err, IsError: true}, nil
+	}
+	if st, ok := s.inner.(tools.StreamingTool); ok {
+		return st.ExecuteStreaming(ctx, input, onOutput)
+	}
+	return s.inner.Execute(ctx, input)
+}
+
 func (s *ScopedTool) checkPath(input json.RawMessage) string {
 	var parsed struct {
 		FilePath string `json:"file_path"`
@@ -53,7 +64,7 @@ func (s *ScopedTool) checkPath(input json.RawMessage) string {
 
 	// Check deny patterns first: if any match, block.
 	for _, pattern := range s.denyPatterns {
-		if matched, _ := filepath.Match(pattern, parsed.FilePath); matched {
+		if config.MatchGlobPattern(pattern, parsed.FilePath) {
 			return fmt.Sprintf("file path %q is outside the allowed scope for this agent", parsed.FilePath)
 		}
 	}
@@ -62,7 +73,7 @@ func (s *ScopedTool) checkPath(input json.RawMessage) string {
 	if len(s.allowPatterns) > 0 {
 		allowed := false
 		for _, pattern := range s.allowPatterns {
-			if matched, _ := filepath.Match(pattern, parsed.FilePath); matched {
+			if config.MatchGlobPattern(pattern, parsed.FilePath) {
 				allowed = true
 				break
 			}
@@ -75,7 +86,7 @@ func (s *ScopedTool) checkPath(input json.RawMessage) string {
 	return ""
 }
 
-// ScopedBash wraps a Bash tool for advisory command filtering.
+// ScopedBash wraps a Bash tool to enforce command prefix restrictions.
 type ScopedBash struct {
 	inner         tools.Tool
 	allowCommands []string
@@ -154,30 +165,42 @@ func (d *FileLockDecorator) Description() string      { return d.inner.Descripti
 func (d *FileLockDecorator) Schema() json.RawMessage  { return d.inner.Schema() }
 
 func (d *FileLockDecorator) Execute(ctx context.Context, input json.RawMessage) (tools.Result, error) {
+	if errMsg := d.checkFileLock(input); errMsg != "" {
+		return tools.Result{Output: errMsg, IsError: true}, nil
+	}
+	return d.inner.Execute(ctx, input)
+}
+
+// ExecuteStreaming implements tools.StreamingTool if the inner tool supports it.
+func (d *FileLockDecorator) ExecuteStreaming(ctx context.Context, input json.RawMessage, onOutput func(string)) (tools.Result, error) {
+	if errMsg := d.checkFileLock(input); errMsg != "" {
+		return tools.Result{Output: errMsg, IsError: true}, nil
+	}
+	if st, ok := d.inner.(tools.StreamingTool); ok {
+		return st.ExecuteStreaming(ctx, input, onOutput)
+	}
+	return d.inner.Execute(ctx, input)
+}
+
+func (d *FileLockDecorator) checkFileLock(input json.RawMessage) string {
 	var parsed struct {
 		FilePath string `json:"file_path"`
 	}
 	if err := json.Unmarshal(input, &parsed); err != nil {
-		return tools.Result{Output: fmt.Sprintf("invalid input: %s", err), IsError: true}, nil
+		return fmt.Sprintf("invalid input: %s", err)
 	}
 	if parsed.FilePath != "" {
 		owner, locked := d.locks.Check(parsed.FilePath)
 		if locked && owner != d.agent {
-			return tools.Result{
-				Output:  fmt.Sprintf("file %q is locked by agent %q", parsed.FilePath, owner),
-				IsError: true,
-			}, nil
+			return fmt.Sprintf("file %q is locked by agent %q", parsed.FilePath, owner)
 		}
 		if !locked {
 			if err := d.locks.Acquire(parsed.FilePath, d.agent); err != nil {
-				return tools.Result{
-					Output:  fmt.Sprintf("failed to acquire lock on %q: %s", parsed.FilePath, err),
-					IsError: true,
-				}, nil
+				return fmt.Sprintf("failed to acquire lock on %q: %s", parsed.FilePath, err)
 			}
 		}
 	}
-	return d.inner.Execute(ctx, input)
+	return ""
 }
 
 // CheckinGateDecorator wraps a tool to enforce check-in frequency.
@@ -210,6 +233,21 @@ func (d *CheckinGateDecorator) Execute(ctx context.Context, input json.RawMessag
 			Output:  fmt.Sprintf("agent has exceeded %d tool calls without checking in; use TaskUpdate or SendMessage to report progress", d.threshold),
 			IsError: true,
 		}, nil
+	}
+	return d.inner.Execute(ctx, input)
+}
+
+// ExecuteStreaming implements tools.StreamingTool if the inner tool supports it.
+func (d *CheckinGateDecorator) ExecuteStreaming(ctx context.Context, input json.RawMessage, onOutput func(string)) (tools.Result, error) {
+	count := d.checkins.Increment(d.agent)
+	if count > d.threshold {
+		return tools.Result{
+			Output:  fmt.Sprintf("agent has exceeded %d tool calls without checking in; use TaskUpdate or SendMessage to report progress", d.threshold),
+			IsError: true,
+		}, nil
+	}
+	if st, ok := d.inner.(tools.StreamingTool); ok {
+		return st.ExecuteStreaming(ctx, input, onOutput)
 	}
 	return d.inner.Execute(ctx, input)
 }

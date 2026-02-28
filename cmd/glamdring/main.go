@@ -154,7 +154,7 @@ func main() {
 		baseTools = append(baseTools, teamTools...)
 
 		// Set up the team setup function on the Task tool.
-		taskTool.TeamSetupFunc = makeTeamSetupFunc(teamRegistry, creds, settings.Model)
+		taskTool.TeamSetupFunc = makeTeamSetupFunc(teamRegistry, creds, settings)
 	}
 
 	allTools := make([]tools.Tool, len(baseTools))
@@ -333,7 +333,21 @@ type teamState struct {
 // makeTeamSetupFunc creates the TeamSetupFunc callback that configures
 // subagents for team participation. It wires up message channels, phase
 // tracking, decorators, and team-specific tools.
-func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, defaultModel string) tools.TeamSetupFunc {
+// phaseConfigToPhases converts settings PhaseConfigs to teams.Phase values.
+func phaseConfigToPhases(configs []config.PhaseConfig) []teams.Phase {
+	phases := make([]teams.Phase, len(configs))
+	for i, c := range configs {
+		phases[i] = teams.Phase{
+			Name:     c.Name,
+			Tools:    c.Tools,
+			Model:    c.Model,
+			Fallback: c.Fallback,
+		}
+	}
+	return phases
+}
+
+func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, settings config.Settings) tools.TeamSetupFunc {
 	return func(ctx context.Context, params tools.TeamSetupParams) (*tools.TeamSetupResult, error) {
 		mgr := registry.Get(params.TeamName)
 		if mgr == nil {
@@ -359,20 +373,47 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 		regularAnyCh := make(chan any, 32)
 		priorityAnyCh := make(chan any, 32)
 		go func() {
-			for msg := range regularCh {
-				regularAnyCh <- msg
+			defer close(regularAnyCh)
+			for {
+				select {
+				case msg, ok := <-regularCh:
+					if !ok {
+						return
+					}
+					regularAnyCh <- msg
+				case <-ctx.Done():
+					return
+				}
 			}
-			close(regularAnyCh)
 		}()
 		go func() {
-			for msg := range priorityCh {
-				priorityAnyCh <- msg
+			defer close(priorityAnyCh)
+			for {
+				select {
+				case msg, ok := <-priorityCh:
+					if !ok {
+						return
+					}
+					priorityAnyCh <- msg
+				case <-ctx.Done():
+					return
+				}
 			}
-			close(priorityAnyCh)
 		}()
 
 		// Resolve workflow phases for this agent.
-		phases := teams.ResolveWorkflow(params.Workflow, mgr.Config.Phases)
+		// Check settings workflows first for user-defined workflows.
+		var customPhases []teams.Phase
+		if wf, ok := settings.Workflows[params.Workflow]; ok {
+			customPhases = phaseConfigToPhases(wf.Phases)
+		}
+		phases, err := teams.ResolveWorkflow(params.Workflow, customPhases)
+		if err != nil && len(mgr.Config.Phases) > 0 {
+			// Fall back to team config phases if workflow resolution fails.
+			phases = mgr.Config.Phases
+		} else if err != nil {
+			return nil, fmt.Errorf("resolve workflow: %w", err)
+		}
 		if len(phases) > 0 {
 			mgr.Phases.SetPhases(params.AgentName, phases)
 			if params.StartPhase != "" {
@@ -406,7 +447,7 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 		}
 
 		// Determine the initial model from the current phase.
-		agentModel := defaultModel
+		agentModel := settings.Model
 		if len(phases) > 0 {
 			if phase, _, err := mgr.Phases.Current(params.AgentName); err == nil && phase.Model != "" {
 				agentModel = phase.Model
@@ -453,6 +494,9 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 			SystemPrompt: sysPrompt,
 			Model:        agentModel,
 			TeamState:    state,
+			Cleanup: func() {
+				mgr.CleanupAgent(params.AgentName)
+			},
 		}, nil
 	}
 }

@@ -173,6 +173,10 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 			if fallbackModel := s.tryFallbackModel(err); fallbackModel != "" {
 				log.Printf("switching to fallback model %s after error: %v", fallbackModel, err)
 				s.client.SetModel(fallbackModel)
+				emit(ctx, out, Message{
+					Type: MessageTextDelta,
+					Text: fmt.Sprintf("\n[Switched to fallback model %s]\n", fallbackModel),
+				})
 				events, err = s.client.Stream(ctx, req)
 			}
 			if err != nil {

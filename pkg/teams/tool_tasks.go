@@ -291,6 +291,12 @@ func (t TaskUpdateTool) Execute(_ context.Context, input json.RawMessage) (tools
 
 	if in.Status != "" {
 		s := TaskStatus(in.Status)
+		if !s.Valid() {
+			return tools.Result{
+				Output:  fmt.Sprintf("invalid status %q: must be one of pending, in_progress, completed, deleted", in.Status),
+				IsError: true,
+			}, nil
+		}
 		update.Status = &s
 	}
 	if in.Subject != "" {

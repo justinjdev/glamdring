@@ -1,5 +1,7 @@
 package teams
 
+import "fmt"
+
 // WorkflowRPIV returns the Research-Plan-Implement-Verify workflow.
 func WorkflowRPIV() []Phase {
 	return []Phase{
@@ -31,20 +33,21 @@ func WorkflowNone() []Phase {
 }
 
 // ResolveWorkflow returns phases for a named built-in workflow, or custom phases if provided.
-func ResolveWorkflow(name string, custom []Phase) []Phase {
+// Returns an error for unknown workflow names.
+func ResolveWorkflow(name string, custom []Phase) ([]Phase, error) {
 	if len(custom) > 0 {
-		return custom
+		return custom, nil
 	}
 	switch name {
 	case "rpiv":
-		return WorkflowRPIV()
+		return WorkflowRPIV(), nil
 	case "plan-implement":
-		return WorkflowPlanImplement()
+		return WorkflowPlanImplement(), nil
 	case "scoped":
-		return WorkflowScopedOnly()
+		return WorkflowScopedOnly(), nil
 	case "", "none":
-		return WorkflowNone()
+		return WorkflowNone(), nil
 	default:
-		return WorkflowNone()
+		return nil, fmt.Errorf("unknown workflow %q", name)
 	}
 }

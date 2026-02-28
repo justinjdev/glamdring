@@ -2,6 +2,7 @@ package teams
 
 import (
 	"fmt"
+	"log"
 	"sync"
 )
 
@@ -82,23 +83,26 @@ func (t *ChannelTransport) Send(msg AgentMessage) error {
 	// Direct message.
 	mb, exists := t.mailboxes[msg.To]
 	if !exists {
-		// No-op for non-existent agent.
-		return nil
+		return fmt.Errorf("recipient %q is not subscribed", msg.To)
 	}
 	t.sendNonBlocking(mb, msg, isPriority)
 	return nil
 }
 
-func (t *ChannelTransport) sendNonBlocking(mb *mailbox, msg AgentMessage, isPriority bool) {
+func (t *ChannelTransport) sendNonBlocking(mb *mailbox, msg AgentMessage, isPriority bool) bool {
 	if isPriority {
 		select {
 		case mb.priority <- msg:
+			return true
 		default:
+			log.Printf("warning: dropped priority message (kind=%s) from %q to %q: channel full", msg.Kind, msg.From, msg.To)
+			return false
 		}
-	} else {
-		select {
-		case mb.regular <- msg:
-		default:
-		}
+	}
+	select {
+	case mb.regular <- msg:
+		return true
+	default:
+		return false
 	}
 }

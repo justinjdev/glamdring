@@ -29,6 +29,16 @@ const (
 	TaskStatusDeleted    TaskStatus = "deleted"
 )
 
+// Valid returns true if the status is one of the known task statuses.
+func (s TaskStatus) Valid() bool {
+	switch s {
+	case TaskStatusPending, TaskStatusInProgress, TaskStatusCompleted, TaskStatusDeleted:
+		return true
+	default:
+		return false
+	}
+}
+
 // TaskScope defines file path patterns an agent may modify.
 type TaskScope struct {
 	AllowPatterns []string `json:"allow_patterns,omitempty"`

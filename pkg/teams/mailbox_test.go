@@ -1,6 +1,8 @@
 package teams
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -164,10 +166,50 @@ func TestChannelTransport_RegularRouting(t *testing.T) {
 func TestChannelTransport_SendToNonExistent(t *testing.T) {
 	tr := NewChannelTransport()
 
-	// Should be a no-op, not an error.
 	err := tr.Send(AgentMessage{Kind: MessageKindDM, From: "alice", To: "nobody", Content: "hello"})
-	if err != nil {
-		t.Errorf("expected no error for non-existent target, got: %v", err)
+	if err == nil {
+		t.Error("expected error for non-existent target")
+	}
+}
+
+func TestChannelTransport_SendDropsWhenFull(t *testing.T) {
+	tr := NewChannelTransport()
+	reg, _, _ := tr.Subscribe("bob", 1) // buffer size 1
+
+	// First message should be delivered.
+	msg1 := AgentMessage{Kind: MessageKindDM, From: "alice", To: "bob", Content: "first"}
+	if err := tr.Send(msg1); err != nil {
+		t.Fatalf("first send failed: %v", err)
+	}
+
+	// Second message should be dropped (buffer full).
+	msg2 := AgentMessage{Kind: MessageKindDM, From: "alice", To: "bob", Content: "second"}
+	if err := tr.Send(msg2); err != nil {
+		t.Fatalf("second send returned error: %v", err)
+	}
+
+	// Only the first message should be in the channel.
+	got := <-reg
+	if got.Content != "first" {
+		t.Errorf("expected 'first', got %q", got.Content)
+	}
+
+	// Channel should be empty now.
+	select {
+	case <-reg:
+		t.Error("expected no more messages, but got one")
+	default:
+		// expected
+	}
+
+	// After draining, a new message should be deliverable (recovery).
+	msg3 := AgentMessage{Kind: MessageKindDM, From: "alice", To: "bob", Content: "third"}
+	if err := tr.Send(msg3); err != nil {
+		t.Fatalf("third send failed: %v", err)
+	}
+	got = <-reg
+	if got.Content != "third" {
+		t.Errorf("expected 'third', got %q", got.Content)
 	}
 }
 
@@ -175,6 +217,49 @@ func TestChannelTransport_UnsubscribeNonExistent(t *testing.T) {
 	tr := NewChannelTransport()
 	// Should not panic.
 	tr.Unsubscribe("nobody")
+}
+
+func TestChannelTransport_Concurrent(t *testing.T) {
+	tr := NewChannelTransport()
+	const n = 10
+
+	// Subscribe agents.
+	for i := range n {
+		name := fmt.Sprintf("agent-%d", i)
+		_, _, err := tr.Subscribe(name, 32)
+		if err != nil {
+			t.Fatalf("Subscribe %s: %v", name, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+
+	// Concurrent sends.
+	wg.Add(n * n)
+	for i := range n {
+		from := fmt.Sprintf("agent-%d", i)
+		for j := range n {
+			if i == j {
+				wg.Done()
+				continue
+			}
+			go func(from, to string) {
+				defer wg.Done()
+				tr.Send(AgentMessage{Kind: MessageKindDM, From: from, To: to, Content: "hello"})
+			}(from, fmt.Sprintf("agent-%d", j))
+		}
+	}
+	wg.Wait()
+
+	// Concurrent unsubscribes.
+	wg.Add(n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			tr.Unsubscribe(fmt.Sprintf("agent-%d", i))
+		}(i)
+	}
+	wg.Wait()
 }
 
 func TestChannelTransport_UnsubscribeClosesChannels(t *testing.T) {

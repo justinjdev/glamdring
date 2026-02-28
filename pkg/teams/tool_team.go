@@ -75,11 +75,15 @@ func (t TeamCreateTool) Execute(_ context.Context, input json.RawMessage) (tools
 		return tools.Result{Output: "team_name is required", IsError: true}, nil
 	}
 
+	phases, err := ResolveWorkflow(in.Workflow, nil)
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("unknown workflow %q", in.Workflow), IsError: true}, nil
+	}
 	cfg := TeamConfig{
 		Name:        in.TeamName,
 		Description: in.Description,
 		Workflow:    in.Workflow,
-		Phases:      ResolveWorkflow(in.Workflow, nil),
+		Phases:      phases,
 	}
 
 	var taskDir string
@@ -93,7 +97,7 @@ func (t TeamCreateTool) Execute(_ context.Context, input json.RawMessage) (tools
 		taskDir = filepath.Join(homeDir, ".glamdring", "teams", in.TeamName, "tasks")
 	}
 
-	_, err := t.Registry.Create(cfg, taskDir)
+	_, err = t.Registry.Create(cfg, taskDir)
 	if err != nil {
 		return tools.Result{Output: fmt.Sprintf("failed to create team: %s", err), IsError: true}, nil
 	}

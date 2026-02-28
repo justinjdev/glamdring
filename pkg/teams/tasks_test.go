@@ -2,6 +2,7 @@ package teams
 
 import (
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -275,4 +276,45 @@ func TestFileTaskStorage_UpdateNonExistent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-existent task")
 	}
+}
+
+func TestFileTaskStorage_Concurrent(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewFileTaskStorage(dir)
+	if err != nil {
+		t.Fatalf("NewFileTaskStorage: %v", err)
+	}
+
+	const n = 20
+	var wg sync.WaitGroup
+
+	// Concurrent creates.
+	wg.Add(n)
+	for range n {
+		go func() {
+			defer wg.Done()
+			s.Create(Task{Subject: "concurrent task", Status: TaskStatusPending})
+		}()
+	}
+	wg.Wait()
+
+	list := s.List()
+	if len(list) != n {
+		t.Errorf("expected %d tasks, got %d", n, len(list))
+	}
+
+	// Concurrent reads and updates.
+	wg.Add(n * 2)
+	for _, summary := range list {
+		go func(id string) {
+			defer wg.Done()
+			s.Get(id)
+		}(summary.ID)
+		go func(id string) {
+			defer wg.Done()
+			newSubject := "updated"
+			s.Update(id, TaskUpdate{Subject: &newSubject})
+		}(summary.ID)
+	}
+	wg.Wait()
 }

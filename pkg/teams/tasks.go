@@ -2,7 +2,9 @@ package teams
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -128,7 +130,9 @@ func (s *FileTaskStorage) Update(id string, update TaskUpdate) (*Task, error) {
 
 	// When a task is completed, remove it from other tasks' BlockedBy lists.
 	if update.Status != nil && *update.Status == TaskStatusCompleted {
-		s.clearBlockedByLocked(id)
+		if err := s.clearBlockedByLocked(id); err != nil {
+			log.Printf("warning: errors clearing blockedBy for task %s: %v", id, err)
+		}
 	}
 
 	return task, nil
@@ -228,11 +232,12 @@ func (s *FileTaskStorage) writeTaskLocked(task *Task) error {
 }
 
 // clearBlockedByLocked removes the given task ID from all other tasks' BlockedBy slices.
-func (s *FileTaskStorage) clearBlockedByLocked(completedID string) {
+func (s *FileTaskStorage) clearBlockedByLocked(completedID string) error {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
-		return
+		return fmt.Errorf("read task dir: %w", err)
 	}
+	var errs []error
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -243,15 +248,19 @@ func (s *FileTaskStorage) clearBlockedByLocked(completedID string) {
 		}
 		task, err := s.readTaskLocked(idStr)
 		if err != nil {
+			errs = append(errs, fmt.Errorf("read task %s: %w", idStr, err))
 			continue
 		}
 		filtered := removeFromSlice(task.BlockedBy, completedID)
 		if len(filtered) != len(task.BlockedBy) {
 			task.BlockedBy = filtered
 			task.UpdatedAt = time.Now()
-			_ = s.writeTaskLocked(task)
+			if err := s.writeTaskLocked(task); err != nil {
+				errs = append(errs, fmt.Errorf("write task %s: %w", idStr, err))
+			}
 		}
 	}
+	return errors.Join(errs...)
 }
 
 func appendUnique(existing, additions []string) []string {

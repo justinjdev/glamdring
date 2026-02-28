@@ -133,21 +133,21 @@ func matchRule(rule PermissionRule, toolName, filePath, command string) bool {
 	if rule.Tool != toolName {
 		return false
 	}
-	if rule.Path != "" && !matchGlobPattern(rule.Path, filePath) {
+	if rule.Path != "" && !MatchGlobPattern(rule.Path, filePath) {
 		return false
 	}
-	if rule.Command != "" && !matchGlobPattern(rule.Command, command) {
+	if rule.Command != "" && !MatchGlobPattern(rule.Command, command) {
 		return false
 	}
 	return true
 }
 
-// matchGlobPattern handles simple glob matching:
+// MatchGlobPattern handles simple glob matching:
 //   - "prefix*" matches strings starting with prefix
 //   - "dir/**" matches strings starting with dir/ (recursive)
 //   - Otherwise falls back to filepath.Match
 //
-func matchGlobPattern(pattern, value string) bool {
+func MatchGlobPattern(pattern, value string) bool {
 	if value == "" {
 		return false
 	}
@@ -199,7 +199,7 @@ func EvaluateTeamScope(scope *TeamScope, toolName string, input map[string]any) 
 
 	// Check deny patterns first.
 	for _, pattern := range scope.DenyPatterns {
-		if matchGlobPattern(pattern, filePath) {
+		if MatchGlobPattern(pattern, filePath) {
 			return PermissionResultDeny
 		}
 	}
@@ -207,7 +207,7 @@ func EvaluateTeamScope(scope *TeamScope, toolName string, input map[string]any) 
 	// If allow patterns are specified, the path must match at least one.
 	if len(scope.AllowPatterns) > 0 {
 		for _, pattern := range scope.AllowPatterns {
-			if matchGlobPattern(pattern, filePath) {
+			if MatchGlobPattern(pattern, filePath) {
 				return PermissionResultDefault // allowed, continue to normal eval
 			}
 		}

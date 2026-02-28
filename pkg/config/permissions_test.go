@@ -30,7 +30,7 @@ func TestEvaluate_DenyOverridesAllow(t *testing.T) {
 		Deny:  []PermissionRule{{Tool: "Bash", Command: "rm *"}},
 	}
 	result := pc.Evaluate("Bash", map[string]any{"command": "rm -rf /"})
-	// Command "rm -rf /" does not match "rm *" via matchGlobPattern (prefix "rm ").
+	// Command "rm -rf /" does not match "rm *" via MatchGlobPattern (prefix "rm ").
 	// But "rm *" with * suffix means prefix match "rm ", and "rm -rf /" starts with "rm ".
 	if result != PermissionResultDeny {
 		t.Errorf("expected deny, got %s", result)
@@ -112,9 +112,9 @@ func TestMatchGlobPattern_RecursiveDir(t *testing.T) {
 		{"src/**", "", false},
 	}
 	for _, tt := range tests {
-		got := matchGlobPattern(tt.pattern, tt.value)
+		got := MatchGlobPattern(tt.pattern, tt.value)
 		if got != tt.want {
-			t.Errorf("matchGlobPattern(%q, %q) = %v, want %v", tt.pattern, tt.value, got, tt.want)
+			t.Errorf("MatchGlobPattern(%q, %q) = %v, want %v", tt.pattern, tt.value, got, tt.want)
 		}
 	}
 }
@@ -131,9 +131,9 @@ func TestMatchGlobPattern_PrefixStar(t *testing.T) {
 		{"go *", "", false},
 	}
 	for _, tt := range tests {
-		got := matchGlobPattern(tt.pattern, tt.value)
+		got := MatchGlobPattern(tt.pattern, tt.value)
 		if got != tt.want {
-			t.Errorf("matchGlobPattern(%q, %q) = %v, want %v", tt.pattern, tt.value, got, tt.want)
+			t.Errorf("MatchGlobPattern(%q, %q) = %v, want %v", tt.pattern, tt.value, got, tt.want)
 		}
 	}
 }

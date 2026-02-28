@@ -3,7 +3,9 @@ package teams
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/justin/glamdring/pkg/tools"
@@ -198,6 +200,83 @@ func TestScopedTool_DelegatesNameDescriptionSchema(t *testing.T) {
 	}
 }
 
+func TestScopedTool_RecursiveGlobPattern(t *testing.T) {
+	inner := &stubTool{name: "Write"}
+	scoped := NewScopedTool(inner, []string{"/project/src/**"}, nil)
+
+	// Nested path under src/ should be allowed.
+	input := json.RawMessage(`{"file_path": "/project/src/pkg/deep/file.go"}`)
+	result, err := scoped.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success for recursive glob, got error: %s", result.Output)
+	}
+
+	// Path outside src/ should be denied.
+	input = json.RawMessage(`{"file_path": "/project/other/file.go"}`)
+	result, err = scoped.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected error for path outside recursive glob")
+	}
+}
+
+func TestScopedTool_PrefixGlobPattern(t *testing.T) {
+	inner := &stubTool{name: "Write"}
+	scoped := NewScopedTool(inner, []string{"/project/src/main*"}, nil)
+
+	// File matching the prefix should be allowed.
+	input := json.RawMessage(`{"file_path": "/project/src/main.go"}`)
+	result, err := scoped.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success for prefix glob, got error: %s", result.Output)
+	}
+
+	// File matching the prefix with suffix should be allowed.
+	input = json.RawMessage(`{"file_path": "/project/src/main_test.go"}`)
+	result, err = scoped.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success for prefix glob with suffix, got error: %s", result.Output)
+	}
+
+	// File not matching the prefix should be denied.
+	input = json.RawMessage(`{"file_path": "/project/src/other.go"}`)
+	result, err = scoped.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected error for path not matching prefix glob")
+	}
+}
+
+func TestScopedTool_MalformedPattern(t *testing.T) {
+	inner := &stubTool{name: "Write"}
+	// A pattern like "[invalid" is malformed for filepath.Match.
+	scoped := NewScopedTool(inner, []string{"[invalid"}, nil)
+
+	input := json.RawMessage(`{"file_path": "/project/src/main.go"}`)
+	result, err := scoped.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Malformed patterns should not match, so the file should be denied
+	// (no allow pattern matched).
+	if !result.IsError {
+		t.Error("expected error when allow pattern is malformed and does not match")
+	}
+}
+
 // --- ScopedBash tests ---
 
 func TestScopedBash_AllowedCommand(t *testing.T) {
@@ -388,6 +467,194 @@ func TestCheckinGateDecorator_ExceedsThreshold(t *testing.T) {
 	if !strings.Contains(result.Output, "exceeded 3 tool calls") {
 		t.Errorf("unexpected error message: %s", result.Output)
 	}
+}
+
+// --- Streaming tests ---
+
+func TestScopedTool_StreamingAllowed(t *testing.T) {
+	streamed := false
+	inner := &stubStreamingTool{
+		stubTool: stubTool{name: "Write"},
+		streamFn: func(_ context.Context, _ json.RawMessage, onOutput func(string)) (tools.Result, error) {
+			streamed = true
+			onOutput("data")
+			return tools.Result{Output: "done"}, nil
+		},
+	}
+	scoped := NewScopedTool(inner, []string{"/project/**"}, nil)
+
+	input := json.RawMessage(`{"file_path": "/project/src/main.go"}`)
+	result, err := scoped.ExecuteStreaming(context.Background(), input, func(s string) {})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %s", result.Output)
+	}
+	if !streamed {
+		t.Error("expected streaming function to be called")
+	}
+}
+
+func TestScopedTool_StreamingDenied(t *testing.T) {
+	inner := &stubStreamingTool{stubTool: stubTool{name: "Write"}}
+	scoped := NewScopedTool(inner, []string{"/project/**"}, nil)
+
+	input := json.RawMessage(`{"file_path": "/etc/passwd"}`)
+	result, err := scoped.ExecuteStreaming(context.Background(), input, func(s string) {})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected error for path outside allow patterns in streaming mode")
+	}
+}
+
+func TestScopedTool_StreamingFallbackToNonStreaming(t *testing.T) {
+	inner := &stubTool{name: "Write"} // does not implement StreamingTool
+	scoped := NewScopedTool(inner, []string{"/project/**"}, nil)
+
+	input := json.RawMessage(`{"file_path": "/project/src/main.go"}`)
+	result, err := scoped.ExecuteStreaming(context.Background(), input, func(s string) {})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %s", result.Output)
+	}
+}
+
+func TestFileLockDecorator_StreamingAllowed(t *testing.T) {
+	locks := newMockLockManager()
+	streamed := false
+	inner := &stubStreamingTool{
+		stubTool: stubTool{name: "Write"},
+		streamFn: func(_ context.Context, _ json.RawMessage, onOutput func(string)) (tools.Result, error) {
+			streamed = true
+			onOutput("data")
+			return tools.Result{Output: "done"}, nil
+		},
+	}
+	dec := NewFileLockDecorator(inner, locks, "agent-a")
+
+	input := json.RawMessage(`{"file_path": "/project/main.go"}`)
+	result, err := dec.ExecuteStreaming(context.Background(), input, func(s string) {})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %s", result.Output)
+	}
+	if !streamed {
+		t.Error("expected streaming function to be called")
+	}
+}
+
+func TestFileLockDecorator_StreamingDenied(t *testing.T) {
+	locks := newMockLockManager()
+	locks.Acquire("/project/main.go", "agent-b")
+	inner := &stubStreamingTool{stubTool: stubTool{name: "Write"}}
+	dec := NewFileLockDecorator(inner, locks, "agent-a")
+
+	input := json.RawMessage(`{"file_path": "/project/main.go"}`)
+	result, err := dec.ExecuteStreaming(context.Background(), input, func(s string) {})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected error when file is locked by different agent in streaming mode")
+	}
+}
+
+func TestFileLockDecorator_StreamingFallback(t *testing.T) {
+	locks := newMockLockManager()
+	inner := &stubTool{name: "Write"} // does not implement StreamingTool
+	dec := NewFileLockDecorator(inner, locks, "agent-a")
+
+	input := json.RawMessage(`{"file_path": "/project/main.go"}`)
+	result, err := dec.ExecuteStreaming(context.Background(), input, func(s string) {})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %s", result.Output)
+	}
+}
+
+func TestCheckinGateDecorator_StreamingAllowed(t *testing.T) {
+	tracker := newMockCheckinTracker()
+	streamed := false
+	inner := &stubStreamingTool{
+		stubTool: stubTool{name: "Write"},
+		streamFn: func(_ context.Context, _ json.RawMessage, onOutput func(string)) (tools.Result, error) {
+			streamed = true
+			onOutput("data")
+			return tools.Result{Output: "done"}, nil
+		},
+	}
+	dec := NewCheckinGateDecorator(inner, tracker, "agent-a", 5)
+
+	result, err := dec.ExecuteStreaming(context.Background(), json.RawMessage(`{}`), func(s string) {})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %s", result.Output)
+	}
+	if !streamed {
+		t.Error("expected streaming function to be called")
+	}
+}
+
+func TestCheckinGateDecorator_StreamingDenied(t *testing.T) {
+	tracker := newMockCheckinTracker()
+	inner := &stubStreamingTool{stubTool: stubTool{name: "Write"}}
+	dec := NewCheckinGateDecorator(inner, tracker, "agent-a", 1)
+
+	// First call OK.
+	dec.ExecuteStreaming(context.Background(), json.RawMessage(`{}`), func(s string) {})
+
+	// Second call exceeds threshold.
+	result, err := dec.ExecuteStreaming(context.Background(), json.RawMessage(`{}`), func(s string) {})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected error when exceeding threshold in streaming mode")
+	}
+}
+
+func TestCheckinGateDecorator_StreamingFallback(t *testing.T) {
+	tracker := newMockCheckinTracker()
+	inner := &stubTool{name: "Write"} // does not implement StreamingTool
+	dec := NewCheckinGateDecorator(inner, tracker, "agent-a", 5)
+
+	result, err := dec.ExecuteStreaming(context.Background(), json.RawMessage(`{}`), func(s string) {})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %s", result.Output)
+	}
+}
+
+func TestFileLockDecorator_Concurrent(t *testing.T) {
+	locks := NewInMemoryLockManager()
+	const n = 20
+	var wg sync.WaitGroup
+
+	wg.Add(n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			agent := fmt.Sprintf("agent-%d", i)
+			inner := &stubTool{name: "Write"}
+			dec := NewFileLockDecorator(inner, locks, agent)
+			input := json.RawMessage(fmt.Sprintf(`{"file_path": "/project/file-%d.go"}`, i))
+			dec.Execute(context.Background(), input)
+		}(i)
+	}
+	wg.Wait()
 }
 
 // --- ComposeDecorators tests ---

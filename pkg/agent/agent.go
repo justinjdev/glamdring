@@ -391,7 +391,9 @@ func executeTools(
 
 		// Run PostToolUse hooks (failures are warnings, not blocking).
 		if hookRunner != nil {
-			_ = hookRunner.Run(ctx, hooks.PostToolUse, tc.name, tc.input)
+			if hookErr := hookRunner.Run(ctx, hooks.PostToolUse, tc.name, tc.input); hookErr != nil {
+				log.Printf("warning: PostToolUse hook failed for %s: %v", tc.name, hookErr)
+			}
 		}
 
 		// Check for priority inter-agent messages between tool executions.
@@ -400,11 +402,7 @@ func executeTools(
 			case msg, ok := <-priorityCh:
 				if ok {
 					text := formatPriorityMessage(msg)
-					results = append(results, api.ContentBlock{
-						Type:      "tool_result",
-						ToolUseID: tc.id,
-						Content:   text,
-					})
+					results[len(results)-1].Content += "\n\n" + text
 				}
 			default:
 			}

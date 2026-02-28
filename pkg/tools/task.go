@@ -55,6 +55,7 @@ type TeamSetupResult struct {
 	Model        string
 	MaxTurns     int
 	TeamState    any
+	Cleanup      func() // called when the team agent finishes
 }
 
 // TaskTool spawns a subagent to execute a task and returns the collected
@@ -277,6 +278,9 @@ func (t TaskTool) executeTeamAgent(ctx context.Context, in taskInput) (Result, e
 	})
 	if err != nil {
 		return Result{Output: fmt.Sprintf("team setup failed: %s", err), IsError: true}, nil
+	}
+	if setupResult.Cleanup != nil {
+		defer setupResult.Cleanup()
 	}
 
 	opts := SubagentOptions{

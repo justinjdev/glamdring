@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/justin/glamdring/pkg/tools"
 )
@@ -117,10 +118,23 @@ func (pr *PhaseRegistry) CurrentPhaseModel() (model string, fallback string) {
 
 // allowedNames returns a set of tool names allowed in the current phase,
 // combined with teamTools and readTools. Returns nil if no phases are
-// configured, signaling that all tools should be available.
+// configured (phase == nil and no error), signaling that all tools should
+// be available. On error, returns a restricted set of only readTools and
+// teamTools to avoid fail-open.
 func (pr *PhaseRegistry) allowedNames() map[string]bool {
 	phase, _, err := pr.phases.Current(pr.agentName)
-	if err != nil || phase == nil {
+	if err != nil {
+		log.Printf("warning: phase lookup failed for %q: %v; restricting to read/team tools", pr.agentName, err)
+		allowed := make(map[string]bool)
+		for _, name := range pr.readTools {
+			allowed[name] = true
+		}
+		for _, name := range pr.teamTools {
+			allowed[name] = true
+		}
+		return allowed
+	}
+	if phase == nil {
 		return nil
 	}
 	allowed := make(map[string]bool)

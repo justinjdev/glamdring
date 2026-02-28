@@ -1,6 +1,10 @@
 package teams
 
-import "testing"
+import (
+	"fmt"
+	"sync"
+	"testing"
+)
 
 func testPhases() []Phase {
 	return []Phase{
@@ -131,4 +135,44 @@ func TestPhaseTracker_RemoveNonExistent(t *testing.T) {
 	pt := NewInMemoryPhaseTracker()
 	// Should not panic.
 	pt.Remove("nobody")
+}
+
+func TestInMemoryPhaseTracker_Concurrent(t *testing.T) {
+	pt := NewInMemoryPhaseTracker()
+	const n = 20
+	var wg sync.WaitGroup
+
+	// Concurrent SetPhases for different agents.
+	wg.Add(n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			pt.SetPhases(fmt.Sprintf("agent-%d", i), testPhases())
+		}(i)
+	}
+	wg.Wait()
+
+	// Concurrent reads.
+	wg.Add(n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			pt.Current(fmt.Sprintf("agent-%d", i))
+		}(i)
+	}
+	wg.Wait()
+
+	// Concurrent advances and reads.
+	wg.Add(n * 2)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			pt.Advance(fmt.Sprintf("agent-%d", i))
+		}(i)
+		go func(i int) {
+			defer wg.Done()
+			pt.Current(fmt.Sprintf("agent-%d", i))
+		}(i)
+	}
+	wg.Wait()
 }

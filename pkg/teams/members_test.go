@@ -1,6 +1,10 @@
 package teams
 
-import "testing"
+import (
+	"fmt"
+	"sync"
+	"testing"
+)
 
 func TestMemberRegistry_AddAndGet(t *testing.T) {
 	r := NewInMemoryMemberRegistry()
@@ -141,4 +145,52 @@ func TestMemberRegistry_ActiveCount(t *testing.T) {
 	if got := r.ActiveCount(); got != 2 {
 		t.Errorf("expected 2 active, got %d", got)
 	}
+}
+
+func TestInMemoryMemberRegistry_Concurrent(t *testing.T) {
+	r := NewInMemoryMemberRegistry()
+	const n = 20
+	var wg sync.WaitGroup
+
+	// Concurrent adds.
+	wg.Add(n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			r.Add(Member{Name: fmt.Sprintf("agent-%d", i), Status: MemberStatusActive})
+		}(i)
+	}
+	wg.Wait()
+
+	if r.Count() != n {
+		t.Errorf("expected %d members, got %d", n, r.Count())
+	}
+
+	// Concurrent reads and status updates.
+	wg.Add(n * 2)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			r.Get(fmt.Sprintf("agent-%d", i))
+		}(i)
+		go func(i int) {
+			defer wg.Done()
+			r.SetStatus(fmt.Sprintf("agent-%d", i), MemberStatusIdle)
+		}(i)
+	}
+	wg.Wait()
+
+	// Concurrent list + remove.
+	wg.Add(n + 1)
+	go func() {
+		defer wg.Done()
+		r.List()
+	}()
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			r.Remove(fmt.Sprintf("agent-%d", i))
+		}(i)
+	}
+	wg.Wait()
 }

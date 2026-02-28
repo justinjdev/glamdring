@@ -1,6 +1,10 @@
 package teams
 
-import "testing"
+import (
+	"fmt"
+	"sync"
+	"testing"
+)
 
 func TestLockManager_AcquireAndRelease(t *testing.T) {
 	m := NewInMemoryLockManager()
@@ -97,4 +101,46 @@ func TestLockManager_ReleaseAll(t *testing.T) {
 	if !cLocked {
 		t.Error("c.go should still be locked (owned by bob)")
 	}
+}
+
+func TestInMemoryLockManager_Concurrent(t *testing.T) {
+	m := NewInMemoryLockManager()
+	const n = 20
+	var wg sync.WaitGroup
+
+	// Concurrent acquires on different paths.
+	wg.Add(n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			m.Acquire(fmt.Sprintf("file-%d.go", i), fmt.Sprintf("agent-%d", i))
+		}(i)
+	}
+	wg.Wait()
+
+	// Concurrent checks.
+	wg.Add(n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			owner, locked := m.Check(fmt.Sprintf("file-%d.go", i))
+			if !locked {
+				t.Errorf("file-%d.go should be locked", i)
+			}
+			if owner != fmt.Sprintf("agent-%d", i) {
+				t.Errorf("file-%d.go: expected agent-%d, got %q", i, i, owner)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Concurrent releases.
+	wg.Add(n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			m.Release(fmt.Sprintf("file-%d.go", i), fmt.Sprintf("agent-%d", i))
+		}(i)
+	}
+	wg.Wait()
 }

@@ -226,31 +226,44 @@ func TestPhaseRegistry_AdvanceChangesTools(t *testing.T) {
 	}
 }
 
-func TestPhaseRegistry_NoPhasesAllToolsAvailable(t *testing.T) {
+func TestPhaseRegistry_NoPhasesRestrictsToReadTeamTools(t *testing.T) {
 	reg := newTestRegistry("Read", "Write", "Edit", "Bash", "Grep")
 	tracker := newMockPhaseTracker()
-	// No phases configured for this agent.
+	// No phases configured for this agent -- simulates an error state.
+	// PhaseRegistry is only used in production when phases are configured;
+	// when Current() errors, it should fail-closed to read/team tools only.
 
-	pr := NewPhaseRegistry(reg, tracker, "agent-a", []string{}, []string{})
+	pr := NewPhaseRegistry(reg, tracker, "agent-a",
+		[]string{"Grep"}, // team tools
+		[]string{"Read"},  // read tools
+	)
 
-	// All tools from the base registry should be available.
 	schemas := pr.Schemas()
-	if len(schemas) != 5 {
-		t.Errorf("expected 5 schemas, got %d", len(schemas))
+	schemaNames := extractNames(t, schemas)
+
+	// Only read and team tools should be available.
+	if _, ok := schemaNames["Read"]; !ok {
+		t.Error("Read should be available as a read tool")
+	}
+	if _, ok := schemaNames["Grep"]; !ok {
+		t.Error("Grep should be available as a team tool")
 	}
 
-	for _, name := range []string{"Read", "Write", "Edit", "Bash", "Grep"} {
-		if pr.Get(name) == nil {
-			t.Errorf("Get(%s) should return tool when no phases configured", name)
-		}
+	// Write should NOT be available.
+	if _, ok := schemaNames["Write"]; ok {
+		t.Error("Write should not be available when phase lookup fails")
+	}
+
+	if pr.Get("Write") != nil {
+		t.Error("Get(Write) should return nil when phase lookup fails")
 	}
 
 	result, err := pr.Execute(context.Background(), "Write", json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.IsError {
-		t.Errorf("Execute(Write) should succeed when no phases configured, got: %s", result.Output)
+	if !result.IsError {
+		t.Error("Execute(Write) should fail when phase lookup fails")
 	}
 }
 
@@ -269,6 +282,73 @@ func TestPhaseRegistry_ExecuteStreamingFiltered(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("ExecuteStreaming(Write) should fail in research phase")
+	}
+}
+
+// --- CurrentPhaseModel tests ---
+
+func TestPhaseRegistry_CurrentPhaseModel_Initial(t *testing.T) {
+	reg := newTestRegistry("Read", "Write")
+	tracker := newMockPhaseTracker()
+	tracker.SetPhases("agent-a", []Phase{
+		{Name: "research", Tools: []string{"Read"}, Model: "sonnet", Fallback: "haiku"},
+		{Name: "implement", Tools: []string{"Write"}, Model: "opus"},
+	})
+
+	pr := NewPhaseRegistry(reg, tracker, "agent-a", []string{}, []string{})
+	model, fallback := pr.CurrentPhaseModel()
+	if model != "sonnet" {
+		t.Errorf("expected model 'sonnet', got %q", model)
+	}
+	if fallback != "haiku" {
+		t.Errorf("expected fallback 'haiku', got %q", fallback)
+	}
+}
+
+func TestPhaseRegistry_CurrentPhaseModel_AfterAdvance(t *testing.T) {
+	reg := newTestRegistry("Read", "Write")
+	tracker := newMockPhaseTracker()
+	tracker.SetPhases("agent-a", []Phase{
+		{Name: "research", Tools: []string{"Read"}, Model: "sonnet"},
+		{Name: "implement", Tools: []string{"Write"}, Model: "opus", Fallback: "sonnet"},
+	})
+	tracker.Advance("agent-a")
+
+	pr := NewPhaseRegistry(reg, tracker, "agent-a", []string{}, []string{})
+	model, fallback := pr.CurrentPhaseModel()
+	if model != "opus" {
+		t.Errorf("expected model 'opus', got %q", model)
+	}
+	if fallback != "sonnet" {
+		t.Errorf("expected fallback 'sonnet', got %q", fallback)
+	}
+}
+
+func TestPhaseRegistry_CurrentPhaseModel_NoPhases(t *testing.T) {
+	reg := newTestRegistry("Read")
+	tracker := newMockPhaseTracker()
+
+	pr := NewPhaseRegistry(reg, tracker, "agent-a", []string{}, []string{})
+	model, fallback := pr.CurrentPhaseModel()
+	if model != "" {
+		t.Errorf("expected empty model, got %q", model)
+	}
+	if fallback != "" {
+		t.Errorf("expected empty fallback, got %q", fallback)
+	}
+}
+
+func TestPhaseRegistry_CurrentPhaseModel_FallbackPropagation(t *testing.T) {
+	reg := newTestRegistry("Read", "Write")
+	tracker := newMockPhaseTracker()
+	tracker.SetPhases("agent-a", []Phase{
+		{Name: "research", Tools: []string{"Read"}, Model: "sonnet", Fallback: "haiku"},
+	})
+
+	pr := NewPhaseRegistry(reg, tracker, "agent-a", []string{}, []string{})
+	_, fallback := pr.CurrentPhaseModel()
+	if fallback != "haiku" {
+		t.Errorf("expected fallback 'haiku', got %q", fallback)
 	}
 }
 
