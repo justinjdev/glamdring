@@ -16,6 +16,12 @@ type Tool interface {
 // StreamingTool is an optional interface for tools that can stream output
 // incrementally. Tools that implement this get their output displayed in
 // real time rather than all at once when execution completes.
+//
+// The onOutput callback has the following contract:
+//   - It may be nil; implementations must check before calling.
+//   - Calls must be synchronous (from the calling goroutine or serialized).
+//   - Callers must not block inside the callback.
+//   - The callback will not be invoked concurrently by the framework.
 type StreamingTool interface {
 	Tool
 	ExecuteStreaming(ctx context.Context, input json.RawMessage, onOutput func(string)) (Result, error)
