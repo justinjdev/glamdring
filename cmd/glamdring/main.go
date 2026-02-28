@@ -165,6 +165,12 @@ func main() {
 		envInfo,
 	)
 
+	// Load permission presets.
+	permissions, err := config.LoadPermissions(workDir)
+	if err != nil {
+		log.Printf("warning: %v (permissions will not be applied)", err)
+	}
+
 	cfg := agent.Config{
 		Model:        settings.Model,
 		Creds:        creds,
@@ -173,6 +179,7 @@ func main() {
 		MaxTurns:     settings.MaxTurns,
 		CWD:          workDir,
 		HookRunner:   hookRunner,
+		Permissions:  permissions,
 		Yolo:         *yolo,
 	}
 

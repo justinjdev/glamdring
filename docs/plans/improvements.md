@@ -1,6 +1,6 @@
 # Glamdring Improvement Plan
 
-Grouped into 10 implementation chunks, ordered by dependency and impact. Each chunk is self-contained and shippable independently. Chunks 1-7 are complete.
+Grouped into 10 implementation chunks, ordered by dependency and impact. Each chunk is self-contained and shippable independently. Chunks 1-9 are complete.
 
 ---
 
@@ -738,11 +738,12 @@ Already covered in Chunk 3.6 but has performance implications. Default 1000 resu
 
 ---
 
-## Chunk 9: Differentiation Features
+## Chunk 9: Differentiation Features [DONE] COMPLETED
 
 **Priority:** P1-P3 mixed -- Differentiation features that set glamdring apart.
 **Estimated scope:** Variable per feature.
 **Dependencies:** Chunks 1-4.
+**Status:** Completed. 9.1 (Export), 9.2 (Thinking toggle, done in Chunk 4), 9.3 (Input History), 9.5 (Permission Presets), 9.6 (Context Window Usage), 9.7 (Bash Output Streaming). 9.4 skipped.
 
 ### 9.1 Conversation export
 
@@ -940,7 +941,7 @@ Agents go idle between turns and can be woken by incoming messages. Requires a m
 ```
 Chunk 1 (Agent Loop)   [DONE] ─┐
 Chunk 2 (API Client)   [DONE] ─┤
-Chunk 3 (Tools)        [DONE] ─┼──→  Chunk 4 (TUI UX)   [DONE] ──→  Chunk 9 (Differentiation)
+Chunk 3 (Tools)        [DONE] ─┼──→  Chunk 4 (TUI UX)   [DONE] ──→  Chunk 9 (Differentiation)  [DONE]
 Chunk 5 (Config/Auth)  [DONE] ─┤
 Chunk 6 (MCP)          [DONE] ─┤                                  Chunk 8 (Performance)  [DONE]
 Chunk 7 (CLI Parity)   [DONE] ─┘
@@ -948,7 +949,7 @@ Chunk 7 (CLI Parity)   [DONE] ─┘
                          └──→  Chunk 10 (Agent Teams) -- depends on 1 + 7
 ```
 
-Chunks 1-8 are complete. Remaining chunks 9 and 10 can be done in any order -- all dependencies are satisfied.
+Chunks 1-9 are complete. Remaining chunk 10 (Agent Teams) can be done next -- all dependencies are satisfied.
 
 ## Test Plan
 
@@ -964,4 +965,17 @@ Each chunk should include tests:
 | 6 | MCP tool name with underscores, server death handling, env var propagation, health status reporting |
 | 7 | Yolo toggle (on/off/scoped), --yolo flag, status bar indicator, version flag |
 | 8 | Render cache hit rate, truncation correctness, transparent truncation display |
+| 9 | Export markdown/HTML rendering, input history ring buffer, context % calculation, permission rule evaluation, bash streaming callbacks |
 | 10 | Team create/delete lifecycle, task CRUD, message delivery (DM + broadcast), shutdown protocol, agent idle/resume |
+
+## Unit Test Coverage
+
+Improve test coverage across the codebase. Current coverage gaps:
+
+- `internal/tui/` — model.go, input.go, builtins.go have no unit tests (hard to test bubbletea models, consider extracting testable logic)
+- `pkg/agent/` — session.go and agent.go have no unit tests (require mocking API client)
+- `pkg/mcp/` — client.go, manager.go, adapter.go have minimal coverage
+- `pkg/tools/` — write.go, edit.go, read.go could use edge case tests
+- `pkg/config/` — prompt.go has basic tests but could cover more edge cases
+
+Priority: Extract testable business logic from TUI code into pure functions. Add integration-style tests for the agent loop using a mock API client.

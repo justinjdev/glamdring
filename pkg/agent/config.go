@@ -2,6 +2,7 @@ package agent
 
 import (
 	"github.com/justin/glamdring/pkg/auth"
+	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/hooks"
 	"github.com/justin/glamdring/pkg/tools"
 )
@@ -16,6 +17,7 @@ type Config struct {
 	MaxTurns     *int
 	CWD          string
 	HookRunner   *hooks.HookRunner
+	Permissions  *config.PermissionConfig
 	Yolo         bool
 }
 

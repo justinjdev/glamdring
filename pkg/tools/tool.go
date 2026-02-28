@@ -13,6 +13,14 @@ type Tool interface {
 	Execute(ctx context.Context, input json.RawMessage) (Result, error)
 }
 
+// StreamingTool is an optional interface for tools that can stream output
+// incrementally. Tools that implement this get their output displayed in
+// real time rather than all at once when execution completes.
+type StreamingTool interface {
+	Tool
+	ExecuteStreaming(ctx context.Context, input json.RawMessage, onOutput func(string)) (Result, error)
+}
+
 // Result is the output of a tool execution.
 type Result struct {
 	Output  string

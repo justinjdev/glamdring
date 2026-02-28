@@ -36,6 +36,36 @@ func TestTaskToolName(t *testing.T) {
 	}
 }
 
+func TestDefaultToolsWithTask(t *testing.T) {
+	t.Run("with task tool", func(t *testing.T) {
+		taskTool := &TaskTool{}
+		tools := DefaultToolsWithTask("/tmp", taskTool)
+
+		// Should have 6 base tools + Task = 7.
+		if len(tools) != 7 {
+			t.Fatalf("expected 7 tools, got %d", len(tools))
+		}
+		last := tools[len(tools)-1]
+		if last.Name() != "Task" {
+			t.Errorf("last tool should be Task, got %q", last.Name())
+		}
+	})
+
+	t.Run("with nil task tool", func(t *testing.T) {
+		tools := DefaultToolsWithTask("/tmp", nil)
+
+		// Should have only the 6 base tools.
+		if len(tools) != 6 {
+			t.Fatalf("expected 6 tools, got %d", len(tools))
+		}
+		for _, tool := range tools {
+			if tool.Name() == "Task" {
+				t.Error("Task tool should not be present when taskTool is nil")
+			}
+		}
+	})
+}
+
 func TestDefaultToolsShareTracker(t *testing.T) {
 	allTools := DefaultTools("/tmp")
 

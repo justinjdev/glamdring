@@ -97,6 +97,10 @@ type Model struct {
 	// showThinking controls whether thinking blocks are displayed.
 	showThinking bool
 
+	// lastContextThreshold tracks the last fired context threshold (0, 60, or 80).
+	// Used to avoid firing the same threshold multiple times.
+	lastContextThreshold int
+
 	// mcpMgr manages MCP server lifecycles, used by /mcp command.
 	mcpMgr *mcp.Manager
 
@@ -441,6 +445,7 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	m.input.history.Add(msg.Text)
 	m.output.AppendUserMessage(msg.Text)
 	m.input.Reset()
 	m.input.Blur()
@@ -534,6 +539,9 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		summary := summarizeToolInput(am.ToolName, am.ToolInput)
 		m.output.AppendToolCall(am.ToolName, summary)
 
+	case agent.MessageToolOutputDelta:
+		m.output.AppendToolOutputDelta(am.Text)
+
 	case agent.MessageToolResult:
 		m.output.AppendToolResult(am.ToolOutput, am.ToolIsError)
 
@@ -556,6 +564,27 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.totalInputTokens += am.InputTokens
 		m.totalOutputTokens += am.OutputTokens
 		m.statusbar.Update(m.agentCfg.Model, m.totalInputTokens, m.totalOutputTokens, m.turn)
+
+		// Update context window usage.
+		if am.LastRequestInputTokens > 0 {
+			m.statusbar.UpdateContext(am.LastRequestInputTokens, m.agentCfg.Model)
+			pct := m.statusbar.ContextPercent()
+
+			// Fire threshold suggestions and hooks (once per crossing).
+			if pct >= 80 && m.lastContextThreshold < 80 {
+				m.lastContextThreshold = 80
+				m.output.AppendSystem("Context window at " + fmt.Sprintf("%d%%", pct) + " -- consider running /compact")
+				m.fireContextThresholdHook(pct)
+			} else if pct >= 60 && m.lastContextThreshold < 60 {
+				m.lastContextThreshold = 60
+				m.output.AppendSystem("Context window at " + fmt.Sprintf("%d%%", pct) + " -- /compact available if needed")
+				m.fireContextThresholdHook(pct)
+			}
+			// Reset threshold when context drops below 60% (e.g. after /compact).
+			if pct < 60 {
+				m.lastContextThreshold = 0
+			}
+		}
 
 		if m.compacting {
 			m.compacting = false
@@ -683,6 +712,19 @@ func (m *Model) writeCheckpoint(summary string) {
 	content.WriteString("\n")
 
 	_ = os.WriteFile(filepath.Join(dir, "checkpoint.md"), []byte(content.String()), 0o644)
+}
+
+// fireContextThresholdHook runs the ContextThreshold hook if configured.
+func (m *Model) fireContextThresholdHook(pct int) {
+	if m.agentCfg.HookRunner == nil {
+		return
+	}
+	go func() {
+		input := []byte(fmt.Sprintf(`{"percentage":%d}`, pct))
+		if err := m.agentCfg.HookRunner.Run(context.Background(), hooks.ContextThreshold, "", input); err != nil {
+			log.Printf("warning: ContextThreshold hook: %v", err)
+		}
+	}()
 }
 
 // rebuildIndexCmd returns a tea.Cmd that runs the indexer in the background

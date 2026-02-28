@@ -8,12 +8,15 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Agent interrupt** — `Ctrl+C` cancels the current turn instead of killing the program; double-press to quit
 - **Thinking spinner** — visual feedback while the agent is processing
 - **Per-model cost tracking** — accurate pricing for Opus, Sonnet, and Haiku
-- **Built-in tools** — Read (2000-line default limit, line truncation), Write (read-before-write safety), Edit (permission-preserving, no-op rejection), Bash (timeout detection, 1MB output limit, background execution), Glob (noise directory filtering, result limits), Grep (full ripgrep-style flags, binary detection, type filters) + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
-- **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides and yolo mode for auto-approving all tools
+- **Context window display** — live `ctx: N%` in status bar with color thresholds (gold at 60%, red at 80%) and inline `/compact` suggestions
+- **Built-in tools** — Read (2000-line default limit, line truncation), Write (read-before-write safety), Edit (permission-preserving, no-op rejection), Bash (timeout detection, 1MB output limit, background execution, real-time output streaming), Glob (noise directory filtering, result limits), Grep (full ripgrep-style flags, binary detection, type filters) + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
+- **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides, yolo mode, and configurable path/command-scoped permission presets via `.claude/permissions.json`
 - **MCP support** — connect external tool servers via stdio transport, with health monitoring, `/mcp` management command, per-tool enable/disable, and environment variable passthrough
 - **CLAUDE.md** — discovers and loads project/user instructions automatically (bare `CLAUDE.md`, `.claude/CLAUDE.md`, and `.claude/CLAUDE.local.md` at every directory level)
-- **Hooks** — shell commands triggered by agent lifecycle events (SessionStart on launch, SessionEnd on exit)
+- **Hooks** — shell commands triggered by agent lifecycle events (SessionStart on launch, SessionEnd on exit, ContextThreshold on context usage crossing)
 - **Checkpoint resume** — detects `tmp/checkpoint.md` from `/compact` and offers to load previous session context
+- **Conversation export** — `/export` saves conversation as markdown, `/export --html` for self-contained HTML with syntax highlighting
+- **Input history** — Up/Down arrow to cycle previous prompts, Ctrl+R for reverse search
 - **Slash commands** — custom prompts from `.claude/commands/` with tab completion
 - **Custom agents** — define specialized subagents in `.claude/agents/`
 - **Subagents** — parallel task spawning via the Task tool
@@ -68,6 +71,8 @@ glamdring
 |---|---|
 | `Enter` | Submit prompt |
 | `Alt+Enter` | Insert newline |
+| `Up` / `Down` | Cycle input history (on first/last line) |
+| `Ctrl+r` | Reverse search input history |
 | `j` / `k` | Scroll line up/down |
 | `Ctrl+u` / `Ctrl+d` | Scroll half page |
 | `G` / `g` | Jump to bottom/top |
@@ -132,6 +137,26 @@ Configure MCP servers in `settings.json`:
 
 The status bar shows `mcp: N` when servers are connected, or `mcp: N/M` if some have died. Server deaths are surfaced inline in the output.
 
+### Permission Presets
+
+Configure path-scoped and command-scoped permission rules in `.claude/permissions.json`:
+
+```json
+{
+  "allow": [
+    {"tool": "Write", "path": "src/**"},
+    {"tool": "Bash", "command": "go test*"},
+    {"tool": "Bash", "command": "go build*"}
+  ],
+  "deny": [
+    {"tool": "Bash", "command": "rm -rf*"},
+    {"tool": "Write", "path": "/etc/**"}
+  ]
+}
+```
+
+Deny rules are checked first and block outright (no prompt). Allow rules skip the permission prompt. Both override the default prompt behavior. Path rules use glob matching (`**` for recursive, `*` for prefix). Command rules match against the bash command string.
+
 ### Indexer Configuration
 
 The shire code indexer is auto-detected by default. Configure via `settings.json`:
@@ -179,6 +204,7 @@ cmd/
 
 - **Render caching:** Finalized output blocks cache their rendered markdown so that only the active (streaming) block is re-rendered on each update.
 - **Tool result truncation:** Tool results exceeding 50KB are truncated before being sent to the API to protect the context window. The full output is still shown in the TUI.
+- **Bash output streaming:** Bash tool output is streamed line-by-line to the TUI as it arrives, rather than buffered until completion. Other tools fall back to the standard execute-then-display path.
 
 ## License
 

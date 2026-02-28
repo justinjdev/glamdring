@@ -20,6 +20,18 @@ type InputModel struct {
 
 	// slashCmd tracks tab-completion state for slash commands.
 	slashCmd SlashCommandState
+
+	// history tracks input history for Up/Down navigation.
+	history History
+
+	// searching is true when Ctrl+R reverse search is active.
+	searching bool
+	// searchQuery is the current search input during Ctrl+R.
+	searchQuery string
+	// searchResults holds the filtered history entries.
+	searchResults []string
+	// searchIdx is the index into searchResults.
+	searchIdx int
 }
 
 // NewInputModel creates a configured input component.
@@ -79,14 +91,44 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle Ctrl+R search mode.
+		if m.searching {
+			return m.handleSearchKey(msg)
+		}
+
 		switch msg.Type {
 		case tea.KeyEnter:
 			value := m.textarea.Value()
 			if value == "" {
 				return m, nil
 			}
+			m.history.ResetCursor()
 			return m, func() tea.Msg {
 				return SubmitMsg{Text: value}
+			}
+
+		case tea.KeyUp:
+			// Only activate history when cursor is on the first line.
+			if m.textarea.Line() == 0 {
+				if text, ok := m.history.Up(m.textarea.Value()); ok {
+					m.textarea.Reset()
+					m.textarea.SetValue(text)
+					m.textarea.CursorEnd()
+					return m, nil
+				}
+				return m, nil
+			}
+
+		case tea.KeyDown:
+			// Only activate history when cursor is on the last line.
+			if m.textarea.Line() == m.textarea.LineCount()-1 {
+				if text, ok := m.history.Down(m.textarea.Value()); ok {
+					m.textarea.Reset()
+					m.textarea.SetValue(text)
+					m.textarea.CursorEnd()
+					return m, nil
+				}
+				return m, nil
 			}
 
 		case tea.KeyTab:
@@ -97,11 +139,17 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 				if completed != value {
 					m.textarea.Reset()
 					m.textarea.SetValue(completed)
-					// Move cursor to end.
 					m.textarea.CursorEnd()
 				}
 				return m, nil
 			}
+
+		case tea.KeyCtrlR:
+			m.searching = true
+			m.searchQuery = ""
+			m.searchResults = nil
+			m.searchIdx = 0
+			return m, nil
 		}
 	}
 
@@ -113,10 +161,88 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// handleSearchKey processes key events during Ctrl+R reverse search.
+func (m InputModel) handleSearchKey(msg tea.KeyMsg) (InputModel, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		// Accept the current match.
+		if len(m.searchResults) > 0 && m.searchIdx < len(m.searchResults) {
+			m.textarea.Reset()
+			m.textarea.SetValue(m.searchResults[m.searchIdx])
+			m.textarea.CursorEnd()
+		}
+		m.searching = false
+		m.searchQuery = ""
+		m.searchResults = nil
+		return m, nil
+
+	case tea.KeyEsc, tea.KeyCtrlC:
+		// Cancel search.
+		m.searching = false
+		m.searchQuery = ""
+		m.searchResults = nil
+		return m, nil
+
+	case tea.KeyCtrlR:
+		// Cycle to next result.
+		if len(m.searchResults) > 0 {
+			m.searchIdx = (m.searchIdx + 1) % len(m.searchResults)
+		}
+		return m, nil
+
+	case tea.KeyBackspace:
+		if len(m.searchQuery) > 0 {
+			m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+			m.searchResults = m.history.Search(m.searchQuery)
+			m.searchIdx = 0
+		}
+		return m, nil
+
+	case tea.KeyRunes:
+		m.searchQuery += string(msg.Runes)
+		m.searchResults = m.history.Search(m.searchQuery)
+		m.searchIdx = 0
+		return m, nil
+	}
+
+	return m, nil
+}
+
 // View renders the input component.
 func (m InputModel) View() string {
+	if m.searching {
+		return m.renderSearch()
+	}
 	border := m.styles.InputBorder.Width(m.width - 2) // account for border
 	return border.Render(m.textarea.View())
+}
+
+// renderSearch renders the Ctrl+R reverse search prompt.
+func (m InputModel) renderSearch() string {
+	prompt := "reverse-i-search: " + m.searchQuery + "_"
+	var match string
+	if len(m.searchResults) > 0 && m.searchIdx < len(m.searchResults) {
+		match = m.searchResults[m.searchIdx]
+		// Truncate long matches for display.
+		if len(match) > 60 {
+			match = match[:57] + "..."
+		}
+	}
+	var content string
+	if match != "" {
+		content = prompt + "\n" + match
+	} else if m.searchQuery != "" {
+		content = prompt + "\n(no match)"
+	} else {
+		content = prompt
+	}
+	border := m.styles.InputBorder.Width(m.width - 2)
+	return border.Render(content)
+}
+
+// SearchActive returns true if reverse search is currently active.
+func (m InputModel) SearchActive() bool {
+	return m.searching
 }
 
 // Value returns the current text in the input.

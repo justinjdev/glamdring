@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"sync"
@@ -120,6 +122,105 @@ func (t BashTool) Execute(ctx context.Context, input json.RawMessage) (Result, e
 	}
 
 	output := buildOutput(stdout.Bytes(), stderr.Bytes(), exitCode)
+	output = truncateOutput(output)
+
+	return Result{Output: output, IsError: exitCode != 0}, nil
+}
+
+// ExecuteStreaming runs a command with real-time output streaming via onOutput.
+// Background commands fall back to the non-streaming Execute path.
+func (t BashTool) ExecuteStreaming(ctx context.Context, input json.RawMessage, onOutput func(string)) (Result, error) {
+	var in bashInput
+	if err := json.Unmarshal(input, &in); err != nil {
+		return Result{Output: fmt.Sprintf("invalid input: %s", err), IsError: true}, nil
+	}
+	if in.Command == "" {
+		return Result{Output: "command is required", IsError: true}, nil
+	}
+
+	// Background jobs don't stream.
+	if in.RunInBackground {
+		return t.executeBackground(ctx, in.Command)
+	}
+
+	timeout := 120 * time.Second
+	if in.Timeout > 0 {
+		tt := in.Timeout
+		if tt > maxTimeout {
+			tt = maxTimeout
+		}
+		timeout = time.Duration(tt) * time.Millisecond
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "bash", "-c", in.Command)
+	cmd.Dir = t.CWD
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return Result{Output: fmt.Sprintf("failed to create stdout pipe: %s", err), IsError: true}, nil
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return Result{Output: fmt.Sprintf("failed to create stderr pipe: %s", err), IsError: true}, nil
+	}
+
+	if err := cmd.Start(); err != nil {
+		return Result{Output: fmt.Sprintf("failed to run command: %s", err), IsError: true}, nil
+	}
+
+	// Scan stdout and stderr concurrently.
+	var wg sync.WaitGroup
+	var stdoutBuf, stderrBuf strings.Builder
+
+	scanPipe := func(pipe io.Reader, buf *strings.Builder, prefix string) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(pipe)
+		scanner.Buffer(make([]byte, 0, 64*1024), maxOutputSize)
+		for scanner.Scan() {
+			line := scanner.Text()
+			buf.WriteString(line)
+			buf.WriteString("\n")
+			if onOutput != nil {
+				onOutput(prefix + line + "\n")
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			errMsg := fmt.Sprintf("\n[stream read error: %s]\n", err)
+			buf.WriteString(errMsg)
+			if onOutput != nil {
+				onOutput(errMsg)
+			}
+		}
+	}
+
+	wg.Add(2)
+	go scanPipe(stdoutPipe, &stdoutBuf, "")
+	go scanPipe(stderrPipe, &stderrBuf, "")
+
+	wg.Wait()
+	err = cmd.Wait()
+
+	if ctx.Err() == context.DeadlineExceeded {
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		return Result{Output: "command timed out", IsError: true}, nil
+	}
+
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			return Result{Output: fmt.Sprintf("failed to run command: %s", err), IsError: true}, nil
+		}
+	}
+
+	output := buildOutput([]byte(stdoutBuf.String()), []byte(stderrBuf.String()), exitCode)
 	output = truncateOutput(output)
 
 	return Result{Output: output, IsError: exitCode != 0}, nil

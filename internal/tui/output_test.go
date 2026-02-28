@@ -141,6 +141,188 @@ func TestToggleCollapseInvalidatesCache(t *testing.T) {
 	}
 }
 
+func TestClamp(t *testing.T) {
+	tests := []struct {
+		name           string
+		val, lo, hi    int
+		want           int
+	}{
+		{"below min", -5, 0, 10, 0},
+		{"above max", 15, 0, 10, 10},
+		{"in range", 5, 0, 10, 5},
+		{"at min", 0, 0, 10, 0},
+		{"at max", 10, 0, 10, 10},
+		{"equal bounds", 5, 5, 5, 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := clamp(tt.val, tt.lo, tt.hi)
+			if got != tt.want {
+				t.Errorf("clamp(%d, %d, %d) = %d, want %d", tt.val, tt.lo, tt.hi, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderThinkingBlock_WithContent(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.AppendThinking("deep thoughts")
+	m.finalizePreviousBlock()
+	m.rerender()
+
+	if len(m.blocks) == 0 {
+		t.Fatal("expected at least 1 block")
+	}
+	b := m.blocks[0]
+	if b.kind != blockThinking {
+		t.Fatalf("expected blockThinking, got %d", b.kind)
+	}
+	if b.content != "deep thoughts" {
+		t.Errorf("expected content 'deep thoughts', got %q", b.content)
+	}
+	// After finalization and rerender, rendered should be non-empty.
+	if b.rendered == "" {
+		t.Error("expected non-empty rendered output for thinking block")
+	}
+}
+
+func TestRenderThinkingBlock_Empty(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.AppendThinking("")
+	m.finalizePreviousBlock()
+	m.rerender()
+
+	if len(m.blocks) == 0 {
+		t.Fatal("expected at least 1 block")
+	}
+	b := m.blocks[0]
+	if b.kind != blockThinking {
+		t.Fatalf("expected blockThinking, got %d", b.kind)
+	}
+}
+
+func TestAppendToolOutputDelta_CreatesBlock(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.AppendToolOutputDelta("partial output")
+
+	if len(m.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(m.blocks))
+	}
+	b := m.blocks[0]
+	if b.kind != blockToolResult {
+		t.Errorf("expected blockToolResult, got %d", b.kind)
+	}
+	if b.finalized {
+		t.Error("expected streaming block to not be finalized")
+	}
+	if b.content != "partial output" {
+		t.Errorf("expected 'partial output', got %q", b.content)
+	}
+}
+
+func TestAppendToolOutputDelta_AppendsToExisting(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.AppendToolOutputDelta("part1")
+	m.AppendToolOutputDelta("part2")
+
+	if len(m.blocks) != 1 {
+		t.Fatalf("expected 1 block after appending, got %d", len(m.blocks))
+	}
+	if m.blocks[0].content != "part1part2" {
+		t.Errorf("expected 'part1part2', got %q", m.blocks[0].content)
+	}
+}
+
+func TestAppendToolResult_FinalizesStreamingBlock(t *testing.T) {
+	m := newTestOutput(80, 24)
+	// Start a streaming tool result.
+	m.AppendToolOutputDelta("streaming...")
+	// Finalize with the full result.
+	m.AppendToolResult("final output", false)
+
+	if len(m.blocks) != 1 {
+		t.Fatalf("expected 1 block (finalized in-place), got %d", len(m.blocks))
+	}
+	b := m.blocks[0]
+	if !b.finalized {
+		t.Error("expected block to be finalized")
+	}
+	if b.content != "final output" {
+		t.Errorf("expected 'final output', got %q", b.content)
+	}
+}
+
+func TestAppendToolResult_ErrorFlag(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.AppendToolResult("some error", true)
+
+	if len(m.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(m.blocks))
+	}
+	if !m.blocks[0].isError {
+		t.Error("expected isError to be true")
+	}
+}
+
+func TestToggleCollapse_InvalidIndex(t *testing.T) {
+	m := newTestOutput(80, 24)
+	if m.ToggleCollapse(-1) {
+		t.Error("expected false for negative index")
+	}
+	if m.ToggleCollapse(0) {
+		t.Error("expected false for out-of-bounds index")
+	}
+}
+
+func TestToggleCollapse_NonToolResultBlock(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.AppendText("just text")
+	if m.ToggleCollapse(0) {
+		t.Error("expected false for non-tool-result block")
+	}
+}
+
+func TestToggleLastToolResult_NoToolResults(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.AppendText("just text")
+	if m.ToggleLastToolResult() {
+		t.Error("expected false when no tool result blocks exist")
+	}
+}
+
+func TestAppendError_Content(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.AppendError("something went wrong")
+
+	if len(m.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(m.blocks))
+	}
+	b := m.blocks[0]
+	if b.kind != blockError {
+		t.Errorf("expected blockError, got %d", b.kind)
+	}
+	if b.content != "something went wrong" {
+		t.Errorf("expected error content, got %q", b.content)
+	}
+}
+
+func TestClear_ResetsEverything(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.AppendText("text")
+	m.AppendUserMessage("msg")
+	longOutput := strings.Repeat("line\n", 30)
+	m.AppendToolResult(longOutput, false)
+
+	m.Clear()
+
+	if len(m.blocks) != 0 {
+		t.Errorf("expected 0 blocks after clear, got %d", len(m.blocks))
+	}
+	if len(m.collapsed) != 0 {
+		t.Errorf("expected empty collapsed map, got %d entries", len(m.collapsed))
+	}
+}
+
 func TestRendererDirtyRetriesOnFailure(t *testing.T) {
 	m := newTestOutput(80, 24)
 
