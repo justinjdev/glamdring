@@ -36,7 +36,8 @@ type OutputModel struct {
 	// Keyed by the block's index in the blocks slice.
 	collapsed map[int]bool
 
-	width int
+	width         int
+	rendererDirty bool
 }
 
 type blockKind int
@@ -313,23 +314,19 @@ func (m *OutputModel) ToggleLastToolResult() bool {
 }
 
 // SetSize updates the viewport and re-renders content.
+// Only width changes trigger renderer recreation and cache invalidation;
+// height-only changes just update the viewport dimensions.
 func (m *OutputModel) SetSize(width, height int) {
-	m.width = width
 	m.viewport.Width = width
 	m.viewport.Height = height
 
-	// Recreate renderer with new width.
-	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width-4),
-	)
-	if err == nil {
-		m.renderer = r
-	}
-
-	// Invalidate all cached renders so blocks re-render at new width.
-	for i := range m.blocks {
-		m.blocks[i].rendered = ""
+	if width != m.width {
+		m.width = width
+		m.rendererDirty = true
+		// Invalidate render cache since width changed.
+		for i := range m.blocks {
+			m.blocks[i].rendered = ""
+		}
 	}
 
 	m.rerender()
@@ -338,6 +335,17 @@ func (m *OutputModel) SetSize(width, height int) {
 // rerender converts all accumulated blocks into styled text and updates the viewport.
 // Finalized blocks with a cached render are reused without re-rendering.
 func (m *OutputModel) rerender() {
+	if m.rendererDirty {
+		r, err := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(m.width-4),
+		)
+		if err == nil {
+			m.renderer = r
+		}
+		m.rendererDirty = false
+	}
+
 	var parts []string
 
 	for i, b := range m.blocks {
