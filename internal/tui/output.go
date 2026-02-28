@@ -36,7 +36,8 @@ type OutputModel struct {
 	// Keyed by the block's index in the blocks slice.
 	collapsed map[int]bool
 
-	width int
+	width         int
+	rendererDirty bool
 }
 
 type blockKind int
@@ -52,9 +53,11 @@ const (
 )
 
 type outputBlock struct {
-	kind    blockKind
-	content string
-	isError bool // for tool results
+	kind      blockKind
+	content   string
+	isError   bool   // for tool results
+	finalized bool   // true when block is complete (no more appends)
+	rendered  string // cached rendered output
 }
 
 // NewOutputModel creates an output viewport with glamour markdown rendering.
@@ -187,11 +190,23 @@ func (m OutputModel) View() string {
 
 // AppendUserMessage adds a styled user message header and text.
 func (m *OutputModel) AppendUserMessage(text string) {
+	m.finalizePreviousBlock()
 	m.blocks = append(m.blocks, outputBlock{
-		kind:    blockUserMessage,
-		content: text,
+		kind:      blockUserMessage,
+		content:   text,
+		finalized: true,
 	})
 	m.rerender()
+}
+
+// finalizePreviousBlock marks the last block as finalized if it is not
+// already. Called when a new block starts, indicating the previous streaming
+// block is complete.
+func (m *OutputModel) finalizePreviousBlock() {
+	if len(m.blocks) == 0 {
+		return
+	}
+	m.blocks[len(m.blocks)-1].finalized = true
 }
 
 // AppendText adds agent text output (markdown).
@@ -200,6 +215,7 @@ func (m *OutputModel) AppendText(s string) {
 	if len(m.blocks) > 0 && m.blocks[len(m.blocks)-1].kind == blockText {
 		m.blocks[len(m.blocks)-1].content += s
 	} else {
+		m.finalizePreviousBlock()
 		m.blocks = append(m.blocks, outputBlock{kind: blockText, content: s})
 	}
 	m.rerender()
@@ -207,19 +223,22 @@ func (m *OutputModel) AppendText(s string) {
 
 // AppendToolCall adds a tool call header block.
 func (m *OutputModel) AppendToolCall(name, summary string) {
+	m.finalizePreviousBlock()
 	content := fmt.Sprintf("%s: %s", name, summary)
-	m.blocks = append(m.blocks, outputBlock{kind: blockToolCall, content: content})
+	m.blocks = append(m.blocks, outputBlock{kind: blockToolCall, content: content, finalized: true})
 	m.rerender()
 }
 
 // AppendToolResult adds a tool result block.
 // Results over collapseThreshold lines are collapsed by default.
 func (m *OutputModel) AppendToolResult(output string, isError bool) {
+	m.finalizePreviousBlock()
 	idx := len(m.blocks)
 	m.blocks = append(m.blocks, outputBlock{
-		kind:    blockToolResult,
-		content: output,
-		isError: isError,
+		kind:      blockToolResult,
+		content:   output,
+		isError:   isError,
+		finalized: true,
 	})
 	// Auto-collapse large tool results.
 	lines := strings.Split(output, "\n")
@@ -235,6 +254,7 @@ func (m *OutputModel) AppendThinking(s string) {
 	if len(m.blocks) > 0 && m.blocks[len(m.blocks)-1].kind == blockThinking {
 		m.blocks[len(m.blocks)-1].content += s
 	} else {
+		m.finalizePreviousBlock()
 		m.blocks = append(m.blocks, outputBlock{kind: blockThinking, content: s})
 	}
 	m.rerender()
@@ -242,7 +262,8 @@ func (m *OutputModel) AppendThinking(s string) {
 
 // AppendSystem adds a system message block (for built-in command output).
 func (m *OutputModel) AppendSystem(s string) {
-	m.blocks = append(m.blocks, outputBlock{kind: blockSystem, content: s})
+	m.finalizePreviousBlock()
+	m.blocks = append(m.blocks, outputBlock{kind: blockSystem, content: s, finalized: true})
 	m.rerender()
 }
 
@@ -258,7 +279,8 @@ func (m *OutputModel) Clear() {
 
 // AppendError adds an error message block.
 func (m *OutputModel) AppendError(s string) {
-	m.blocks = append(m.blocks, outputBlock{kind: blockError, content: s})
+	m.finalizePreviousBlock()
+	m.blocks = append(m.blocks, outputBlock{kind: blockError, content: s, finalized: true})
 	m.rerender()
 }
 
@@ -272,6 +294,7 @@ func (m *OutputModel) ToggleCollapse(blockIdx int) bool {
 		return false
 	}
 	m.collapsed[blockIdx] = !m.collapsed[blockIdx]
+	m.blocks[blockIdx].rendered = "" // invalidate cache
 	m.rerender()
 	return true
 }
@@ -288,28 +311,52 @@ func (m *OutputModel) ToggleLastToolResult() bool {
 }
 
 // SetSize updates the viewport and re-renders content.
+// Only width changes trigger renderer recreation and cache invalidation;
+// height-only changes just update the viewport dimensions.
 func (m *OutputModel) SetSize(width, height int) {
-	m.width = width
 	m.viewport.Width = width
 	m.viewport.Height = height
 
-	// Recreate renderer with new width.
-	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width-4),
-	)
-	if err == nil {
-		m.renderer = r
+	if width != m.width {
+		m.width = width
+		m.rendererDirty = true
+		// Invalidate render cache since width changed.
+		for i := range m.blocks {
+			m.blocks[i].rendered = ""
+		}
 	}
 
 	m.rerender()
 }
 
 // rerender converts all accumulated blocks into styled text and updates the viewport.
+// Finalized blocks with a cached render are reused without re-rendering.
 func (m *OutputModel) rerender() {
+	if m.rendererDirty {
+		wrapWidth := m.width - 4
+		if wrapWidth < 1 {
+			wrapWidth = 1
+		}
+		r, err := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(wrapWidth),
+		)
+		if err == nil {
+			m.renderer = r
+			m.rendererDirty = false
+		}
+	}
+
 	var parts []string
 
 	for i, b := range m.blocks {
+		// Use cached render for finalized blocks.
+		if b.finalized && b.rendered != "" {
+			parts = append(parts, b.rendered)
+			continue
+		}
+
+		var rendered string
 		switch b.kind {
 		case blockUserMessage:
 			header := m.styles.UserHeader.Render("\u2500\u2500 You ")
@@ -318,36 +365,42 @@ func (m *OutputModel) rerender() {
 				dividerWidth = 0
 			}
 			divider := m.styles.UserHeader.Render(strings.Repeat("\u2500", dividerWidth))
-			rendered := renderMarkdown(m.renderer, b.content)
-			parts = append(parts, header+divider+"\n"+rendered)
+			md := renderMarkdown(m.renderer, b.content)
+			rendered = header + divider + "\n" + md
 
 		case blockText:
-			rendered := renderMarkdown(m.renderer, b.content)
-			parts = append(parts, rendered)
+			rendered = renderMarkdown(m.renderer, b.content)
 
 		case blockToolCall:
 			icon := m.styles.ToolCallIcon.Render("\u25b6")
 			header := m.styles.ToolCallHeader.Render(b.content)
-			parts = append(parts, icon+" "+header)
+			rendered = icon + " " + header
 
 		case blockToolResult:
 			output := m.renderToolResult(i, b)
 			if b.isError {
-				parts = append(parts, m.styles.ToolResultErr.Render(output))
+				rendered = m.styles.ToolResultErr.Render(output)
 			} else {
-				parts = append(parts, m.styles.ToolResult.Render(output))
+				rendered = m.styles.ToolResult.Render(output)
 			}
 
 		case blockThinking:
-			parts = append(parts, m.renderThinkingBlock(i, b))
+			rendered = m.renderThinkingBlock(i, b)
 
 		case blockSystem:
 			styled := m.styles.SystemText.Render(b.content)
-			parts = append(parts, m.styles.SystemBorder.Render(styled))
+			rendered = m.styles.SystemBorder.Render(styled)
 
 		case blockError:
-			parts = append(parts, m.styles.ErrorText.Render("error: "+b.content))
+			rendered = m.styles.ErrorText.Render("error: " + b.content)
 		}
+
+		// Cache the rendered output for finalized blocks. Block indices are
+		// stable (append-only) so the cache key is valid for the session.
+		if b.finalized {
+			m.blocks[i].rendered = rendered
+		}
+		parts = append(parts, rendered)
 	}
 
 	content := strings.Join(parts, "\n")

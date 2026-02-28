@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/justin/glamdring/pkg/auth"
 	"github.com/justin/glamdring/pkg/tools"
@@ -354,6 +355,75 @@ func (t *mockTool) Schema() json.RawMessage {
 }
 func (t *mockTool) Execute(ctx context.Context, input json.RawMessage) (tools.Result, error) {
 	return tools.Result{Output: "ok"}, nil
+}
+
+func TestTruncateToolResult(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+		changed  bool
+	}{
+		{
+			name:     "empty string unchanged",
+			input:    "",
+			expected: "",
+			changed:  false,
+		},
+		{
+			name:     "short output unchanged",
+			input:    "hello world",
+			expected: "hello world",
+			changed:  false,
+		},
+		{
+			name:     "exactly at limit unchanged",
+			input:    strings.Repeat("a", maxToolResultSize),
+			expected: strings.Repeat("a", maxToolResultSize),
+			changed:  false,
+		},
+		{
+			name:    "over limit truncated",
+			input:   strings.Repeat("a", maxToolResultSize+100),
+			changed: true,
+		},
+		{
+			name:    "multi-byte UTF-8 truncation",
+			input:   strings.Repeat("a", maxToolResultSize-1) + "\xf0\x9f\x98\x80" + "tail",
+			changed: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := truncateToolResult(tt.input)
+			if tt.changed {
+				if !strings.Contains(result, "truncated") {
+					t.Error("expected truncation notice in output")
+				}
+				fullSizeStr := fmt.Sprintf("%d", len(tt.input))
+				if !strings.Contains(result, fullSizeStr) {
+					t.Errorf("expected original size %s in truncation notice", fullSizeStr)
+				}
+				if !utf8.ValidString(result) {
+					t.Error("truncated result is not valid UTF-8")
+				}
+				// Verify prefix preservation: the truncated content
+				// (before the notice) should match the original.
+				beforeNotice := strings.SplitN(result, "\n... (truncated", 2)[0]
+				if len(beforeNotice) >= len(tt.input) {
+					t.Error("expected truncated content to be shorter than input")
+				}
+				if !strings.HasPrefix(tt.input, beforeNotice) {
+					t.Error("truncated result prefix does not match original input")
+				}
+			} else {
+				if result != tt.expected {
+					t.Errorf("got %q, want %q", result, tt.expected)
+				}
+			}
+		})
+	}
 }
 
 // Ensure mockCreds satisfies auth.Credentials.

@@ -175,6 +175,11 @@ cmd/
 
 `pkg/` is the reusable engine. `internal/tui/` is the terminal frontend. The package boundary is designed so a daemon mode or alternative frontends can consume `pkg/` directly.
 
+### Internals
+
+- **Render caching:** Finalized output blocks cache their rendered markdown so that only the active (streaming) block is re-rendered on each update.
+- **Tool result truncation:** Tool results exceeding 50KB are truncated before being sent to the API to protect the context window. The full output is still shown in the TUI.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
