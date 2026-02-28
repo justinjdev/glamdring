@@ -230,7 +230,7 @@ func TestExecuteTools_PermissionDeny(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Bash", map[string]any{"command": "rm -rf /"})}
 
-	results, err := executeTools(ctx, out, registry, calls, nil, nil, perms, nil)
+	results, err := executeTools(ctx, out, registry, calls, nil, nil, perms, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -285,7 +285,7 @@ func TestExecuteTools_PermissionAllow(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Write", map[string]any{"file_path": "/tmp/x"})}
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, perms, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, perms, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -322,7 +322,7 @@ func TestExecuteTools_HookBlock(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Bash", map[string]any{"command": "echo hi"})}
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{"Bash": true}, hookRunner, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{"Bash": true}, hookRunner, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -355,7 +355,7 @@ func TestExecuteTools_ToolError(t *testing.T) {
 	calls := []toolCall{makeToolCall("tc1", "Bash", map[string]any{"command": "false"})}
 	sessionAllow := map[string]bool{"Bash": true}
 
-	results, err := executeTools(ctx, out, registry, calls, sessionAllow, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, sessionAllow, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -385,7 +385,7 @@ func TestExecuteTools_Success(t *testing.T) {
 	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{"file_path": "/tmp/test"})}
 
 	// Read is in alwaysAllowTools, so no permission needed.
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -442,7 +442,7 @@ func TestExecuteTools_MultipleTools(t *testing.T) {
 		makeToolCall("tc2", "Grep", map[string]any{"pattern": "test"}),
 	}
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -481,7 +481,7 @@ func TestExecuteTools_UserDeniesPermission(t *testing.T) {
 		}
 	}()
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -529,7 +529,7 @@ func TestExecuteTools_UserAlwaysApprove(t *testing.T) {
 		}
 	}()
 
-	results, err := executeTools(ctx, out, registry, calls, sessionAllow, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, sessionAllow, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -562,7 +562,7 @@ func TestExecuteTools_ContextCancelled(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{})}
 
-	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil)
+	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
 	close(out)
 
 	if err == nil {

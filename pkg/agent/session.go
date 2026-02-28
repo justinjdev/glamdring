@@ -3,10 +3,13 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/justin/glamdring/pkg/api"
+	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/tools"
 )
 
@@ -22,6 +25,7 @@ type Session struct {
 	messages     []api.RequestMessage
 	priorityCh   <-chan any
 	regularCh    <-chan any
+	teamScope    *config.TeamScope
 	TotalInput         int
 	TotalOutput        int
 	TotalCacheCreation       int
@@ -60,6 +64,7 @@ func NewSession(cfg Config) *Session {
 		sessionAllow: make(map[string]bool),
 		priorityCh:   cfg.PriorityMessages,
 		regularCh:    cfg.RegularMessages,
+		teamScope:    cfg.TeamScope,
 	}
 	if cfg.Yolo {
 		s.SetYolo(true)
@@ -163,8 +168,17 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 
 		events, err := s.client.Stream(ctx, req)
 		if err != nil {
-			emit(ctx, out, Message{Type: MessageError, Err: fmt.Errorf("api stream: %w", err)})
-			return
+			// If a phase fallback model is available and this is a retryable
+			// API error (429/5xx), switch to the fallback and retry once.
+			if fallbackModel := s.tryFallbackModel(err); fallbackModel != "" {
+				log.Printf("switching to fallback model %s after error: %v", fallbackModel, err)
+				s.client.SetModel(fallbackModel)
+				events, err = s.client.Stream(ctx, req)
+			}
+			if err != nil {
+				emit(ctx, out, Message{Type: MessageError, Err: fmt.Errorf("api stream: %w", err)})
+				return
+			}
 		}
 
 		turnResult, err := processTurn(ctx, events, out)
@@ -197,7 +211,7 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 			return
 
 		case "tool_use":
-			toolResults, err := executeTools(ctx, out, s.provider, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner, s.cfg.Permissions, s.priorityCh)
+			toolResults, err := executeTools(ctx, out, s.provider, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner, s.cfg.Permissions, s.teamScope, s.priorityCh)
 			if err != nil {
 				emit(ctx, out, Message{Type: MessageError, Err: err})
 				return
@@ -211,6 +225,10 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 				Role:    "user",
 				Content: resultBlocks,
 			})
+
+			// After tool execution, sync the model if the phase changed
+			// (e.g., AdvancePhase was called).
+			s.syncPhaseModel()
 
 		case "max_tokens":
 			// Model ran out of output tokens mid-response. Send a continuation
@@ -270,6 +288,36 @@ done:
 			Content: combined,
 		})
 	}
+}
+
+// syncPhaseModel checks if the ToolProvider is phase-aware and updates the
+// client model to match the current phase. Called after tool execution to
+// handle AdvancePhase transitions.
+func (s *Session) syncPhaseModel() {
+	if pmp, ok := s.provider.(tools.PhaseModelProvider); ok {
+		if model, _ := pmp.CurrentPhaseModel(); model != "" && model != s.client.Model() {
+			log.Printf("phase model changed to %s", model)
+			s.client.SetModel(model)
+		}
+	}
+}
+
+// tryFallbackModel checks if the error is a retryable API error (429/5xx) and
+// returns the phase fallback model if available. Returns "" if no fallback applies.
+func (s *Session) tryFallbackModel(err error) string {
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		return ""
+	}
+	if apiErr.StatusCode != 429 && apiErr.StatusCode < 500 {
+		return ""
+	}
+	pmp, ok := s.provider.(tools.PhaseModelProvider)
+	if !ok {
+		return ""
+	}
+	_, fallback := pmp.CurrentPhaseModel()
+	return fallback
 }
 
 // formatTeamMessage converts an opaque team message to a string for injection.

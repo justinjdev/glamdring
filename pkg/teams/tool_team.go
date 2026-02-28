@@ -25,6 +25,10 @@ func getManager(registry *ManagerRegistry, teamName string) (*TeamManager, *tool
 // TeamCreateTool creates a new team and registers it in the ManagerRegistry.
 type TeamCreateTool struct {
 	Registry *ManagerRegistry
+	// TaskDirBase overrides the default task directory base (~/.glamdring/teams/).
+	// When set, task files are stored under TaskDirBase/<team>/tasks/ instead.
+	// Used by tests to avoid writing to the real home directory.
+	TaskDirBase string
 }
 
 type teamCreateInput struct {
@@ -78,13 +82,18 @@ func (t TeamCreateTool) Execute(_ context.Context, input json.RawMessage) (tools
 		Phases:      ResolveWorkflow(in.Workflow, nil),
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return tools.Result{Output: fmt.Sprintf("failed to resolve home directory: %s", err), IsError: true}, nil
+	var taskDir string
+	if t.TaskDirBase != "" {
+		taskDir = filepath.Join(t.TaskDirBase, in.TeamName, "tasks")
+	} else {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return tools.Result{Output: fmt.Sprintf("failed to resolve home directory: %s", err), IsError: true}, nil
+		}
+		taskDir = filepath.Join(homeDir, ".glamdring", "teams", in.TeamName, "tasks")
 	}
-	taskDir := filepath.Join(homeDir, ".glamdring", "teams", in.TeamName, "tasks")
 
-	_, err = t.Registry.Create(cfg, taskDir)
+	_, err := t.Registry.Create(cfg, taskDir)
 	if err != nil {
 		return tools.Result{Output: fmt.Sprintf("failed to create team: %s", err), IsError: true}, nil
 	}

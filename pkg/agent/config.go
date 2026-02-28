@@ -36,6 +36,11 @@ type Config struct {
 	// provider (e.g., PhaseRegistry for team agents). If nil, a standard
 	// Registry is built from Tools.
 	ToolProvider tools.ToolProvider
+
+	// TeamScope restricts file-modifying tools to specific path patterns.
+	// When set, operations outside the scope are denied before normal
+	// permission evaluation.
+	TeamScope *config.TeamScope
 }
 
 // DefaultModel is the default Claude model to use.

@@ -206,6 +206,7 @@ func executeTools(
 	sessionAllow map[string]bool,
 	hookRunner *hooks.HookRunner,
 	permissions *config.PermissionConfig,
+	teamScope *config.TeamScope,
 	priorityCh <-chan any,
 ) ([]api.ContentBlock, error) {
 	results := make([]api.ContentBlock, 0, len(calls))
@@ -234,6 +235,27 @@ func executeTools(
 		if hookRunner != nil {
 			if err := hookRunner.Run(ctx, hooks.PreToolUse, tc.name, tc.input); err != nil {
 				errMsg := fmt.Sprintf("blocked by hook: %s", err.Error())
+				results = append(results, api.ContentBlock{
+					Type:      "tool_result",
+					ToolUseID: tc.id,
+					Content:   errMsg,
+					IsError:   true,
+				})
+				emit(ctx, out, Message{
+					Type:        MessageToolResult,
+					ToolName:    tc.name,
+					ToolID:      tc.id,
+					ToolOutput:  errMsg,
+					ToolIsError: true,
+				})
+				continue
+			}
+		}
+
+		// Check team scope restrictions (before general permissions).
+		if teamScope != nil {
+			if config.EvaluateTeamScope(teamScope, tc.name, inputMap) == config.PermissionResultDeny {
+				errMsg := "blocked by team scope restriction"
 				results = append(results, api.ContentBlock{
 					Type:      "tool_result",
 					ToolUseID: tc.id,

@@ -105,6 +105,16 @@ func (pr *PhaseRegistry) ExecuteStreaming(ctx context.Context, name string, inpu
 	return pr.base.ExecuteStreaming(ctx, name, input, onOutput)
 }
 
+// CurrentPhaseModel returns the model and fallback model for the current phase.
+// Implements tools.PhaseModelProvider.
+func (pr *PhaseRegistry) CurrentPhaseModel() (model string, fallback string) {
+	phase, _, err := pr.phases.Current(pr.agentName)
+	if err != nil || phase == nil {
+		return "", ""
+	}
+	return phase.Model, phase.Fallback
+}
+
 // allowedNames returns a set of tool names allowed in the current phase,
 // combined with teamTools and readTools. Returns nil if no phases are
 // configured, signaling that all tools should be available.

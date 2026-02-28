@@ -218,7 +218,7 @@ func TestIntegration_ToolsEndToEnd(t *testing.T) {
 	ctx := context.Background()
 
 	// Create team via tool.
-	createTool := TeamCreateTool{Registry: registry}
+	createTool := TeamCreateTool{Registry: registry, TaskDirBase: t.TempDir()}
 	input, _ := json.Marshal(map[string]string{
 		"team_name":   "e2e-team",
 		"description": "end to end test",
