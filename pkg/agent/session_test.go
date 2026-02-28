@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/justin/glamdring/pkg/auth"
 	"github.com/justin/glamdring/pkg/tools"
@@ -364,6 +365,12 @@ func TestTruncateToolResult(t *testing.T) {
 		changed  bool
 	}{
 		{
+			name:     "empty string unchanged",
+			input:    "",
+			expected: "",
+			changed:  false,
+		},
+		{
 			name:     "short output unchanged",
 			input:    "hello world",
 			expected: "hello world",
@@ -380,21 +387,35 @@ func TestTruncateToolResult(t *testing.T) {
 			input:   strings.Repeat("a", maxToolResultSize+100),
 			changed: true,
 		},
+		{
+			name:    "multi-byte UTF-8 truncation",
+			input:   strings.Repeat("a", maxToolResultSize-1) + "\xf0\x9f\x98\x80" + "tail",
+			changed: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := truncateToolResult(tt.input)
 			if tt.changed {
-				if len(result) >= len(tt.input) {
-					t.Error("expected truncated result to be shorter than input")
-				}
 				if !strings.Contains(result, "truncated") {
 					t.Error("expected truncation notice in output")
 				}
 				fullSizeStr := fmt.Sprintf("%d", len(tt.input))
 				if !strings.Contains(result, fullSizeStr) {
 					t.Errorf("expected original size %s in truncation notice", fullSizeStr)
+				}
+				if !utf8.ValidString(result) {
+					t.Error("truncated result is not valid UTF-8")
+				}
+				// Verify prefix preservation: the truncated content
+				// (before the notice) should match the original.
+				beforeNotice := strings.SplitN(result, "\n... (truncated", 2)[0]
+				if len(beforeNotice) >= len(tt.input) {
+					t.Error("expected truncated content to be shorter than input")
+				}
+				if !strings.HasPrefix(tt.input, beforeNotice) {
+					t.Error("truncated result prefix does not match original input")
 				}
 			} else {
 				if result != tt.expected {

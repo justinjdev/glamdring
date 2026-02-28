@@ -4,7 +4,7 @@ Grouped into 10 implementation chunks, ordered by dependency and impact. Each ch
 
 ---
 
-## Chunk 1: Critical Agent Loop Fixes ✅ COMPLETED
+## Chunk 1: Critical Agent Loop Fixes [DONE] COMPLETED
 
 **Priority:** P0 -- Nothing works correctly without these.
 **Estimated scope:** ~400 lines changed across 4 files.
@@ -98,7 +98,7 @@ Verify all tool `Name()` methods use PascalCase to match `alwaysAllowTools`, `pe
 
 ---
 
-## Chunk 2: API Client Hardening ✅ COMPLETED
+## Chunk 2: API Client Hardening [DONE] COMPLETED
 
 **Priority:** P0 -- Goroutine leaks and stream failures.
 **Estimated scope:** ~100 lines changed across 3 files.
@@ -202,7 +202,7 @@ Propagate through `agent.Message` and `statusbar.go` for display.
 
 ---
 
-## Chunk 3: Tool Completeness ✅ COMPLETED
+## Chunk 3: Tool Completeness [DONE] COMPLETED
 
 **Priority:** P1 -- Model will try to use features that don't exist.
 **Estimated scope:** ~350 lines changed across 7 files.
@@ -273,7 +273,7 @@ Propagate through `agent.Message` and `statusbar.go` for display.
 
 ---
 
-## Chunk 4: TUI Core UX ✅ COMPLETED
+## Chunk 4: TUI Core UX [DONE] COMPLETED
 
 **Priority:** P1 -- Bugs and missing basics that affect every session.
 **Estimated scope:** ~300 lines changed across 5 files.
@@ -353,7 +353,7 @@ Use the active model to select pricing. Fall back to Opus pricing for unknown mo
 
 ---
 
-## Chunk 5: Config, Auth, and Hooks ✅ COMPLETED
+## Chunk 5: Config, Auth, and Hooks [DONE] COMPLETED
 
 **Priority:** P1 -- Incorrect CLAUDE.md discovery affects every session.
 **Estimated scope:** ~200 lines changed across 5 files.
@@ -433,7 +433,7 @@ This gives the agent awareness of its runtime context, matching Claude Code's be
 
 ---
 
-## Chunk 6: MCP Improvements ✅ COMPLETED
+## Chunk 6: MCP Improvements [DONE] COMPLETED
 
 **Priority:** P2 -- Functional but has correctness bugs.
 **Estimated scope:** ~200 lines changed across 4 files.
@@ -549,7 +549,7 @@ Session-level overrides don't persist to config — they reset on restart.
 
 ---
 
-## Chunk 7: CLI Feature Parity ✅ COMPLETED
+## Chunk 7: CLI Feature Parity [DONE] COMPLETED
 
 **Priority:** P1 -- CLI correctness + yolo mode.
 **Estimated scope:** ~150 lines across main.go, model.go, builtins.go, statusbar.go, session.go.
@@ -672,7 +672,7 @@ if s.session != nil && s.session.IsYolo() {
 
 ---
 
-## Chunk 8: Performance -- COMPLETED
+## Chunk 8: Performance [DONE] COMPLETED
 
 **Priority:** P2 -- Noticeable in long sessions.
 **Estimated scope:** ~200 lines changed across 3 files.
@@ -938,12 +938,12 @@ Agents go idle between turns and can be woken by incoming messages. Requires a m
 ## Implementation Order
 
 ```
-Chunk 1 (Agent Loop)   ✅ ─┐
-Chunk 2 (API Client)   ✅ ─┤
-Chunk 3 (Tools)        ✅ ─┼──→  Chunk 4 (TUI UX)   ✅ ──→  Chunk 9 (Differentiation)
-Chunk 5 (Config/Auth)  ✅ ─┤
-Chunk 6 (MCP)          ✅ ─┤                                  Chunk 8 (Performance)  ✅
-Chunk 7 (CLI Parity)   ✅ ─┘
+Chunk 1 (Agent Loop)   [DONE] ─┐
+Chunk 2 (API Client)   [DONE] ─┤
+Chunk 3 (Tools)        [DONE] ─┼──→  Chunk 4 (TUI UX)   [DONE] ──→  Chunk 9 (Differentiation)
+Chunk 5 (Config/Auth)  [DONE] ─┤
+Chunk 6 (MCP)          [DONE] ─┤                                  Chunk 8 (Performance)  [DONE]
+Chunk 7 (CLI Parity)   [DONE] ─┘
                          │
                          └──→  Chunk 10 (Agent Teams) -- depends on 1 + 7
 ```

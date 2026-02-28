@@ -206,10 +206,7 @@ func (m *OutputModel) finalizePreviousBlock() {
 	if len(m.blocks) == 0 {
 		return
 	}
-	last := &m.blocks[len(m.blocks)-1]
-	if !last.finalized {
-		last.finalized = true
-	}
+	m.blocks[len(m.blocks)-1].finalized = true
 }
 
 // AppendText adds agent text output (markdown).
@@ -336,14 +333,18 @@ func (m *OutputModel) SetSize(width, height int) {
 // Finalized blocks with a cached render are reused without re-rendering.
 func (m *OutputModel) rerender() {
 	if m.rendererDirty {
+		wrapWidth := m.width - 4
+		if wrapWidth < 1 {
+			wrapWidth = 1
+		}
 		r, err := glamour.NewTermRenderer(
 			glamour.WithAutoStyle(),
-			glamour.WithWordWrap(m.width-4),
+			glamour.WithWordWrap(wrapWidth),
 		)
 		if err == nil {
 			m.renderer = r
+			m.rendererDirty = false
 		}
-		m.rendererDirty = false
 	}
 
 	var parts []string

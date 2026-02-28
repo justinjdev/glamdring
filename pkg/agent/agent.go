@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/justin/glamdring/pkg/api"
 	"github.com/justin/glamdring/pkg/hooks"
@@ -30,7 +32,16 @@ func truncateToolResult(output string) string {
 	if len(output) <= maxToolResultSize {
 		return output
 	}
-	return output[:maxToolResultSize] +
+	log.Printf("truncating tool result from %d to %d bytes", len(output), maxToolResultSize)
+	truncated := output[:maxToolResultSize]
+	// Trim any incomplete trailing UTF-8 sequence (at most 3 bytes).
+	for i := 0; i < 3 && len(truncated) > 0; i++ {
+		if utf8.ValidString(truncated) {
+			break
+		}
+		truncated = truncated[:len(truncated)-1]
+	}
+	return truncated +
 		"\n... (truncated, full output was " + strconv.Itoa(len(output)) + " bytes)"
 }
 
