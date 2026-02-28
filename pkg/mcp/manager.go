@@ -43,11 +43,16 @@ func NewManager() *Manager {
 // old server is closed first.
 func (m *Manager) StartServer(ctx context.Context, name string, cfg config.MCPServerConfig) error {
 	// Close any existing server with the same name.
+	// Delete the entry before unlocking so monitor sees !stillExists
+	// and doesn't fire OnServerDeath for the replaced server.
 	m.mu.Lock()
 	if existing, ok := m.servers[name]; ok {
+		delete(m.servers, name)
 		m.mu.Unlock()
 		log.Printf("mcp: replacing existing server %q", name)
-		_ = existing.client.Close()
+		if err := existing.client.Close(); err != nil {
+			log.Printf("mcp: warning closing old %q: %v", name, err)
+		}
 	} else {
 		m.mu.Unlock()
 	}
@@ -150,7 +155,9 @@ func (m *Manager) RestartServer(ctx context.Context, name string) error {
 		return fmt.Errorf("unknown server %q", name)
 	}
 
-	_ = entry.client.Close()
+	if err := entry.client.Close(); err != nil {
+		log.Printf("mcp: warning closing %q for restart: %v", name, err)
+	}
 	return m.StartServer(ctx, name, cfg)
 }
 
@@ -230,8 +237,20 @@ func (m *Manager) EnableTool(serverName, toolName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, ok := m.servers[serverName]; !ok {
+	entry, ok := m.servers[serverName]
+	if !ok {
 		return fmt.Errorf("unknown server %q", serverName)
+	}
+
+	found := false
+	for _, t := range entry.tools {
+		if t.mcpName == toolName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("tool %q not found on server %q", toolName, serverName)
 	}
 
 	if m.disabledTools[serverName] != nil {
@@ -247,6 +266,7 @@ func (m *Manager) Close() {
 	for k, v := range m.servers {
 		servers[k] = v
 	}
+	m.servers = make(map[string]*serverEntry)
 	m.mu.Unlock()
 
 	for name, entry := range servers {

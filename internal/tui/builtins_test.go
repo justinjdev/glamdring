@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justin/glamdring/pkg/agent"
 	"github.com/justin/glamdring/pkg/commands"
+	"github.com/justin/glamdring/pkg/mcp"
 )
 
 func intPtr(v int) *int { return &v }
@@ -373,5 +374,129 @@ func TestCmdCost_PerModelPricing(t *testing.T) {
 	// cost = 5000/1M * 3.0 + 1000/1M * 15.0 = 0.015 + 0.015 = 0.0300
 	if !strings.Contains(content, "$0.0300") {
 		t.Errorf("expected Sonnet pricing in cost output, got %q", content)
+	}
+}
+
+// --- MCP command tests ---
+
+// newTestMCPManager creates a Manager with a fake server for testing.
+func newTestMCPManager() *mcp.Manager {
+	mgr := mcp.NewManager()
+	mgr.AddTestServer("test-server", []string{"tool_a", "tool_b"})
+	return mgr
+}
+
+func TestCmdMCP_NilManager(t *testing.T) {
+	m := newTestModel()
+	m.mcpMgr = nil
+
+	cmd := cmdMCP(&m, "")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	if len(m.output.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(m.output.blocks))
+	}
+	if !strings.Contains(m.output.blocks[0].content, "No MCP servers configured") {
+		t.Errorf("expected 'No MCP servers configured', got %q", m.output.blocks[0].content)
+	}
+}
+
+func TestCmdMCP_UnknownSubcommand(t *testing.T) {
+	m := newTestModel()
+	m.mcpMgr = newTestMCPManager()
+
+	cmd := cmdMCP(&m, "bogus")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	found := false
+	for _, b := range m.output.blocks {
+		if b.kind == blockError && strings.Contains(b.content, "Unknown /mcp subcommand") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected error about unknown subcommand")
+	}
+}
+
+func TestCmdMCP_List(t *testing.T) {
+	m := newTestModel()
+	m.mcpMgr = newTestMCPManager()
+
+	cmd := cmdMCP(&m, "")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	if len(m.output.blocks) == 0 {
+		t.Fatal("expected output blocks")
+	}
+	content := m.output.blocks[0].content
+	if !strings.Contains(content, "test-server") {
+		t.Errorf("expected server name in output, got %q", content)
+	}
+	if !strings.Contains(content, "2 tools") {
+		t.Errorf("expected tool count in output, got %q", content)
+	}
+}
+
+func TestCmdMCP_Tools(t *testing.T) {
+	m := newTestModel()
+	m.mcpMgr = newTestMCPManager()
+
+	cmd := cmdMCP(&m, "tools test-server")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	if len(m.output.blocks) == 0 {
+		t.Fatal("expected output blocks")
+	}
+	content := m.output.blocks[0].content
+	if !strings.Contains(content, "tool_a") || !strings.Contains(content, "tool_b") {
+		t.Errorf("expected tool names in output, got %q", content)
+	}
+}
+
+func TestCmdMCP_DisableTool(t *testing.T) {
+	m := newTestModel()
+	m.mcpMgr = newTestMCPManager()
+
+	cmd := cmdMCP(&m, "disable test-server tool_a")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	found := false
+	for _, b := range m.output.blocks {
+		if b.kind == blockSystem && strings.Contains(b.content, "Disabled") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected confirmation of disable")
+	}
+}
+
+func TestCmdMCP_EnableTool(t *testing.T) {
+	m := newTestModel()
+	m.mcpMgr = newTestMCPManager()
+
+	// Disable first, then enable.
+	_ = m.mcpMgr.DisableTool("test-server", "tool_a")
+	cmd := cmdMCP(&m, "enable test-server tool_a")
+	if cmd != nil {
+		t.Error("expected nil cmd")
+	}
+	found := false
+	for _, b := range m.output.blocks {
+		if b.kind == blockSystem && strings.Contains(b.content, "Enabled") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected confirmation of enable")
 	}
 }

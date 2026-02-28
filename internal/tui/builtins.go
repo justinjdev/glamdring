@@ -420,7 +420,9 @@ func cmdMCPDisconnect(m *Model, name string) tea.Cmd {
 		m.output.AppendError(fmt.Sprintf("Failed to disconnect %q: %s", name, err))
 		return nil
 	}
-	m.mcpConfiguredCount--
+	if m.mcpConfiguredCount > 0 {
+		m.mcpConfiguredCount--
+	}
 	m.output.AppendSystem(fmt.Sprintf("Disconnected MCP server %q", name))
 	m.statusbar.UpdateMCP(m.mcpConfiguredCount, m.mcpMgr.ServerCount())
 	m.refreshMCPTools()

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 )
 
 // Client communicates with a single MCP server process over stdio.
@@ -19,6 +21,7 @@ type Client struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
+	stderr bytes.Buffer
 
 	nextID  atomic.Int64
 	mu      sync.Mutex
@@ -33,7 +36,6 @@ type Client struct {
 func NewClient(command string, args []string, env []string) (*Client, error) {
 	cmd := exec.Command(command, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Stderr = io.Discard
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
@@ -48,13 +50,20 @@ func NewClient(command string, args []string, env []string) (*Client, error) {
 		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
 
-	return &Client{
+	c := &Client{
 		cmd:     cmd,
 		stdin:   stdinPipe,
 		stdout:  stdoutPipe,
 		pending: make(map[int]chan Response),
 		done:    make(chan struct{}),
-	}, nil
+	}
+	cmd.Stderr = &c.stderr
+	return c, nil
+}
+
+// Stderr returns any output the server process wrote to stderr.
+func (c *Client) Stderr() string {
+	return c.stderr.String()
 }
 
 // Start launches the MCP server process and performs the initialize handshake.
@@ -139,14 +148,26 @@ func (c *Client) CallTool(ctx context.Context, name string, arguments json.RawMe
 // Close terminates the MCP server process.
 func (c *Client) Close() error {
 	// Close stdin to signal the server.
-	_ = c.stdin.Close()
-
-	if c.cmd.Process != nil {
-		_ = c.cmd.Process.Signal(syscall.SIGTERM)
+	if err := c.stdin.Close(); err != nil {
+		log.Printf("mcp: warning closing stdin: %v", err)
 	}
 
-	// Wait for the reader goroutine to finish.
-	<-c.done
+	if c.cmd.Process != nil {
+		if err := c.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			log.Printf("mcp: warning sending SIGTERM: %v", err)
+		}
+	}
+
+	// Wait for the reader goroutine to finish, with timeout to prevent deadlock.
+	select {
+	case <-c.done:
+	case <-time.After(5 * time.Second):
+		log.Printf("mcp: server did not exit after SIGTERM, sending SIGKILL")
+		if c.cmd.Process != nil {
+			_ = c.cmd.Process.Kill()
+		}
+		<-c.done
+	}
 
 	// Wait for the process to exit.
 	return c.cmd.Wait()
@@ -262,6 +283,10 @@ func (c *Client) readLoop() {
 		if ok {
 			ch <- resp
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("mcp: reader error: %v", err)
 	}
 
 	// Server process exited or stdout closed. Unblock any pending callers.

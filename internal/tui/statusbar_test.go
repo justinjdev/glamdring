@@ -84,3 +84,65 @@ func TestStatusBarUpdate_UsesCostForModel(t *testing.T) {
 		t.Errorf("expected cost %f for sonnet, got %f", expected, sb.cost)
 	}
 }
+
+// --- MCP status bar tests ---
+
+func TestStatusBarMCP_Hidden(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+	sb.SetWidth(120)
+	// mcpTotal=0 by default, should not show "mcp:" in output.
+	view := sb.View()
+	if strings.Contains(view, "mcp:") {
+		t.Error("expected no mcp indicator when mcpTotal=0")
+	}
+}
+
+func TestStatusBarMCP_AllAlive(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+	sb.SetWidth(120)
+	sb.UpdateMCP(3, 3)
+
+	view := sb.View()
+	if !strings.Contains(view, "mcp:") {
+		t.Fatal("expected mcp indicator in status bar")
+	}
+	// When all alive, should show just the count, not "X/Y".
+	if strings.Contains(view, "3/3") {
+		t.Error("expected compact form (just '3'), not '3/3' when all alive")
+	}
+}
+
+func TestStatusBarMCP_SomeDead(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+	sb.SetWidth(120)
+	sb.UpdateMCP(3, 2)
+
+	view := sb.View()
+	if !strings.Contains(view, "mcp:") {
+		t.Fatal("expected mcp indicator in status bar")
+	}
+	if !strings.Contains(view, "2/3") {
+		t.Errorf("expected '2/3' in status bar, got %q", view)
+	}
+}
+
+func TestStatusBarReset_PreservesMCP(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+	sb.UpdateMCP(3, 2)
+	sb.Update("claude-opus-4-6", 1000, 500, 5)
+
+	sb.Reset()
+
+	// Token counts should be zeroed.
+	if sb.inputTokens != 0 || sb.outputTokens != 0 || sb.turn != 0 {
+		t.Error("expected token counters to be zeroed")
+	}
+	// MCP counts should survive.
+	if sb.mcpTotal != 3 || sb.mcpAlive != 2 {
+		t.Errorf("expected MCP counts preserved (3/2), got %d/%d", sb.mcpTotal, sb.mcpAlive)
+	}
+}
