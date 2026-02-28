@@ -242,6 +242,7 @@ func (m *OutputModel) AppendToolOutputDelta(text string) {
 			return
 		}
 	}
+	m.finalizePreviousBlock()
 	m.blocks = append(m.blocks, outputBlock{
 		kind:    blockToolResult,
 		content: text,

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os/exec"
 	"strings"
 	"sync"
@@ -69,13 +70,24 @@ func (BashTool) Schema() json.RawMessage {
 	}`)
 }
 
-func (t BashTool) Execute(ctx context.Context, input json.RawMessage) (Result, error) {
+// parseBashInput unmarshals and validates bash tool input.
+func parseBashInput(input json.RawMessage) (bashInput, *Result) {
 	var in bashInput
 	if err := json.Unmarshal(input, &in); err != nil {
-		return Result{Output: fmt.Sprintf("invalid input: %s", err), IsError: true}, nil
+		r := Result{Output: fmt.Sprintf("invalid input: %s", err), IsError: true}
+		return in, &r
 	}
 	if in.Command == "" {
-		return Result{Output: "command is required", IsError: true}, nil
+		r := Result{Output: "command is required", IsError: true}
+		return in, &r
+	}
+	return in, nil
+}
+
+func (t BashTool) Execute(ctx context.Context, input json.RawMessage) (Result, error) {
+	in, errResult := parseBashInput(input)
+	if errResult != nil {
+		return *errResult, nil
 	}
 
 	timeout := 120 * time.Second
@@ -107,7 +119,9 @@ func (t BashTool) Execute(ctx context.Context, input json.RawMessage) (Result, e
 	// Check for timeout BEFORE checking ExitError.
 	if ctx.Err() == context.DeadlineExceeded {
 		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+				log.Printf("failed to kill process group %d: %v", cmd.Process.Pid, err)
+			}
 		}
 		return Result{Output: "command timed out", IsError: true}, nil
 	}
@@ -130,12 +144,9 @@ func (t BashTool) Execute(ctx context.Context, input json.RawMessage) (Result, e
 // ExecuteStreaming runs a command with real-time output streaming via onOutput.
 // Background commands fall back to the non-streaming Execute path.
 func (t BashTool) ExecuteStreaming(ctx context.Context, input json.RawMessage, onOutput func(string)) (Result, error) {
-	var in bashInput
-	if err := json.Unmarshal(input, &in); err != nil {
-		return Result{Output: fmt.Sprintf("invalid input: %s", err), IsError: true}, nil
-	}
-	if in.Command == "" {
-		return Result{Output: "command is required", IsError: true}, nil
+	in, errResult := parseBashInput(input)
+	if errResult != nil {
+		return *errResult, nil
 	}
 
 	// Background jobs don't stream.
@@ -206,7 +217,9 @@ func (t BashTool) ExecuteStreaming(ctx context.Context, input json.RawMessage, o
 
 	if ctx.Err() == context.DeadlineExceeded {
 		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+				log.Printf("failed to kill process group %d: %v", cmd.Process.Pid, err)
+			}
 		}
 		return Result{Output: "command timed out", IsError: true}, nil
 	}

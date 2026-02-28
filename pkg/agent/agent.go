@@ -278,6 +278,7 @@ func executeTools(
 		if permissions != nil {
 			switch permissions.Evaluate(tc.name, inputMap) {
 			case config.PermissionResultDeny:
+				log.Printf("permission denied by rule for tool %s", tc.name)
 				errMsg := "blocked by permission rule"
 				results = append(results, api.ContentBlock{
 					Type:      "tool_result",

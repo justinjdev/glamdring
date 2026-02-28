@@ -57,7 +57,7 @@ func (h *History) Up(currentText string) (string, bool) {
 // Down moves forward through history. When reaching the end, restores the
 // saved draft. Returns the entry/draft and true, or empty and false if
 // not currently navigating.
-func (h *History) Down(currentText string) (string, bool) {
+func (h *History) Down() (string, bool) {
 	if h.cursor == -1 {
 		return "", false
 	}

@@ -44,7 +44,10 @@ func exportMarkdown(msgs []api.RequestMessage) string {
 
 			case "tool_use":
 				b.WriteString(fmt.Sprintf("**Tool: %s**\n\n", block.Name))
-				inputJSON, _ := json.MarshalIndent(json.RawMessage(block.Input), "", "  ")
+				inputJSON, err := json.MarshalIndent(json.RawMessage(block.Input), "", "  ")
+				if err != nil {
+					inputJSON = []byte("(invalid JSON)")
+				}
 				b.WriteString("```json\n")
 				b.WriteString(string(inputJSON))
 				b.WriteString("\n```\n\n")
@@ -73,8 +76,12 @@ func exportHTML(msgs []api.RequestMessage) string {
 		role := msg.Role
 		roleClass := role
 
-		body.WriteString(fmt.Sprintf(`<div class="message %s">`, roleClass))
-		body.WriteString(fmt.Sprintf(`<h2>%s</h2>`, strings.Title(role)))
+		body.WriteString(fmt.Sprintf(`<div class="message %s">`, html.EscapeString(roleClass)))
+		title := role
+		if len(title) > 0 {
+			title = strings.ToUpper(title[:1]) + title[1:]
+		}
+		body.WriteString(fmt.Sprintf(`<h2>%s</h2>`, html.EscapeString(title)))
 
 		blocks := parseContentBlocks(msg.Content)
 		for _, block := range blocks {
@@ -97,7 +104,10 @@ func exportHTML(msgs []api.RequestMessage) string {
 
 			case "tool_use":
 				body.WriteString(fmt.Sprintf(`<div class="tool-call"><strong>Tool: %s</strong>`, html.EscapeString(block.Name)))
-				inputJSON, _ := json.MarshalIndent(json.RawMessage(block.Input), "", "  ")
+				inputJSON, err := json.MarshalIndent(json.RawMessage(block.Input), "", "  ")
+				if err != nil {
+					inputJSON = []byte("(invalid JSON)")
+				}
 				body.WriteString(fmt.Sprintf(`<pre>%s</pre></div>`, html.EscapeString(string(inputJSON))))
 
 			case "tool_result":
@@ -118,6 +128,8 @@ func exportHTML(msgs []api.RequestMessage) string {
 // parseContentBlocks extracts ContentBlock slices from a RequestMessage.Content,
 // which can be either a string or []ContentBlock (serialized as []any).
 func parseContentBlocks(content any) []api.ContentBlock {
+	placeholder := []api.ContentBlock{{Type: "text", Text: "(unparseable content)"}}
+
 	switch v := content.(type) {
 	case string:
 		return []api.ContentBlock{{Type: "text", Text: v}}
@@ -129,11 +141,11 @@ func parseContentBlocks(content any) []api.ContentBlock {
 		// Content from JSON unmarshaling comes as []any of map[string]any.
 		data, err := json.Marshal(v)
 		if err != nil {
-			return nil
+			return placeholder
 		}
 		var blocks []api.ContentBlock
 		if err := json.Unmarshal(data, &blocks); err != nil {
-			return nil
+			return placeholder
 		}
 		return blocks
 
@@ -141,11 +153,11 @@ func parseContentBlocks(content any) []api.ContentBlock {
 		// Try marshaling directly in case it's a typed slice.
 		data, err := json.Marshal(v)
 		if err != nil {
-			return nil
+			return placeholder
 		}
 		var blocks []api.ContentBlock
 		if err := json.Unmarshal(data, &blocks); err != nil {
-			return nil
+			return placeholder
 		}
 		return blocks
 	}
