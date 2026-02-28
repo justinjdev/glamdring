@@ -47,7 +47,7 @@ The existing codebase provides several integration points:
 
 ### 3. Scoped tools via decorator pattern
 
-**Decision:** Scoped enforcement uses the decorator pattern. `ScopedWrite`, `ScopedEdit`, `ScopedBash` wrap the real tools, check scope rules in Execute() before delegating. Decorators are composable: `CheckinGate(ScopedEdit(Edit))`.
+**Decision:** Scoped enforcement uses the decorator pattern. `ScopedWrite` and `ScopedEdit` wrap the real tools, check scope rules in Execute() before delegating. Decorators are composable: `CheckinGate(ScopedEdit(Edit))`. Bash command scoping is advisory only (allow-list patterns as hints, no deny patterns) -- the real Bash enforcement is schema-level exclusion in research/plan phases. See Risk section for rationale.
 
 **Alternative considered:** Modify the base tools to accept scope parameters. Rejected because it couples scope logic to tools that work fine without it, and non-team agents shouldn't pay the complexity cost.
 
@@ -60,19 +60,42 @@ CheckinGate -> FileLock -> ScopedTool -> BaseTool
 - ScopedTool: validates paths/commands against task scope
 - BaseTool: the real Edit/Write/Bash implementation
 
-### 4. Team state: in-memory with file-backed tasks
+### 4. Team state: in-memory with file-backed tasks, decomposed subsystems
 
-**Decision:** Team membership, file locks, phase state, check-in counters, and mailboxes are in-memory (managed by `TeamManager`). Task lists are persisted as JSON files for durability. If the process crashes, tasks survive but team runtime state resets (acceptable -- teams are session-scoped).
+**Decision:** Team runtime state is in-memory and task lists are persisted as JSON files. If the process crashes, tasks survive but runtime state resets (acceptable -- teams are session-scoped).
+
+`TeamManager` is a thin coordinator that composes focused subsystem interfaces, each independently testable and swappable:
+
+```
+TeamManager
+  -> MemberRegistry   // join, leave, status, lookup by name
+  -> TaskStore         // CRUD, dependencies, ownership, persistence
+  -> Mailbox           // per-agent channels, delivery, wakeup
+  -> LockManager       // acquire, release, query, cleanup
+  -> ContextCache      // set, get, list compacted summaries
+  -> PhaseTracker      // current phase per agent, advance, gate state
+  -> CheckinTracker    // per-agent tool call counters, reset
+```
+
+Each subsystem owns its own state and synchronization. `TeamManager` provides the creation/teardown lifecycle and routes cross-cutting operations (e.g., agent shutdown triggers `LockManager.ReleaseAll` + `MemberRegistry.SetStatus` + `Mailbox.Close`).
+
+**Alternative considered:** Single monolithic TeamManager struct with all state and methods. Rejected because it would accumulate 20+ methods across 6+ concerns, making isolated testing difficult and future extension (e.g., swapping persistence backends, adding distributed transport) require touching the entire struct.
 
 **Alternative considered:** Full persistence for all state. Rejected because file locks and phase state are meaningless after a crash (agents are gone). Task persistence is valuable because it's the durable record of work.
 
-### 5. Messaging via buffered Go channels
+### 5. Messaging via buffered Go channels with priority delivery
 
-**Decision:** Each team agent gets a mailbox (buffered channel). `SendMessage` writes to the recipient's channel. The agent loop checks for incoming messages between turns (after each `runTurn` completes). Phase approval uses a separate dedicated channel to avoid message ordering issues.
+**Decision:** Each team agent gets a mailbox (buffered channel). `SendMessage` writes to the recipient's channel. Regular messages are delivered between turns (after each `runTurn` completes). The agent sees new messages as injected user-role messages at the start of its next iteration.
+
+Phase approval requests and shutdown requests use a separate **priority channel**. The leader's `executeTools` loop checks the priority channel between each tool execution within a turn (not just between turns). This prevents deadlocks where multiple agents block on `AdvancePhase` waiting for a leader who is mid-turn executing a long tool chain.
+
+**Priority delivery mechanism:** In the leader's tool execution loop, after each tool completes and before the next tool starts, check the priority channel (non-blocking select). If an approval request is pending, inject it as a tool result message so the leader can respond immediately. This adds one non-blocking channel check per tool call -- negligible overhead.
+
+**Alternative considered:** Deliver all messages between turns only. Rejected because `AdvancePhase` with `LeaderApproval` blocks on a Go channel. If the leader is mid-turn running 5 tool calls, all approval-blocked agents wait until the leader's full turn completes. With 4 agents, this creates cascading stalls. Priority delivery bounds the wait to one tool execution, not one full turn.
 
 **Alternative considered:** File-based message queues. Rejected because agents are goroutines in the same process -- channels are simpler, faster, and naturally concurrent-safe.
 
-**Message delivery timing:** Messages are delivered between turns (not mid-turn). This is simpler and avoids interrupting an agent mid-thought. The agent sees new messages as injected user-role messages at the start of its next iteration.
+**Regular message delivery timing:** Regular messages (DMs, broadcasts) are still delivered between turns. This is simpler and avoids interrupting an agent's reasoning mid-thought. Only leader approval and shutdown requests use priority delivery because they are blocking operations that can cause cascading stalls.
 
 ### 6. Three-layer composable architecture
 
@@ -174,16 +197,41 @@ If agents spend ~30% of tokens on research, ~15% on planning, ~40% on implementa
 **Decision:** Teams have a shared context cache -- a key-value store of compacted summaries that any agent can contribute to and any agent can receive at spawn time. When context compaction occurs at a phase boundary, the compacted output is stored in the cache under a key derived from the agent name and phase (e.g., `"researcher:research"`, `"auth-impl:plan"`).
 
 **Implementation:**
-- `TeamManager.SetContext(teamName, key, content string)` -- called during phase compaction or explicitly by agents.
-- `TeamManager.GetContext(teamName, key string) string` -- called when spawning new team agents.
-- `TeamManager.ListContextKeys(teamName string) []string` -- lets the lead see what's available.
+- `ContextCache.Set(teamName, key, content string)` -- called during phase compaction or explicitly by agents.
+- `ContextCache.Get(teamName, key string) string` -- called when spawning new team agents.
+- `ContextCache.ListKeys(teamName string) []string` -- lets the lead see what's available.
 - When spawning a new team agent, the lead can specify `inject_context: ["researcher:research"]` to inject specific cached context. The agent can also specify `start_phase: "plan"` to skip earlier phases when context is injected.
 
 **Rationale:** Eliminates redundant work across agents. The common case is sharing research findings, but the mechanism is generic -- a planning agent's output could be injected into an implementation agent, or one implementation agent's findings could help another. The cache stores compacted summaries (not raw conversation), so injected context is already token-efficient.
 
 **Alternative considered:** Research-specific cache with `skip_research: true` shorthand. Rejected as too narrow -- the underlying need is sharing compacted context between agents, not specifically research findings. A generic cache supports the research case and any other sharing pattern.
 
-### 11. File locking granularity: per-file, not per-directory
+### 11. Transport layer abstraction
+
+**Decision:** The Mailbox and TaskStore subsystems are defined behind Go interfaces, even though the initial implementation is in-process (Go channels and in-memory maps). This ensures the coordination layer can be swapped to a distributed transport (e.g., gRPC, NATS, Redis streams) without rewriting the tools or agent loop.
+
+```go
+type MessageTransport interface {
+    Send(ctx context.Context, teamName, recipient string, msg Message) error
+    Receive(ctx context.Context, teamName, agentName string) (<-chan Message, error)
+    ReceivePriority(ctx context.Context, teamName, agentName string) (<-chan Message, error)
+}
+
+type TaskStorage interface {
+    Create(ctx context.Context, teamName string, task Task) (string, error)
+    Get(ctx context.Context, teamName, taskID string) (Task, error)
+    List(ctx context.Context, teamName string) ([]TaskSummary, error)
+    Update(ctx context.Context, teamName, taskID string, update TaskUpdate) error
+}
+```
+
+The initial implementations (`ChannelTransport`, `FileTaskStorage`) satisfy these interfaces using Go channels and JSON files respectively. The tools (`SendMessage`, `TaskCreate`, etc.) depend on the interfaces, not the implementations.
+
+**Rationale:** 4+ agents making concurrent Opus API calls in a single process will hit rate limits. Multi-process teams are a likely future requirement. Defining the interface now costs almost nothing but prevents a full rewrite later. The interface boundary also enables testing with mock transports.
+
+**Alternative considered:** Build distributed support from the start. Rejected as premature -- in-process coordination is simpler to debug and sufficient for the initial use cases. The interface abstraction preserves the option without paying the distributed systems complexity tax now.
+
+### 12. File locking granularity: per-file, not per-directory
 
 **Decision:** Locks are acquired per file path when an agent successfully writes/edits. The lock is held until the agent's task completes or the agent is shut down.
 
@@ -205,8 +253,8 @@ If agents spend ~30% of tokens on research, ~15% on planning, ~40% on implementa
 **[Risk] Check-in enforcement is annoying** -- Agents might spend their check-in on a meaningless "still working" message just to clear the counter.
 -> Mitigation: The counter threshold is tunable (default 15). The check-in must be a TaskUpdate (with actual status) or a SendMessage with content, not just a ping. Future: validate check-in quality heuristically.
 
-**[Risk] Scoped Bash is hard to get right** -- Command restriction via pattern matching is inherently fragile (shell escaping, pipes, subshells).
--> Mitigation: Default to excluding Bash entirely from research/plan phases. In implement phase, Bash is scoped by allow-list patterns (e.g., `go test*`, `go build*`). Deny patterns catch obvious dangerous commands. Accept that determined circumvention is possible via Bash -- the goal is preventing accidental scope violations, not adversarial agents.
+**[Risk] Scoped Bash is hard to get right** -- Command restriction via pattern matching is inherently fragile (shell escaping, pipes, subshells, backtick execution, `$(...)`, `eval`, `xargs`, process substitution, heredocs). Pattern matching against shell commands is fundamentally broken as a security boundary.
+-> Mitigation: Bash command scoping is explicitly **advisory, not a security boundary**. The real enforcement layers are: (1) Bash is excluded from the API schema in research/plan phases -- the model cannot call it; (2) Write/Edit path scoping via decorators enforces filesystem boundaries structurally. In implement/verify phases, Bash is available with allow-list patterns as a hint to guide agent behavior, but no deny patterns are used (they give false confidence against trivial bypasses). If actual Bash sandboxing is needed in the future, it requires OS-level mechanisms (namespaces, seccomp, nsjail), not string pattern matching.
 
 **[Trade-off] Complexity vs. enforcement** -- The decorator chain (CheckinGate -> FileLock -> ScopedTool -> BaseTool) adds layers. Each team agent tool call traverses 3-4 wrappers before reaching the real implementation.
 -> Acceptable: The wrapper checks are O(1) (map lookups, counter checks). The complexity is in setup (composing wrappers at spawn time), not in per-call overhead. Non-team agents are unaffected.

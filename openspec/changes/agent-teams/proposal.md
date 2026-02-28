@@ -31,7 +31,7 @@ Glamdring supports subagents (isolated, fire-and-forget tasks) but has no infras
 
 ## Impact
 
-- **New packages:** `pkg/teams/` (team state, task storage, mailbox, file locks, phase workflows), new tool files in `pkg/tools/` (team_create, team_delete, task_create, task_list, task_get, task_update, send_message, advance_phase)
+- **New packages:** `pkg/teams/` (decomposed subsystems: MemberRegistry, TaskStore, Mailbox, LockManager, ContextCache, PhaseTracker, CheckinTracker; MessageTransport and TaskStorage interfaces with in-process implementations), new tool files in `pkg/tools/` (team_create, team_delete, task_create, task_list, task_get, task_update, send_message, advance_phase)
 - **Modified packages:** `pkg/tools/task.go` (team-aware spawning), `pkg/tools/registry.go` (dynamic tool set swapping for phases), `pkg/agent/session.go` (agent identity, team membership, phase state)
 - **New config:** Team configs at `~/.glamdring/teams/{name}/config.json`, task storage at `~/.glamdring/tasks/{name}/`
 - **Dependencies:** Builds on existing subagent infrastructure (Chunk 1 + 7), permission system, tool interface, and hooks

@@ -36,6 +36,22 @@ The system SHALL provide a TaskUpdate tool that can update: status (pending, in_
 - **WHEN** an agent calls TaskUpdate with taskId "3" and status "completed"
 - **THEN** the task status changes and any tasks blocked by task 3 have their blockedBy list updated
 
+### Requirement: Atomic task claiming with compare-and-swap
+When an agent sets itself as owner of a task via TaskUpdate, the operation SHALL use compare-and-swap semantics. TaskUpdate with an `owner` field SHALL accept an optional `expected_owner` field (defaulting to empty string, meaning "currently unowned"). If the task's current owner does not match `expected_owner`, the update SHALL fail with an error identifying the current owner. This prevents race conditions where two agents read TaskList, both see a task as unowned, and both attempt to claim it.
+
+#### Scenario: Successful claim of unowned task
+- **WHEN** agent "auth-impl" calls TaskUpdate with taskId "3", owner "auth-impl", and expected_owner "" (or omitted)
+- **THEN** the task's current owner is "" (unowned), so the claim succeeds and owner is set to "auth-impl"
+
+#### Scenario: Claim rejected due to race
+- **WHEN** agent "api-impl" calls TaskUpdate with taskId "3", owner "api-impl", and expected_owner ""
+- **AND** agent "auth-impl" has already claimed task 3
+- **THEN** the tool returns an error: "Task 3 is owned by 'auth-impl' (expected: unowned). Check TaskList for available tasks."
+
+#### Scenario: Reassignment by lead
+- **WHEN** the lead calls TaskUpdate with taskId "3", owner "api-impl", and expected_owner "auth-impl"
+- **THEN** the reassignment succeeds because the expected owner matches the current owner
+
 ### Requirement: Task dependencies
 Tasks SHALL support dependency relationships: a task can block other tasks, and a task can be blocked by other tasks. A blocked task (non-empty blockedBy list of non-completed tasks) SHALL NOT be claimable.
 

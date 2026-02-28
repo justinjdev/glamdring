@@ -101,6 +101,21 @@ Each workflow phase SHALL specify a model tier that the agent loop uses when bui
 - **WHEN** a workflow defines the plan phase with model "opus" instead of the default "sonnet"
 - **THEN** the plan phase uses Opus
 
+### Requirement: Model fallback chain
+Each workflow phase SHALL support an optional fallback model. When the primary model returns a rate limit (429) or server error (5xx), the agent loop SHALL retry with the fallback model. The default fallback assignments SHALL be: research (haiku -> sonnet), plan (sonnet -> opus), implement (opus -> sonnet), verify (sonnet -> opus). The fallback SHALL be configurable per phase in custom workflow definitions.
+
+#### Scenario: Primary model rate-limited
+- **WHEN** an agent in the "research" phase sends an API request and Haiku returns a 429 rate limit error
+- **THEN** the agent loop retries the request using Sonnet (the fallback model) without requiring phase advancement or user intervention
+
+#### Scenario: Fallback model also fails
+- **WHEN** both the primary and fallback models return errors
+- **THEN** the agent loop surfaces the error to the team lead via SendMessage and pauses (does not crash)
+
+#### Scenario: Custom fallback override
+- **WHEN** a workflow defines the research phase with model "haiku" and fallback "opus"
+- **THEN** the research phase falls back to Opus instead of the default Sonnet
+
 ### Requirement: Phase transition context compaction
 When an agent advances to a new phase, the system SHALL compact the previous phase's conversation history into a structured summary. The new phase SHALL start with a clean conversation containing: the compacted summary as a user message, the current task details, and the phase-appropriate system prompt. The compaction SHALL be performed by a Haiku API call to minimize cost.
 

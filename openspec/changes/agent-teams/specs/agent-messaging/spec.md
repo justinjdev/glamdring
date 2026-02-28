@@ -46,3 +46,29 @@ Messages sent to an idle agent (waiting between turns) SHALL wake the agent. The
 #### Scenario: Wake idle agent
 - **WHEN** agent "auth-impl" is idle (completed its last turn) and the lead sends it a message
 - **THEN** the agent wakes, receives the message, and begins a new turn
+
+### Requirement: Priority delivery for blocking requests
+Phase approval requests and shutdown requests SHALL be delivered via a priority channel separate from the regular message mailbox. The leader's tool execution loop SHALL check the priority channel between each tool execution within a turn (non-blocking select). This ensures blocking operations (AdvancePhase with LeaderApproval) do not stall while the leader is mid-turn.
+
+#### Scenario: Approval delivered mid-turn
+- **WHEN** agent "auth-impl" calls AdvancePhase with a LeaderApproval gate and the leader is mid-turn executing a 5-tool batch
+- **THEN** the approval request appears on the leader's priority channel and is processed between tool executions, not deferred until the leader's turn ends
+
+#### Scenario: Multiple agents request approval concurrently
+- **WHEN** agents "auth-impl" and "api-impl" both hit LeaderApproval gates while the leader is executing tools
+- **THEN** both approval requests are queued on the priority channel and processed sequentially between tool executions within the same leader turn
+
+#### Scenario: Priority channel is non-blocking for non-leaders
+- **WHEN** a non-leader agent executes tools and the priority channel is empty
+- **THEN** the priority channel check returns immediately with no overhead
+
+### Requirement: Transport layer interface
+Message delivery SHALL be implemented behind a MessageTransport interface that abstracts the delivery mechanism. The initial implementation SHALL use buffered Go channels (ChannelTransport). The interface SHALL support both regular and priority delivery channels, enabling future replacement with distributed transports (gRPC, NATS, Redis streams) without changing the tool implementations.
+
+#### Scenario: Tools depend on interface, not implementation
+- **WHEN** the SendMessage tool delivers a message
+- **THEN** it calls MessageTransport.Send(), not a concrete channel operation
+
+#### Scenario: ChannelTransport is the default
+- **WHEN** a team is created with no transport configuration
+- **THEN** the system uses ChannelTransport backed by buffered Go channels

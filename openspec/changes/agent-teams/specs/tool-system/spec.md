@@ -29,3 +29,14 @@ The system SHALL provide a PhaseRegistry that wraps the standard Registry and fi
 #### Scenario: Phase change updates available tools
 - **WHEN** the phase advances from "research" to "implement"
 - **THEN** subsequent calls to Schemas() and Get() reflect the new phase's tool whitelist
+
+### Requirement: Team tools depend on interfaces, not implementations
+Team tools (SendMessage, TaskCreate, TaskList, TaskGet, TaskUpdate) SHALL depend on the MessageTransport and TaskStorage interfaces defined in `pkg/teams/`, not on concrete implementations. This enables testing with mock transports and future replacement with distributed backends without changing tool code.
+
+#### Scenario: SendMessage uses MessageTransport interface
+- **WHEN** the SendMessage tool delivers a message
+- **THEN** it calls MessageTransport.Send(), not a concrete channel write
+
+#### Scenario: TaskCreate uses TaskStorage interface
+- **WHEN** the TaskCreate tool persists a task
+- **THEN** it calls TaskStorage.Create(), not a direct file write

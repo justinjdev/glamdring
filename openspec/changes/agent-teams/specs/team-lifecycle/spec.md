@@ -72,3 +72,14 @@ When a team agent's goroutine terminates (via shutdown, crash, or context cancel
 #### Scenario: Agent crashes mid-task
 - **WHEN** a team agent's context is cancelled unexpectedly
 - **THEN** the agent's file locks are released, its status is set to "shutdown", and the lead receives a notification with the error
+
+### Requirement: Decomposed team subsystems
+The TeamManager SHALL be a thin coordinator that composes focused subsystem interfaces. Each subsystem SHALL be independently testable and implement a defined Go interface. The subsystems SHALL be: MemberRegistry (join, leave, status), TaskStore (CRUD, dependencies, persistence), Mailbox (per-agent channels, delivery, wakeup), LockManager (acquire, release, query), ContextCache (set, get, list compacted summaries), PhaseTracker (current phase per agent, advance, gate state), and CheckinTracker (per-agent tool call counters).
+
+#### Scenario: Subsystems are independently testable
+- **WHEN** a test needs to verify file locking behavior
+- **THEN** the test can instantiate a LockManager in isolation without creating a full TeamManager
+
+#### Scenario: Cross-cutting cleanup via coordinator
+- **WHEN** an agent shuts down
+- **THEN** TeamManager coordinates cleanup across subsystems: LockManager.ReleaseAll(agentName), MemberRegistry.SetStatus(agentName, "shutdown"), Mailbox.Close(agentName)

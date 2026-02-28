@@ -15,20 +15,24 @@ When a team agent claims a task with scope path patterns, the Edit and Write too
 - **WHEN** an agent claims a task with no scope metadata and calls Write
 - **THEN** the write executes normally with no path checking
 
-### Requirement: Command-scoped Bash tool
-When a team agent claims a task with scope command patterns, the Bash tool SHALL be wrapped to validate the command against allow and deny patterns before execution. Deny patterns SHALL be checked first (deny wins). If no allow patterns are defined, all non-denied commands are permitted.
+### Requirement: Advisory command scoping for Bash
+Bash command scoping is advisory, not a security boundary. Shell command pattern matching is fundamentally broken against subshells, backtick execution, pipes, eval, xargs, process substitution, and heredocs. The primary enforcement for Bash is schema-level exclusion: Bash SHALL NOT appear in the API tools array during research and plan phases (agents cannot call what they cannot see). In implement and verify phases, Bash SHALL be available with optional allow-list patterns as behavioral hints. Deny patterns SHALL NOT be used (they provide false confidence against trivial bypasses). If no allow patterns are defined, all commands are permitted.
 
 #### Scenario: Allowed command executes
 - **WHEN** an agent with allow commands ["go test*", "go build*"] calls Bash with "go test ./pkg/auth/..."
 - **THEN** the command executes normally
 
-#### Scenario: Denied command is rejected
-- **WHEN** an agent with deny commands ["rm -rf*", "git push*"] calls Bash with "rm -rf /tmp/data"
-- **THEN** the tool returns an error: "Command matches deny pattern 'rm -rf*'. This command is not permitted for this task."
-
 #### Scenario: Command not in allow list
 - **WHEN** an agent with allow commands ["go test*"] calls Bash with "npm install"
-- **THEN** the tool returns an error: "Command 'npm install' does not match any allowed patterns [go test*]."
+- **THEN** the tool returns an advisory error: "Command 'npm install' does not match allowed patterns [go test*]. Request scope change via SendMessage to team lead."
+
+#### Scenario: No allow patterns means unrestricted
+- **WHEN** an agent has no allow command patterns defined and calls Bash with any command
+- **THEN** the command executes normally
+
+#### Scenario: Bash excluded by schema in research phase
+- **WHEN** an agent in "research" phase attempts to call Bash
+- **THEN** Bash is not in the API tools array -- the model cannot generate the call (this is the real enforcement)
 
 ### Requirement: File locking
 When a team agent successfully writes or edits a file, the system SHALL acquire a file lock for that path associated with the agent. Subsequent write/edit attempts by other agents on the same path SHALL fail with an error identifying the lock holder.
