@@ -1,38 +1,23 @@
-# permission-system Specification
+## ADDED Requirements
 
-## Purpose
-TBD - created by archiving change initial-design. Update Purpose after archive.
-## Requirements
-### Requirement: Three-tier permission model
-The system SHALL classify tools into three permission tiers: always-allow (read-only tools), prompt-user (side-effect tools), and always-block (configurable deny list). The tier assignment SHALL be configurable.
+### Requirement: Team scope rules in permission evaluation
+The permission system SHALL evaluate team scope rules (path restrictions, command restrictions) as an additional layer in the permission check. Team scope rules SHALL be evaluated after hook and config layers but before the session-level interactive prompt. A scope violation SHALL result in an immediate denial without prompting the user.
 
-#### Scenario: Read-only tool executes without prompt
-- **WHEN** the agent calls Read, Glob, or Grep
-- **THEN** the tool executes immediately without user confirmation
+#### Scenario: Scope denial bypasses interactive prompt
+- **WHEN** a team agent calls Edit on a path outside its task scope
+- **THEN** the tool is denied immediately with a scope violation error, without emitting a PermissionRequest to the user
 
-#### Scenario: Side-effect tool prompts user
-- **WHEN** the agent calls Write, Edit, or Bash
-- **THEN** the system emits a `PermissionRequest` message and waits for approval before executing
+#### Scenario: Scope-allowed tool still checks other layers
+- **WHEN** a team agent calls Bash with a command within scope but the command matches a config-level deny rule
+- **THEN** the config-level deny takes precedence and the tool is rejected
 
-#### Scenario: Blocked tool is rejected
-- **WHEN** the agent calls a tool on the deny list
-- **THEN** the tool is not executed and the agent receives an error result
+### Requirement: Team agents inherit parent permission model
+Team agents SHALL operate under the same three-tier permission model as non-team agents. The team lead's session-level approvals (sessionAllow, yolo mode) SHALL propagate to spawned team agents. Team scope rules add restrictions on top of the base permission model -- they never grant additional permissions.
 
-### Requirement: Permission responses
-The system SHALL support three user responses to permission prompts: approve (execute this once), always-approve (approve this tool for the rest of the session), and deny (reject and return error to agent).
+#### Scenario: Yolo mode with scope
+- **WHEN** the lead session is in yolo mode and a team agent calls Write on a path within scope
+- **THEN** the write executes without permission prompt (yolo) and without scope error (in scope)
 
-#### Scenario: Always-approve
-- **WHEN** the user responds with always-approve for the Edit tool
-- **THEN** subsequent Edit calls in the same session execute without prompting
-
-#### Scenario: Deny
-- **WHEN** the user denies a Bash tool call
-- **THEN** the agent receives a tool_result with is_error: true explaining the user denied the action
-
-### Requirement: Permission request includes context
-Each `PermissionRequest` message SHALL include the tool name, the full input parameters, and a human-readable summary of what the tool will do (e.g., "Write to /path/to/file.go" or "Run: git status").
-
-#### Scenario: Bash permission shows command
-- **WHEN** a Bash tool call requires permission
-- **THEN** the permission request displays the full command string to the user
-
+#### Scenario: Yolo mode does not bypass scope
+- **WHEN** the lead session is in yolo mode and a team agent calls Write on a path outside scope
+- **THEN** the write is rejected with a scope violation error -- yolo bypasses interactive prompts but not structural scope enforcement

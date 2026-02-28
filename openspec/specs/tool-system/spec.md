@@ -1,94 +1,42 @@
-# tool-system Specification
+## ADDED Requirements
 
-## Purpose
-TBD - created by archiving change initial-design. Update Purpose after archive.
-## Requirements
-### Requirement: Tool interface
-The system SHALL define a `Tool` interface with methods: `Name() string`, `Description() string`, `Schema() json.RawMessage`, and `Execute(ctx context.Context, input json.RawMessage) (ToolResult, error)`. All tools (built-in, MCP, and index) SHALL implement this interface.
+### Requirement: Tool decorator interface
+The system SHALL support a tool decorator pattern where a wrapper implements the Tool interface and delegates to an inner tool after performing checks. Decorators SHALL be composable -- multiple decorators can wrap the same base tool in a chain.
 
-#### Scenario: Tool registration
-- **WHEN** a tool is registered with the registry
-- **THEN** it is available for dispatch by name and its schema is included in API requests
+#### Scenario: Single decorator wrapping
+- **WHEN** a ScopedEdit decorator wraps the base Edit tool
+- **THEN** ScopedEdit.Execute() checks path scope and, if valid, calls Edit.Execute()
 
-#### Scenario: Conditional index tool registration
-- **WHEN** the tool registry is initialized and a shire index database is available
-- **THEN** all 13 code search tools are registered alongside the standard built-in tools
+#### Scenario: Multi-decorator chain
+- **WHEN** CheckinGate wraps FileLock wraps ScopedEdit wraps Edit
+- **THEN** a call to the outermost Execute() traverses all decorators in order before reaching Edit.Execute()
 
-#### Scenario: No index available
-- **WHEN** the tool registry is initialized and no shire index database is found
-- **THEN** only the standard built-in tools are registered
+#### Scenario: Decorator preserves tool identity
+- **WHEN** a ScopedEdit decorator wraps Edit
+- **THEN** ScopedEdit.Name() returns "Edit" and ScopedEdit.Schema() returns the same schema as Edit, so the model sees the same tool interface
 
-### Requirement: Read tool
-The system SHALL implement a Read tool that reads file contents given an absolute path. It SHALL support optional `offset` and `limit` parameters for reading portions of large files. It SHALL return file contents with line numbers.
+### Requirement: PhaseRegistry for dynamic tool filtering
+The system SHALL provide a PhaseRegistry that wraps the standard Registry and filters tools based on a current phase configuration. PhaseRegistry SHALL implement the same Schemas() and Get() methods as Registry. Tools not in the current phase's whitelist SHALL be excluded from Schemas() and return nil from Get().
 
-#### Scenario: Read entire file
-- **WHEN** Read is called with a valid file path and no offset/limit
-- **THEN** the tool returns the file contents with line numbers prefixed
+#### Scenario: Schemas returns only phase tools
+- **WHEN** PhaseRegistry.Schemas() is called and the current phase allows [Read, Glob, Grep, SendMessage, TaskUpdate, AdvancePhase]
+- **THEN** only those 6 tools appear in the returned schema array
 
-#### Scenario: Read nonexistent file
-- **WHEN** Read is called with a path that does not exist
-- **THEN** the tool returns an error result with a descriptive message
+#### Scenario: Get returns nil for excluded tool
+- **WHEN** PhaseRegistry.Get("Edit") is called and Edit is not in the current phase
+- **THEN** nil is returned
 
-### Requirement: Write tool
-The system SHALL implement a Write tool that creates or overwrites a file at the given absolute path with the provided content.
+#### Scenario: Phase change updates available tools
+- **WHEN** the phase advances from "research" to "implement"
+- **THEN** subsequent calls to Schemas() and Get() reflect the new phase's tool whitelist
 
-#### Scenario: Create new file
-- **WHEN** Write is called with a path that does not exist
-- **THEN** the file is created with the specified content, including any necessary parent directories
+### Requirement: Team tools depend on interfaces, not implementations
+Team tools (SendMessage, TaskCreate, TaskList, TaskGet, TaskUpdate) SHALL depend on the MessageTransport and TaskStorage interfaces defined in `pkg/teams/`, not on concrete implementations. This enables testing with mock transports and future replacement with distributed backends without changing tool code.
 
-#### Scenario: Overwrite existing file
-- **WHEN** Write is called with a path to an existing file
-- **THEN** the file contents are replaced with the specified content
+#### Scenario: SendMessage uses MessageTransport interface
+- **WHEN** the SendMessage tool delivers a message
+- **THEN** it calls MessageTransport.Send(), not a concrete channel write
 
-### Requirement: Edit tool
-The system SHALL implement an Edit tool that performs exact string replacement in a file. It SHALL accept `file_path`, `old_string`, `new_string`, and optional `replace_all` parameters. The edit SHALL fail if `old_string` is not found or is not unique (unless `replace_all` is true).
-
-#### Scenario: Unique string replacement
-- **WHEN** Edit is called with an `old_string` that appears exactly once in the file
-- **THEN** the occurrence is replaced with `new_string`
-
-#### Scenario: Ambiguous match
-- **WHEN** Edit is called with an `old_string` that appears multiple times and `replace_all` is false
-- **THEN** the tool returns an error indicating the match is not unique
-
-#### Scenario: Replace all
-- **WHEN** Edit is called with `replace_all: true`
-- **THEN** all occurrences of `old_string` are replaced with `new_string`
-
-### Requirement: Bash tool
-The system SHALL implement a Bash tool that executes shell commands and returns stdout, stderr, and exit code. It SHALL support an optional timeout parameter. Commands SHALL run in the agent's working directory.
-
-#### Scenario: Successful command
-- **WHEN** Bash is called with a command that exits 0
-- **THEN** the tool returns stdout and stderr with exit code 0
-
-#### Scenario: Command timeout
-- **WHEN** Bash is called with a command that exceeds the timeout
-- **THEN** the process is killed and the tool returns a timeout error
-
-#### Scenario: Command failure
-- **WHEN** Bash is called with a command that exits non-zero
-- **THEN** the tool returns stdout, stderr, and the non-zero exit code
-
-### Requirement: Glob tool
-The system SHALL implement a Glob tool that finds files matching a glob pattern (e.g., `**/*.go`, `src/**/*.ts`). It SHALL return matching file paths sorted by modification time.
-
-#### Scenario: Pattern match
-- **WHEN** Glob is called with a pattern that matches files
-- **THEN** the tool returns the matching file paths
-
-#### Scenario: No matches
-- **WHEN** Glob is called with a pattern that matches no files
-- **THEN** the tool returns an empty result
-
-### Requirement: Grep tool
-The system SHALL implement a Grep tool that searches file contents using regular expressions. It SHALL support parameters for: pattern, path, glob filter, output mode (content, files_with_matches, count), context lines, and case-insensitive search.
-
-#### Scenario: Content search
-- **WHEN** Grep is called with a pattern and output_mode "content"
-- **THEN** the tool returns matching lines with line numbers and optional context
-
-#### Scenario: File list search
-- **WHEN** Grep is called with output_mode "files_with_matches"
-- **THEN** the tool returns only the paths of files containing matches
-
+#### Scenario: TaskCreate uses TaskStorage interface
+- **WHEN** the TaskCreate tool persists a task
+- **THEN** it calls TaskStorage.Create(), not a direct file write
