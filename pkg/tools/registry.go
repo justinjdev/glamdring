@@ -40,6 +40,19 @@ func (r *Registry) Execute(ctx context.Context, name string, input json.RawMessa
 	return t.Execute(ctx, input)
 }
 
+// ExecuteStreaming dispatches a tool call by name, using the StreamingTool
+// interface if the tool implements it. Otherwise falls back to Execute.
+func (r *Registry) ExecuteStreaming(ctx context.Context, name string, input json.RawMessage, onOutput func(string)) (Result, error) {
+	t := r.tools[name]
+	if t == nil {
+		return Result{Output: fmt.Sprintf("unknown tool: %s", name), IsError: true}, nil
+	}
+	if st, ok := t.(StreamingTool); ok {
+		return st.ExecuteStreaming(ctx, input, onOutput)
+	}
+	return t.Execute(ctx, input)
+}
+
 // All returns all registered tools in registration order.
 func (r *Registry) All() []Tool {
 	out := make([]Tool, 0, len(r.order))

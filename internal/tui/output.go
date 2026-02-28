@@ -229,9 +229,48 @@ func (m *OutputModel) AppendToolCall(name, summary string) {
 	m.rerender()
 }
 
-// AppendToolResult adds a tool result block.
-// Results over collapseThreshold lines are collapsed by default.
+// AppendToolOutputDelta appends streaming output from a tool execution.
+// Creates a non-finalized blockToolResult if one doesn't exist, or appends
+// to the existing one.
+func (m *OutputModel) AppendToolOutputDelta(text string) {
+	if len(m.blocks) > 0 {
+		last := &m.blocks[len(m.blocks)-1]
+		if last.kind == blockToolResult && !last.finalized {
+			last.content += text
+			last.rendered = "" // invalidate cache
+			m.rerender()
+			return
+		}
+	}
+	m.blocks = append(m.blocks, outputBlock{
+		kind:    blockToolResult,
+		content: text,
+	})
+	m.rerender()
+}
+
+// AppendToolResult adds a tool result block. If the last block is an
+// in-progress streaming tool result, it finalizes that block with the
+// final output instead of creating a new one.
 func (m *OutputModel) AppendToolResult(output string, isError bool) {
+	// Check if we have a streaming block to finalize.
+	if len(m.blocks) > 0 {
+		last := &m.blocks[len(m.blocks)-1]
+		if last.kind == blockToolResult && !last.finalized {
+			last.content = output
+			last.isError = isError
+			last.finalized = true
+			last.rendered = "" // invalidate cache
+			idx := len(m.blocks) - 1
+			lines := strings.Split(output, "\n")
+			if len(lines) > collapseThreshold {
+				m.collapsed[idx] = true
+			}
+			m.rerender()
+			return
+		}
+	}
+
 	m.finalizePreviousBlock()
 	idx := len(m.blocks)
 	m.blocks = append(m.blocks, outputBlock{

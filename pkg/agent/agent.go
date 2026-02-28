@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/justin/glamdring/pkg/api"
+	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/hooks"
 	"github.com/justin/glamdring/pkg/tools"
 )
@@ -64,13 +65,14 @@ func Run(ctx context.Context, cfg Config) <-chan Message {
 
 // turnResult holds the collected state from processing a single streamed response.
 type turnResult struct {
-	contentBlocks        []api.ContentBlock
-	toolCalls            []toolCall
-	stopReason           string
-	inputTokens          int
-	outputTokens         int
-	cacheCreationTokens  int
-	cacheReadTokens      int
+	contentBlocks            []api.ContentBlock
+	toolCalls                []toolCall
+	stopReason               string
+	inputTokens              int
+	outputTokens             int
+	cacheCreationTokens      int
+	cacheReadTokens          int
+	lastRequestInputTokens   int // input tokens from message_start (context snapshot)
 }
 
 // toolCall represents a single tool_use block extracted from the assistant response.
@@ -106,6 +108,7 @@ func processTurn(ctx context.Context, events <-chan api.StreamEvent, out chan<- 
 				result.outputTokens += ev.Message.Usage.OutputTokens
 				result.cacheCreationTokens += ev.Message.Usage.CacheCreationInputTokens
 				result.cacheReadTokens += ev.Message.Usage.CacheReadInputTokens
+				result.lastRequestInputTokens = ev.Message.Usage.InputTokens
 			}
 
 		case "content_block_start":
@@ -200,6 +203,7 @@ func executeTools(
 	calls []toolCall,
 	sessionAllow map[string]bool,
 	hookRunner *hooks.HookRunner,
+	permissions *config.PermissionConfig,
 ) ([]api.ContentBlock, error) {
 	results := make([]api.ContentBlock, 0, len(calls))
 
@@ -244,7 +248,31 @@ func executeTools(
 			}
 		}
 
-		// Check permissions.
+		// Check configured permission rules (deny -> allow -> default).
+		if permissions != nil {
+			switch permissions.Evaluate(tc.name, inputMap) {
+			case config.PermissionResultDeny:
+				errMsg := "blocked by permission rule"
+				results = append(results, api.ContentBlock{
+					Type:      "tool_result",
+					ToolUseID: tc.id,
+					Content:   errMsg,
+					IsError:   true,
+				})
+				emit(ctx, out, Message{
+					Type:        MessageToolResult,
+					ToolName:    tc.name,
+					ToolID:      tc.id,
+					ToolOutput:  errMsg,
+					ToolIsError: true,
+				})
+				continue
+			case config.PermissionResultAllow:
+				goto execute
+			}
+		}
+
+		// Check session/default permissions.
 		if !isAllowed(tc.name, sessionAllow) {
 			summary := permissionSummary(tc.name, inputMap)
 			permCh := make(chan PermissionAnswer, 1)
@@ -289,8 +317,17 @@ func executeTools(
 			}
 		}
 
-		// Execute the tool.
-		toolResult, err := registry.Execute(ctx, tc.name, tc.input)
+	execute:
+		// Execute the tool, streaming output if supported.
+		onOutput := func(text string) {
+			emit(ctx, out, Message{
+				Type:     MessageToolOutputDelta,
+				ToolName: tc.name,
+				ToolID:   tc.id,
+				Text:     text,
+			})
+		}
+		toolResult, err := registry.ExecuteStreaming(ctx, tc.name, tc.input, onOutput)
 		if err != nil {
 			// Execution error (not a tool-level error) — treat as error result.
 			errMsg := fmt.Sprintf("tool execution error: %s", err.Error())

@@ -3,10 +3,12 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justin/glamdring/pkg/agent"
@@ -30,6 +32,7 @@ var builtinCommands = map[string]BuiltinHandler{
 	"thinking": cmdThinking,
 	"yolo":     cmdYolo,
 	"mcp":      cmdMCP,
+	"export":   cmdExport,
 }
 
 // builtinDescriptions provides short help text for each built-in command.
@@ -45,6 +48,7 @@ var builtinDescriptions = map[string]string{
 	"thinking": "Toggle thinking block display",
 	"yolo":     "Toggle auto-approve (optionally scope: /yolo bash,write)",
 	"mcp":      "Manage MCP servers and tools",
+	"export":   "Export conversation (--html for HTML format)",
 }
 
 // BuiltinNames returns a sorted list of built-in command names.
@@ -466,6 +470,56 @@ func cmdMCPDisableTool(m *Model, serverName, toolName string) tea.Cmd {
 	}
 	m.output.AppendSystem(fmt.Sprintf("Disabled tool %q on server %q", toolName, serverName))
 	m.refreshMCPTools()
+	return nil
+}
+
+// cmdExport exports the conversation to a file. Supports --html flag for HTML format.
+func cmdExport(m *Model, args string) tea.Cmd {
+	if m.session == nil {
+		m.output.AppendError("No conversation to export.")
+		return nil
+	}
+
+	msgs := m.session.Messages()
+	if len(msgs) == 0 {
+		m.output.AppendError("No conversation to export.")
+		return nil
+	}
+
+	fields := strings.Fields(args)
+	useHTML := false
+	var outPath string
+
+	for _, f := range fields {
+		if f == "--html" {
+			useHTML = true
+		} else {
+			outPath = f
+		}
+	}
+
+	if outPath == "" {
+		ts := time.Now().Format("20060102-150405")
+		ext := "md"
+		if useHTML {
+			ext = "html"
+		}
+		outPath = fmt.Sprintf("conversation-%s.%s", ts, ext)
+	}
+
+	var content string
+	if useHTML {
+		content = exportHTML(msgs)
+	} else {
+		content = exportMarkdown(msgs)
+	}
+
+	if err := os.WriteFile(outPath, []byte(content), 0o644); err != nil {
+		m.output.AppendError(fmt.Sprintf("Failed to write export: %s", err))
+		return nil
+	}
+
+	m.output.AppendSystem(fmt.Sprintf("Conversation exported to %s", outPath))
 	return nil
 }
 

@@ -52,6 +52,12 @@ type Styles struct {
 
 	// Status bar warning (e.g., YOLO indicator)
 	StatusBarWarning lipgloss.Style
+
+	// Status bar caution (context window 60-79%)
+	StatusBarCaution lipgloss.Style
+
+	// Status bar danger (context window >= 80%)
+	StatusBarDanger lipgloss.Style
 }
 
 // Color palette — a warm, amber-tinted dark theme inspired by aged parchment
@@ -204,6 +210,17 @@ func DefaultStyles() Styles {
 
 		// Status bar warning (e.g., YOLO indicator)
 		StatusBarWarning: lipgloss.NewStyle().
+			Background(colorSurface1).
+			Foreground(colorRust).
+			Bold(true),
+
+		// Status bar caution (context window 60-79%)
+		StatusBarCaution: lipgloss.NewStyle().
+			Background(colorSurface1).
+			Foreground(colorGold),
+
+		// Status bar danger (context window >= 80%)
+		StatusBarDanger: lipgloss.NewStyle().
 			Background(colorSurface1).
 			Foreground(colorRust).
 			Bold(true),

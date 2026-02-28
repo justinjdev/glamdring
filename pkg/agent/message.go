@@ -8,6 +8,7 @@ const (
 	MessageThinkingDelta
 	MessageToolCall
 	MessageToolResult
+	MessageToolOutputDelta
 	MessagePermissionRequest
 	MessagePermissionResponse
 	MessageError
@@ -43,6 +44,10 @@ type Message struct {
 	OutputTokens             int
 	CacheCreationInputTokens int
 	CacheReadInputTokens     int
+
+	// LastRequestInputTokens is the input token count from the most recent
+	// API call, representing the current context window snapshot.
+	LastRequestInputTokens int
 }
 
 // PermissionAnswer is the user's response to a permission prompt.

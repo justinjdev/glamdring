@@ -19,9 +19,10 @@ type Session struct {
 	messages     []api.RequestMessage
 	TotalInput         int
 	TotalOutput        int
-	TotalCacheCreation int
-	TotalCacheRead     int
-	Turns              int
+	TotalCacheCreation       int
+	TotalCacheRead           int
+	Turns                    int
+	lastRequestInputTokens   int
 }
 
 // NewSession creates a new Session from the given Config.
@@ -149,6 +150,7 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 		s.TotalOutput += turnResult.outputTokens
 		s.TotalCacheCreation += turnResult.cacheCreationTokens
 		s.TotalCacheRead += turnResult.cacheReadTokens
+		s.lastRequestInputTokens = turnResult.lastRequestInputTokens
 
 		s.messages = append(s.messages, api.RequestMessage{
 			Role:    "assistant",
@@ -163,11 +165,12 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 				OutputTokens:             s.TotalOutput - turnOutputBefore,
 				CacheCreationInputTokens: s.TotalCacheCreation - turnCacheCreationBefore,
 				CacheReadInputTokens:     s.TotalCacheRead - turnCacheReadBefore,
+				LastRequestInputTokens:   s.lastRequestInputTokens,
 			})
 			return
 
 		case "tool_use":
-			toolResults, err := executeTools(ctx, out, s.registry, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner)
+			toolResults, err := executeTools(ctx, out, s.registry, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner, s.cfg.Permissions)
 			if err != nil {
 				emit(ctx, out, Message{Type: MessageError, Err: err})
 				return
@@ -198,6 +201,7 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 				OutputTokens:             s.TotalOutput - turnOutputBefore,
 				CacheCreationInputTokens: s.TotalCacheCreation - turnCacheCreationBefore,
 				CacheReadInputTokens:     s.TotalCacheRead - turnCacheReadBefore,
+				LastRequestInputTokens:   s.lastRequestInputTokens,
 			})
 			return
 		}

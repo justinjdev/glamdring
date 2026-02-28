@@ -165,6 +165,9 @@ func main() {
 		envInfo,
 	)
 
+	// Load permission presets.
+	permissions := config.LoadPermissions(workDir)
+
 	cfg := agent.Config{
 		Model:        settings.Model,
 		Creds:        creds,
@@ -173,6 +176,7 @@ func main() {
 		MaxTurns:     settings.MaxTurns,
 		CWD:          workDir,
 		HookRunner:   hookRunner,
+		Permissions:  permissions,
 		Yolo:         *yolo,
 	}
 

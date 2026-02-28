@@ -129,6 +129,85 @@ func TestStatusBarMCP_SomeDead(t *testing.T) {
 	}
 }
 
+// --- Context window usage tests ---
+
+func TestStatusBarContextPercent_Basic(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+
+	sb.UpdateContext(100_000, "claude-opus-4-6")
+	if sb.ContextPercent() != 50 {
+		t.Errorf("expected 50%%, got %d%%", sb.ContextPercent())
+	}
+}
+
+func TestStatusBarContextPercent_Thresholds(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+	sb.SetWidth(120)
+
+	// Below 60%: normal color, ctx shown.
+	sb.UpdateContext(80_000, "claude-opus-4-6")
+	if pct := sb.ContextPercent(); pct != 40 {
+		t.Errorf("expected 40%%, got %d%%", pct)
+	}
+
+	// At 60%: caution.
+	sb.UpdateContext(120_000, "claude-opus-4-6")
+	if pct := sb.ContextPercent(); pct != 60 {
+		t.Errorf("expected 60%%, got %d%%", pct)
+	}
+
+	// At 80%: danger.
+	sb.UpdateContext(160_000, "claude-opus-4-6")
+	if pct := sb.ContextPercent(); pct != 80 {
+		t.Errorf("expected 80%%, got %d%%", pct)
+	}
+}
+
+func TestStatusBarContextPercent_RendersInView(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+	sb.SetWidth(120)
+
+	// Before any context update, no ctx in view.
+	view := sb.View()
+	if strings.Contains(view, "ctx:") {
+		t.Error("expected no ctx indicator initially")
+	}
+
+	// After update, ctx should appear.
+	sb.UpdateContext(100_000, "claude-opus-4-6")
+	view = sb.View()
+	if !strings.Contains(view, "ctx:") {
+		t.Error("expected ctx indicator in status bar")
+	}
+	if !strings.Contains(view, "50%") {
+		t.Error("expected 50% in status bar")
+	}
+}
+
+func TestStatusBarContextPercent_UnknownModel(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+
+	// Unknown model uses default 200k limit.
+	sb.UpdateContext(100_000, "some-future-model")
+	if pct := sb.ContextPercent(); pct != 50 {
+		t.Errorf("expected 50%% for unknown model, got %d%%", pct)
+	}
+}
+
+func TestStatusBarContextPercent_CapAt100(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+
+	sb.UpdateContext(300_000, "claude-opus-4-6")
+	if pct := sb.ContextPercent(); pct != 100 {
+		t.Errorf("expected 100%% cap, got %d%%", pct)
+	}
+}
+
 func TestStatusBarReset_PreservesMCP(t *testing.T) {
 	styles := DefaultStyles()
 	sb := NewStatusBar(styles)
