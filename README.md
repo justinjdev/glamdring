@@ -20,6 +20,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Slash commands** — custom prompts from `.claude/commands/` with tab completion
 - **Custom agents** — define specialized subagents in `.claude/agents/`
 - **Subagents** — parallel task spawning via the Task tool
+- **Agent teams** (experimental) — coordinated multi-agent workflows with phase-gated tool access, inter-agent messaging, file locking, task dependencies, and built-in workflow presets (RPIV, plan-implement, scoped). Enable with `--experimental-teams` flag or `"experimental": {"teams": true}` in settings.
 
 ## Install
 
@@ -63,6 +64,7 @@ glamdring
 | `--cwd <path>` | Set working directory (defaults to current) |
 | `--model <id>` | Override model (default: `claude-opus-4-6`) |
 | `--yolo` | Auto-approve all tool permissions (no prompts) |
+| `--experimental-teams` | Enable agent teams support |
 | `--version` | Print version and exit |
 
 ### Keybindings
@@ -177,6 +179,46 @@ The shire code indexer is auto-detected by default. Configure via `settings.json
 | `command` | `"shire"` | Binary name for the indexer |
 | `auto_rebuild` | `true` | Rebuild index after agent turns that modify files |
 
+### Agent Teams (Experimental)
+
+Enable via `--experimental-teams` flag or settings:
+
+```json
+{
+  "experimental": {
+    "teams": true
+  }
+}
+```
+
+When enabled, the agent gets access to team coordination tools: `TeamCreate`, `TeamDelete`, `TaskCreate`, `TaskList`, `TaskGet`, `TaskUpdate`, `SendMessage`, `AdvancePhase`.
+
+**Built-in workflows:**
+
+| Workflow | Phases | Description |
+|---|---|---|
+| `rpiv` | research, plan, implement, verify | Full research-to-verification cycle |
+| `plan-implement` | plan, implement | Simpler two-phase workflow |
+| `scoped` | work | Single phase with file scope enforcement |
+| `none` | (no phases) | No workflow enforcement |
+
+**Custom workflows** can be defined in `settings.json`:
+
+```json
+{
+  "workflows": {
+    "my-workflow": {
+      "phases": [
+        {"name": "research", "tools": ["Read", "Glob", "Grep"], "model": "claude-sonnet-4-6"},
+        {"name": "implement", "tools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]}
+      ]
+    }
+  }
+}
+```
+
+Each phase controls which tools are available to team agents and optionally overrides the model. Phase transitions are managed via the `AdvancePhase` tool.
+
 ## Architecture
 
 ```
@@ -184,6 +226,7 @@ pkg/
   agent/       Core agentic loop, Session (multi-turn memory), permission system
   api/         Claude Messages API client (HTTP + SSE, prompt caching, retry)
   tools/       Built-in tools + Task tool for subagents
+  teams/       Agent teams coordination (members, tasks, messaging, phases, decorators)
   index/       Shire index Go bindings (read-only SQLite queries)
   mcp/         MCP client (stdio JSON-RPC)
   config/      CLAUDE.md discovery, system prompt, settings

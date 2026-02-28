@@ -236,6 +236,109 @@ func TestEnvSlice_Empty(t *testing.T) {
 	}
 }
 
+func TestMergeSettings_ExperimentalTeams(t *testing.T) {
+	base := Settings{Model: "default-model"}
+	override := Settings{Experimental: ExperimentalConfig{Teams: true}}
+
+	mergeSettings(&base, &override)
+
+	if !base.Experimental.Teams {
+		t.Error("expected Experimental.Teams to be true after merge")
+	}
+
+	// Merging with false should not reset to false (only true is sticky).
+	override2 := Settings{}
+	mergeSettings(&base, &override2)
+	if !base.Experimental.Teams {
+		t.Error("expected Experimental.Teams to remain true after merge with zero value")
+	}
+}
+
+func TestMergeSettings_Workflows(t *testing.T) {
+	base := Settings{
+		Model: "default-model",
+		Workflows: map[string]WorkflowConfig{
+			"existing": {Phases: []PhaseConfig{{Name: "plan", Tools: []string{"Read"}}}},
+		},
+	}
+	override := Settings{
+		Workflows: map[string]WorkflowConfig{
+			"new": {Phases: []PhaseConfig{{Name: "work", Tools: []string{"Write"}}}},
+		},
+	}
+
+	mergeSettings(&base, &override)
+
+	if len(base.Workflows) != 2 {
+		t.Fatalf("expected 2 workflows, got %d", len(base.Workflows))
+	}
+	if _, ok := base.Workflows["existing"]; !ok {
+		t.Error("missing 'existing' workflow after merge")
+	}
+	if _, ok := base.Workflows["new"]; !ok {
+		t.Error("missing 'new' workflow after merge")
+	}
+}
+
+func TestLoadSettings_WorkflowValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		json    string
+		wantOK  bool
+	}{
+		{
+			name:   "valid workflow",
+			json:   `{"workflows":{"custom":{"phases":[{"name":"work","tools":["Read","Write"]}]}}}`,
+			wantOK: true,
+		},
+		{
+			name:   "empty phases",
+			json:   `{"workflows":{"bad":{"phases":[]}}}`,
+			wantOK: false,
+		},
+		{
+			name:   "duplicate phase names",
+			json:   `{"workflows":{"bad":{"phases":[{"name":"a","tools":["Read"]},{"name":"a","tools":["Write"]}]}}}`,
+			wantOK: false,
+		},
+		{
+			name:   "phase with no tools",
+			json:   `{"workflows":{"bad":{"phases":[{"name":"empty","tools":[]}]}}}`,
+			wantOK: false,
+		},
+		{
+			name:   "phase with no name",
+			json:   `{"workflows":{"bad":{"phases":[{"tools":["Read"]}]}}}`,
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			claudeDir := filepath.Join(root, ".claude")
+			if err := os.Mkdir(claudeDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(tt.json), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			s := LoadSettings(root)
+			if tt.wantOK {
+				if len(s.Workflows) == 0 {
+					t.Error("expected workflows to be loaded")
+				}
+			} else {
+				// Invalid workflows cause fallback to defaults (no workflows).
+				if len(s.Workflows) != 0 {
+					t.Errorf("expected no workflows for invalid config, got %d", len(s.Workflows))
+				}
+			}
+		})
+	}
+}
+
 func TestMergeSettings_ZeroMaxTurnsOverride(t *testing.T) {
 	base := Settings{
 		Model:    "default-model",

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -9,10 +10,30 @@ import (
 
 // Settings holds resolved configuration values.
 type Settings struct {
-	Model      string                      `json:"model,omitempty"`
-	MaxTurns   *int                        `json:"max_turns,omitempty"`
-	MCPServers map[string]MCPServerConfig  `json:"mcp_servers,omitempty"`
-	Indexer    IndexerConfig               `json:"indexer,omitempty"`
+	Model        string                       `json:"model,omitempty"`
+	MaxTurns     *int                         `json:"max_turns,omitempty"`
+	MCPServers   map[string]MCPServerConfig   `json:"mcp_servers,omitempty"`
+	Indexer      IndexerConfig                `json:"indexer,omitempty"`
+	Experimental ExperimentalConfig           `json:"experimental,omitempty"`
+	Workflows    map[string]WorkflowConfig    `json:"workflows,omitempty"`
+}
+
+// ExperimentalConfig holds flags for experimental features.
+type ExperimentalConfig struct {
+	Teams bool `json:"teams,omitempty"`
+}
+
+// WorkflowConfig defines a user-configurable workflow with named phases.
+type WorkflowConfig struct {
+	Phases []PhaseConfig `json:"phases"`
+}
+
+// PhaseConfig defines a single phase in a workflow.
+type PhaseConfig struct {
+	Name     string   `json:"name"`
+	Tools    []string `json:"tools"`
+	Model    string   `json:"model,omitempty"`
+	Fallback string   `json:"fallback,omitempty"`
 }
 
 // IndexerConfig controls the shire code indexer integration.
@@ -126,6 +147,10 @@ func loadSettingsFile(path string) (Settings, bool) {
 		log.Printf("warning: failed to parse %s: %v", path, err)
 		return Settings{}, false
 	}
+	if err := validateWorkflows(s.Workflows); err != nil {
+		log.Printf("warning: invalid workflow in %s: %v", path, err)
+		return Settings{}, false
+	}
 	return s, true
 }
 
@@ -174,4 +199,38 @@ func mergeSettings(base, override *Settings) {
 	if override.Indexer.AutoRebuild != nil {
 		base.Indexer.AutoRebuild = override.Indexer.AutoRebuild
 	}
+	if override.Experimental.Teams {
+		base.Experimental.Teams = true
+	}
+	if override.Workflows != nil {
+		if base.Workflows == nil {
+			base.Workflows = make(map[string]WorkflowConfig)
+		}
+		for k, v := range override.Workflows {
+			base.Workflows[k] = v
+		}
+	}
+}
+
+// validateWorkflows checks user-defined workflows for common configuration errors.
+func validateWorkflows(workflows map[string]WorkflowConfig) error {
+	for name, wf := range workflows {
+		if len(wf.Phases) == 0 {
+			return fmt.Errorf("workflow %q has no phases", name)
+		}
+		seen := make(map[string]bool)
+		for i, p := range wf.Phases {
+			if p.Name == "" {
+				return fmt.Errorf("workflow %q phase %d has no name", name, i)
+			}
+			if seen[p.Name] {
+				return fmt.Errorf("workflow %q has duplicate phase name %q", name, p.Name)
+			}
+			seen[p.Name] = true
+			if len(p.Tools) == 0 {
+				return fmt.Errorf("workflow %q phase %q has no tools", name, p.Name)
+			}
+		}
+	}
+	return nil
 }

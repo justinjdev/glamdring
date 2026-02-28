@@ -2,9 +2,14 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/justin/glamdring/pkg/api"
+	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/tools"
 )
 
@@ -14,9 +19,13 @@ type Session struct {
 	cfg          Config
 	client       *api.Client
 	registry     *tools.Registry
+	provider     tools.ToolProvider // used for schemas and dispatch
 	sessionAllow map[string]bool
 	yolo         bool
 	messages     []api.RequestMessage
+	priorityCh   <-chan any
+	regularCh    <-chan any
+	teamScope    *config.TeamScope
 	TotalInput         int
 	TotalOutput        int
 	TotalCacheCreation       int
@@ -39,11 +48,23 @@ func NewSession(cfg Config) *Session {
 		registry.Register(t)
 	}
 
+	// Use a custom ToolProvider if configured, otherwise use the registry.
+	var provider tools.ToolProvider
+	if cfg.ToolProvider != nil {
+		provider = cfg.ToolProvider
+	} else {
+		provider = registry
+	}
+
 	s := &Session{
 		cfg:          cfg,
 		client:       client,
 		registry:     registry,
+		provider:     provider,
 		sessionAllow: make(map[string]bool),
+		priorityCh:   cfg.PriorityMessages,
+		regularCh:    cfg.RegularMessages,
+		teamScope:    cfg.TeamScope,
 	}
 	if cfg.Yolo {
 		s.SetYolo(true)
@@ -92,6 +113,7 @@ func (s *Session) ToggleYolo() {
 func (s *Session) SetYolo(on bool) {
 	s.yolo = on
 	if on {
+		// Use the base registry (not provider) since provider may filter tools.
 		for _, t := range s.registry.All() {
 			s.sessionAllow[t.Name()] = true
 		}
@@ -113,6 +135,12 @@ func (s *Session) SetYoloScoped(toolNames []string) {
 	}
 }
 
+// SetModel changes the model for subsequent API requests. Used by team agents
+// when advancing workflow phases.
+func (s *Session) SetModel(model string) {
+	s.client.SetModel(model)
+}
+
 // runTurn executes the agentic loop for one or more API turns until the model
 // stops (end_turn, refusal) or hits a limit.
 func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
@@ -127,17 +155,34 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 			return
 		}
 
+		// Drain regular messages and inject as user-role messages before the
+		// next API call. This delivers inter-agent messages between turns.
+		s.drainRegularMessages()
+
 		req := &api.MessageRequest{
 			MaxTokens: 16384,
 			Messages:  s.messages,
 			System:    s.cfg.SystemPrompt,
-			Tools:     s.registry.Schemas(),
+			Tools:     s.provider.Schemas(),
 		}
 
 		events, err := s.client.Stream(ctx, req)
 		if err != nil {
-			emit(ctx, out, Message{Type: MessageError, Err: fmt.Errorf("api stream: %w", err)})
-			return
+			// If a phase fallback model is available and this is a retryable
+			// API error (429/5xx), switch to the fallback and retry once.
+			if fallbackModel := s.tryFallbackModel(err); fallbackModel != "" {
+				log.Printf("switching to fallback model %s after error: %v", fallbackModel, err)
+				s.client.SetModel(fallbackModel)
+				emit(ctx, out, Message{
+					Type: MessageTextDelta,
+					Text: fmt.Sprintf("\n[Switched to fallback model %s]\n", fallbackModel),
+				})
+				events, err = s.client.Stream(ctx, req)
+			}
+			if err != nil {
+				emit(ctx, out, Message{Type: MessageError, Err: fmt.Errorf("api stream: %w", err)})
+				return
+			}
 		}
 
 		turnResult, err := processTurn(ctx, events, out)
@@ -170,7 +215,7 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 			return
 
 		case "tool_use":
-			toolResults, err := executeTools(ctx, out, s.registry, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner, s.cfg.Permissions)
+			toolResults, err := executeTools(ctx, out, s.provider, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner, s.cfg.Permissions, s.teamScope, s.priorityCh)
 			if err != nil {
 				emit(ctx, out, Message{Type: MessageError, Err: err})
 				return
@@ -184,6 +229,10 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 				Role:    "user",
 				Content: resultBlocks,
 			})
+
+			// After tool execution, sync the model if the phase changed
+			// (e.g., AdvancePhase was called).
+			s.syncPhaseModel()
 
 		case "max_tokens":
 			// Model ran out of output tokens mid-response. Send a continuation
@@ -211,5 +260,82 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 			emit(ctx, out, Message{Type: MessageMaxTurnsReached})
 			return
 		}
+	}
+}
+
+// drainRegularMessages reads all pending messages from the regular channel
+// and injects them as a user-role message before the next API call.
+func (s *Session) drainRegularMessages() {
+	if s.regularCh == nil {
+		return
+	}
+	var msgs []string
+	for {
+		select {
+		case msg, ok := <-s.regularCh:
+			if !ok {
+				s.regularCh = nil
+				goto done
+			}
+			if text := formatTeamMessage(msg); text != "" {
+				msgs = append(msgs, text)
+			}
+		default:
+			goto done
+		}
+	}
+done:
+	if len(msgs) > 0 {
+		combined := strings.Join(msgs, "\n\n")
+		s.messages = append(s.messages, api.RequestMessage{
+			Role:    "user",
+			Content: combined,
+		})
+	}
+}
+
+// syncPhaseModel checks if the ToolProvider is phase-aware and updates the
+// client model to match the current phase. Called after tool execution to
+// handle AdvancePhase transitions.
+func (s *Session) syncPhaseModel() {
+	if pmp, ok := s.provider.(tools.PhaseModelProvider); ok {
+		if model, _ := pmp.CurrentPhaseModel(); model != "" && model != s.client.Model() {
+			log.Printf("phase model changed to %s", model)
+			s.client.SetModel(model)
+		}
+	}
+}
+
+// tryFallbackModel checks if the error is a retryable API error (429/5xx) and
+// returns the phase fallback model if available. Returns "" if no fallback applies.
+func (s *Session) tryFallbackModel(err error) string {
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		return ""
+	}
+	if apiErr.StatusCode != 429 && apiErr.StatusCode < 500 {
+		return ""
+	}
+	pmp, ok := s.provider.(tools.PhaseModelProvider)
+	if !ok {
+		return ""
+	}
+	_, fallback := pmp.CurrentPhaseModel()
+	return fallback
+}
+
+// formatTeamMessage converts an opaque team message to a string for injection.
+func formatTeamMessage(msg any) string {
+	switch v := msg.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return string(data)
 	}
 }

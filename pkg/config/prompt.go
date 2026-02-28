@@ -88,3 +88,34 @@ func BuildSystemPrompt(baseInstructions string, toolDescriptions []ToolDescripti
 
 	return b.String()
 }
+
+// TeamAgentInfo holds context for building a team agent's system prompt.
+type TeamAgentInfo struct {
+	TeamName  string
+	AgentName string
+	Phase     string
+	Members   []string
+	Tools     []string
+}
+
+// BuildTeamAgentPrompt creates a system prompt section for a team agent.
+func BuildTeamAgentPrompt(info TeamAgentInfo) string {
+	var b strings.Builder
+
+	b.WriteString("\n\n## Team Context\n\n")
+	fmt.Fprintf(&b, "- Team: %s\n", info.TeamName)
+	fmt.Fprintf(&b, "- Agent name: %s\n", info.AgentName)
+	if info.Phase != "" {
+		fmt.Fprintf(&b, "- Current phase: %s\n", info.Phase)
+	}
+	if len(info.Members) > 0 {
+		fmt.Fprintf(&b, "- Team members: %s\n", strings.Join(info.Members, ", "))
+	}
+	if len(info.Tools) > 0 {
+		fmt.Fprintf(&b, "- Available tools: %s\n", strings.Join(info.Tools, ", "))
+	}
+
+	b.WriteString("\nYou are a team agent. Use TaskUpdate and SendMessage to coordinate with teammates. Report progress regularly.")
+
+	return b.String()
+}

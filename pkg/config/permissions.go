@@ -133,21 +133,21 @@ func matchRule(rule PermissionRule, toolName, filePath, command string) bool {
 	if rule.Tool != toolName {
 		return false
 	}
-	if rule.Path != "" && !matchGlobPattern(rule.Path, filePath) {
+	if rule.Path != "" && !MatchGlobPattern(rule.Path, filePath) {
 		return false
 	}
-	if rule.Command != "" && !matchGlobPattern(rule.Command, command) {
+	if rule.Command != "" && !MatchGlobPattern(rule.Command, command) {
 		return false
 	}
 	return true
 }
 
-// matchGlobPattern handles simple glob matching:
+// MatchGlobPattern handles simple glob matching:
 //   - "prefix*" matches strings starting with prefix
 //   - "dir/**" matches strings starting with dir/ (recursive)
 //   - Otherwise falls back to filepath.Match
 //
-func matchGlobPattern(pattern, value string) bool {
+func MatchGlobPattern(pattern, value string) bool {
 	if value == "" {
 		return false
 	}
@@ -171,6 +171,50 @@ func matchGlobPattern(pattern, value string) bool {
 		return false
 	}
 	return matched
+}
+
+// TeamScope defines path restrictions for team agents. If set, file-modifying tools
+// are checked against the scope before normal permission evaluation.
+type TeamScope struct {
+	AllowPatterns []string
+	DenyPatterns  []string
+}
+
+// EvaluateTeamScope checks whether a tool invocation is permitted under a team scope.
+// Returns PermissionResultDeny if the scope forbids the operation, or
+// PermissionResultDefault to fall through to normal permission evaluation.
+// Only file-modifying tools (Write, Edit) are scope-checked.
+func EvaluateTeamScope(scope *TeamScope, toolName string, input map[string]any) PermissionResult {
+	if scope == nil {
+		return PermissionResultDefault
+	}
+	// Only enforce scope on file-modifying tools.
+	if toolName != "Write" && toolName != "Edit" {
+		return PermissionResultDefault
+	}
+	filePath := extractFilePath(input)
+	if filePath == "" {
+		return PermissionResultDefault
+	}
+
+	// Check deny patterns first.
+	for _, pattern := range scope.DenyPatterns {
+		if MatchGlobPattern(pattern, filePath) {
+			return PermissionResultDeny
+		}
+	}
+
+	// If allow patterns are specified, the path must match at least one.
+	if len(scope.AllowPatterns) > 0 {
+		for _, pattern := range scope.AllowPatterns {
+			if MatchGlobPattern(pattern, filePath) {
+				return PermissionResultDefault // allowed, continue to normal eval
+			}
+		}
+		return PermissionResultDeny // no allow pattern matched
+	}
+
+	return PermissionResultDefault
 }
 
 // extractFilePath pulls the file_path field from tool input (Read, Write, Edit).

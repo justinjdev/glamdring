@@ -195,15 +195,19 @@ func processTurn(ctx context.Context, events <-chan api.StreamEvent, out chan<- 
 }
 
 // executeTools runs each tool call, handling permissions, and returns the
-// tool_result content blocks for the next API request.
+// tool_result content blocks for the next API request. If priorityCh is
+// non-nil, high-priority inter-agent messages are checked between tool
+// executions and injected as additional result blocks.
 func executeTools(
 	ctx context.Context,
 	out chan<- Message,
-	registry *tools.Registry,
+	provider tools.ToolProvider,
 	calls []toolCall,
 	sessionAllow map[string]bool,
 	hookRunner *hooks.HookRunner,
 	permissions *config.PermissionConfig,
+	teamScope *config.TeamScope,
+	priorityCh <-chan any,
 ) ([]api.ContentBlock, error) {
 	results := make([]api.ContentBlock, 0, len(calls))
 
@@ -231,6 +235,27 @@ func executeTools(
 		if hookRunner != nil {
 			if err := hookRunner.Run(ctx, hooks.PreToolUse, tc.name, tc.input); err != nil {
 				errMsg := fmt.Sprintf("blocked by hook: %s", err.Error())
+				results = append(results, api.ContentBlock{
+					Type:      "tool_result",
+					ToolUseID: tc.id,
+					Content:   errMsg,
+					IsError:   true,
+				})
+				emit(ctx, out, Message{
+					Type:        MessageToolResult,
+					ToolName:    tc.name,
+					ToolID:      tc.id,
+					ToolOutput:  errMsg,
+					ToolIsError: true,
+				})
+				continue
+			}
+		}
+
+		// Check team scope restrictions (before general permissions).
+		if teamScope != nil {
+			if config.EvaluateTeamScope(teamScope, tc.name, inputMap) == config.PermissionResultDeny {
+				errMsg := "blocked by team scope restriction"
 				results = append(results, api.ContentBlock{
 					Type:      "tool_result",
 					ToolUseID: tc.id,
@@ -328,7 +353,7 @@ func executeTools(
 				Text:     text,
 			})
 		}
-		toolResult, err := registry.ExecuteStreaming(ctx, tc.name, tc.input, onOutput)
+		toolResult, err := provider.ExecuteStreaming(ctx, tc.name, tc.input, onOutput)
 		if err != nil {
 			// Execution error (not a tool-level error) — treat as error result.
 			errMsg := fmt.Sprintf("tool execution error: %s", err.Error())
@@ -367,13 +392,41 @@ func executeTools(
 
 		// Run PostToolUse hooks (failures are warnings, not blocking).
 		if hookRunner != nil {
-			if err := hookRunner.Run(ctx, hooks.PostToolUse, tc.name, tc.input); err != nil {
-				log.Printf("PostToolUse hook error for %s: %v", tc.name, err)
+			if hookErr := hookRunner.Run(ctx, hooks.PostToolUse, tc.name, tc.input); hookErr != nil {
+				log.Printf("warning: PostToolUse hook failed for %s: %v", tc.name, hookErr)
+			}
+		}
+
+		// Check for priority inter-agent messages between tool executions.
+		if priorityCh != nil {
+			select {
+			case msg, ok := <-priorityCh:
+				if ok {
+					text := formatPriorityMessage(msg)
+					results[len(results)-1].Content += "\n\n" + text
+				}
+			default:
 			}
 		}
 	}
 
 	return results, nil
+}
+
+// formatPriorityMessage converts a priority team message to a tool result string.
+func formatPriorityMessage(msg any) string {
+	switch v := msg.(type) {
+	case string:
+		return "[Team Message] " + v
+	case fmt.Stringer:
+		return "[Team Message] " + v.String()
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("[Team Message] %v", v)
+		}
+		return "[Team Message] " + string(data)
+	}
 }
 
 // isAllowed checks whether a tool can execute without user permission.
