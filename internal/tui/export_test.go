@@ -162,8 +162,8 @@ func TestParseContentBlocks_AnySlice(t *testing.T) {
 func TestParseContentBlocks_InvalidAny(t *testing.T) {
 	// Pass something that cannot be marshaled into ContentBlocks.
 	blocks := parseContentBlocks(12345)
-	if blocks != nil {
-		t.Errorf("expected nil for invalid input, got %d blocks", len(blocks))
+	if len(blocks) != 1 || blocks[0].Text != "(unparseable content)" {
+		t.Errorf("expected placeholder block, got %v", blocks)
 	}
 }
 

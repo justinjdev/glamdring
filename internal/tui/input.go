@@ -122,7 +122,7 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 		case tea.KeyDown:
 			// Only activate history when cursor is on the last line.
 			if m.textarea.Line() == m.textarea.LineCount()-1 {
-				if text, ok := m.history.Down(m.textarea.Value()); ok {
+				if text, ok := m.history.Down(); ok {
 					m.textarea.Reset()
 					m.textarea.SetValue(text)
 					m.textarea.CursorEnd()

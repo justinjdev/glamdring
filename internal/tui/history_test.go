@@ -49,19 +49,19 @@ func TestHistory_UpDownDraft(t *testing.T) {
 		t.Errorf("expected 'one', got %q", text)
 	}
 
-	text, ok = h.Down("")
+	text, ok = h.Down()
 	if !ok || text != "two" {
 		t.Errorf("expected 'two', got %q", text)
 	}
 
 	// Down past the end restores draft.
-	text, ok = h.Down("")
+	text, ok = h.Down()
 	if !ok || text != "my draft" {
 		t.Errorf("expected 'my draft', got %q", text)
 	}
 
 	// No longer navigating.
-	_, ok = h.Down("")
+	_, ok = h.Down()
 	if ok {
 		t.Error("expected ok=false when not navigating")
 	}
@@ -154,7 +154,7 @@ func TestHistory_ResetCursor(t *testing.T) {
 	h.ResetCursor()
 
 	// After reset, Down should fail.
-	_, ok := h.Down("")
+	_, ok := h.Down()
 	if ok {
 		t.Error("expected ok=false after ResetCursor")
 	}

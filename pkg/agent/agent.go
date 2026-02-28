@@ -253,6 +253,7 @@ func executeTools(
 		if permissions != nil {
 			switch permissions.Evaluate(tc.name, inputMap) {
 			case config.PermissionResultDeny:
+				log.Printf("permission denied by rule for tool %s", tc.name)
 				errMsg := "blocked by permission rule"
 				results = append(results, api.ContentBlock{
 					Type:      "tool_result",
@@ -366,7 +367,9 @@ func executeTools(
 
 		// Run PostToolUse hooks (failures are warnings, not blocking).
 		if hookRunner != nil {
-			_ = hookRunner.Run(ctx, hooks.PostToolUse, tc.name, tc.input)
+			if err := hookRunner.Run(ctx, hooks.PostToolUse, tc.name, tc.input); err != nil {
+				log.Printf("PostToolUse hook error for %s: %v", tc.name, err)
+			}
 		}
 	}
 

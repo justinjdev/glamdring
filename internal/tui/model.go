@@ -589,7 +589,9 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		if m.compacting {
 			m.compacting = false
 			summary := m.extractLastText()
-			m.writeCheckpoint(summary)
+			if err := m.writeCheckpoint(summary); err != nil {
+				log.Printf("checkpoint failed: %v", err)
+			}
 			m.output.Clear()
 			m.output.AppendSystem("Context compacted. Checkpoint saved to tmp/checkpoint.md.")
 			if summary != "" {
@@ -691,15 +693,15 @@ func (m *Model) extractLastText() string {
 }
 
 // writeCheckpoint writes the compact summary to tmp/checkpoint.md in the CWD.
-func (m *Model) writeCheckpoint(summary string) {
+func (m *Model) writeCheckpoint(summary string) error {
 	cwd := m.agentCfg.CWD
 	if cwd == "" {
-		return
+		return nil
 	}
 
 	dir := filepath.Join(cwd, "tmp")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return
+		return fmt.Errorf("create checkpoint dir: %w", err)
 	}
 
 	branch := currentGitBranch(cwd)
@@ -711,7 +713,10 @@ func (m *Model) writeCheckpoint(summary string) {
 	content.WriteString(summary)
 	content.WriteString("\n")
 
-	_ = os.WriteFile(filepath.Join(dir, "checkpoint.md"), []byte(content.String()), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint.md"), []byte(content.String()), 0o644); err != nil {
+		return fmt.Errorf("write checkpoint file: %w", err)
+	}
+	return nil
 }
 
 // fireContextThresholdHook runs the ContextThreshold hook if configured.

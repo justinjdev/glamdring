@@ -121,6 +121,31 @@ func TestBashTool_ExecuteStreaming_ExitCode(t *testing.T) {
 	}
 }
 
+func TestBashTool_ExecuteStreaming_Timeout(t *testing.T) {
+	bash := BashTool{CWD: t.TempDir()}
+	// Use a very short timeout so the test runs quickly.
+	input, _ := json.Marshal(bashInput{Command: "sleep 30", Timeout: 100})
+
+	var mu sync.Mutex
+	var deltas []string
+	onOutput := func(text string) {
+		mu.Lock()
+		deltas = append(deltas, text)
+		mu.Unlock()
+	}
+
+	result, err := bash.ExecuteStreaming(context.Background(), input, onOutput)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for timed-out command")
+	}
+	if result.Output != "command timed out" {
+		t.Errorf("expected 'command timed out', got: %s", result.Output)
+	}
+}
+
 func TestRegistry_ExecuteStreaming_FallsBackForNonStreaming(t *testing.T) {
 	reg := NewRegistry()
 
