@@ -166,7 +166,10 @@ func main() {
 	)
 
 	// Load permission presets.
-	permissions := config.LoadPermissions(workDir)
+	permissions, err := config.LoadPermissions(workDir)
+	if err != nil {
+		log.Printf("warning: %v (permissions will not be applied)", err)
+	}
 
 	cfg := agent.Config{
 		Model:        settings.Model,

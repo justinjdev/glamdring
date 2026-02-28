@@ -138,6 +138,62 @@ func TestMatchGlobPattern_PrefixStar(t *testing.T) {
 	}
 }
 
+func TestEvaluate_PathTraversal(t *testing.T) {
+	tests := []struct {
+		name    string
+		deny    []PermissionRule
+		allow   []PermissionRule
+		path    string
+		want    PermissionResult
+	}{
+		{
+			name: "traversal does not bypass deny",
+			deny: []PermissionRule{{Tool: "Write", Path: "/etc/**"}},
+			path: "/tmp/../etc/passwd",
+			want: PermissionResultDeny,
+		},
+		{
+			name: "traversal shadow does not bypass deny",
+			deny: []PermissionRule{{Tool: "Write", Path: "/etc/**"}},
+			path: "/tmp/../etc/shadow",
+			want: PermissionResultDeny,
+		},
+		{
+			name: "allow does not extend via traversal out of dir",
+			allow: []PermissionRule{{Tool: "Write", Path: "src/**"}},
+			path:  "src/../etc/passwd",
+			want:  PermissionResultDefault,
+		},
+		{
+			name: "allow does not extend via double traversal",
+			allow: []PermissionRule{{Tool: "Write", Path: "src/**"}},
+			path:  "src/../../etc/passwd",
+			want:  PermissionResultDefault,
+		},
+		{
+			name: "normal deny still works",
+			deny: []PermissionRule{{Tool: "Write", Path: "/etc/**"}},
+			path: "/etc/passwd",
+			want: PermissionResultDeny,
+		},
+		{
+			name:  "normal allow still works",
+			allow: []PermissionRule{{Tool: "Write", Path: "src/**"}},
+			path:  "src/main.go",
+			want:  PermissionResultAllow,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pc := &PermissionConfig{Allow: tt.allow, Deny: tt.deny}
+			got := pc.Evaluate("Write", map[string]any{"file_path": tt.path})
+			if got != tt.want {
+				t.Errorf("Evaluate with path %q = %s, want %s", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadPermissions_FileExists(t *testing.T) {
 	dir := t.TempDir()
 	claudeDir := filepath.Join(dir, ".claude")
@@ -146,7 +202,10 @@ func TestLoadPermissions_FileExists(t *testing.T) {
 	data := `{"allow":[{"tool":"Bash","command":"go *"}],"deny":[{"tool":"Write","path":"/etc/**"}]}`
 	os.WriteFile(filepath.Join(claudeDir, "permissions.json"), []byte(data), 0o644)
 
-	pc := LoadPermissions(dir)
+	pc, err := LoadPermissions(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if pc == nil {
 		t.Fatal("expected non-nil PermissionConfig")
 	}
@@ -159,9 +218,44 @@ func TestLoadPermissions_FileExists(t *testing.T) {
 }
 
 func TestLoadPermissions_NoFile(t *testing.T) {
-	pc := LoadPermissions(t.TempDir())
+	pc, err := LoadPermissions(t.TempDir())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if pc != nil {
 		t.Error("expected nil when file doesn't exist")
+	}
+}
+
+func TestLoadPermissions_EmptyToolName(t *testing.T) {
+	dir := t.TempDir()
+	claudeDir := filepath.Join(dir, ".claude")
+	os.MkdirAll(claudeDir, 0o755)
+	os.WriteFile(filepath.Join(claudeDir, "permissions.json"),
+		[]byte(`{"allow":[{"tool":""}]}`), 0o644)
+
+	pc, err := LoadPermissions(dir)
+	if err == nil {
+		t.Error("expected error for empty tool name")
+	}
+	if pc != nil {
+		t.Error("expected nil config for validation error")
+	}
+}
+
+func TestLoadPermissions_BadGlobPattern(t *testing.T) {
+	dir := t.TempDir()
+	claudeDir := filepath.Join(dir, ".claude")
+	os.MkdirAll(claudeDir, 0o755)
+	os.WriteFile(filepath.Join(claudeDir, "permissions.json"),
+		[]byte(`{"deny":[{"tool":"Write","path":"[invalid"}]}`), 0o644)
+
+	pc, err := LoadPermissions(dir)
+	if err == nil {
+		t.Error("expected error for bad glob pattern")
+	}
+	if pc != nil {
+		t.Error("expected nil config for validation error")
 	}
 }
 
@@ -171,8 +265,11 @@ func TestLoadPermissions_InvalidJSON(t *testing.T) {
 	os.MkdirAll(claudeDir, 0o755)
 	os.WriteFile(filepath.Join(claudeDir, "permissions.json"), []byte("{invalid"), 0o644)
 
-	pc := LoadPermissions(dir)
+	pc, err := LoadPermissions(dir)
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
 	if pc != nil {
-		t.Error("expected nil for invalid JSON")
+		t.Error("expected nil config for invalid JSON")
 	}
 }

@@ -2,6 +2,8 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,18 +35,72 @@ const (
 )
 
 // LoadPermissions reads .claude/permissions.json from the project root.
-// Returns nil if the file doesn't exist.
-func LoadPermissions(cwd string) *PermissionConfig {
+// Returns (nil, nil) if the file doesn't exist. Returns an error if the
+// file exists but cannot be read or contains invalid JSON.
+func LoadPermissions(cwd string) (*PermissionConfig, error) {
 	path := filepath.Join(cwd, ".claude", "permissions.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 	var pc PermissionConfig
 	if err := json.Unmarshal(data, &pc); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	if err := pc.validate(); err != nil {
+		return nil, fmt.Errorf("validating %s: %w", path, err)
+	}
+	return &pc, nil
+}
+
+// validate checks that all rules have a non-empty Tool and valid glob patterns.
+func (pc *PermissionConfig) validate() error {
+	for i, rule := range pc.Deny {
+		if err := validateRule(rule); err != nil {
+			return fmt.Errorf("deny rule %d: %w", i, err)
+		}
+	}
+	for i, rule := range pc.Allow {
+		if err := validateRule(rule); err != nil {
+			return fmt.Errorf("allow rule %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// validateRule checks a single permission rule for structural validity.
+func validateRule(rule PermissionRule) error {
+	if rule.Tool == "" {
+		return fmt.Errorf("tool is required")
+	}
+	if rule.Path != "" {
+		if err := validatePattern(rule.Path); err != nil {
+			return fmt.Errorf("invalid path pattern %q: %w", rule.Path, err)
+		}
+	}
+	if rule.Command != "" {
+		if err := validatePattern(rule.Command); err != nil {
+			return fmt.Errorf("invalid command pattern %q: %w", rule.Command, err)
+		}
+	}
+	return nil
+}
+
+// validatePattern checks that a glob pattern is syntactically valid.
+func validatePattern(pattern string) error {
+	// Our custom patterns (dir/** and prefix*) are always valid.
+	if strings.HasSuffix(pattern, "/**") {
 		return nil
 	}
-	return &pc
+	if strings.HasSuffix(pattern, "*") && !strings.Contains(pattern[:len(pattern)-1], "*") {
+		return nil
+	}
+	// Validate against filepath.Match with a dummy value.
+	_, err := filepath.Match(pattern, "test")
+	return err
 }
 
 // Evaluate checks the deny and allow rules against a tool invocation.
@@ -90,6 +146,7 @@ func matchRule(rule PermissionRule, toolName, filePath, command string) bool {
 //   - "prefix*" matches strings starting with prefix
 //   - "dir/**" matches strings starting with dir/ (recursive)
 //   - Otherwise falls back to filepath.Match
+//
 func matchGlobPattern(pattern, value string) bool {
 	if value == "" {
 		return false
@@ -110,15 +167,18 @@ func matchGlobPattern(pattern, value string) bool {
 	// Fall back to filepath.Match.
 	matched, err := filepath.Match(pattern, value)
 	if err != nil {
+		log.Printf("warning: invalid glob pattern %q: %v", pattern, err)
 		return false
 	}
 	return matched
 }
 
 // extractFilePath pulls the file_path field from tool input (Read, Write, Edit).
+// The path is cleaned with filepath.Clean to normalize traversal sequences
+// (e.g., /tmp/../etc/passwd -> /etc/passwd) and prevent deny rule bypasses.
 func extractFilePath(input map[string]any) string {
 	if v, ok := input["file_path"].(string); ok {
-		return v
+		return filepath.Clean(v)
 	}
 	return ""
 }

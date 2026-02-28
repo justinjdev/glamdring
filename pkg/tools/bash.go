@@ -179,12 +179,20 @@ func (t BashTool) ExecuteStreaming(ctx context.Context, input json.RawMessage, o
 	scanPipe := func(pipe io.Reader, buf *strings.Builder, prefix string) {
 		defer wg.Done()
 		scanner := bufio.NewScanner(pipe)
+		scanner.Buffer(make([]byte, 0, 64*1024), maxOutputSize)
 		for scanner.Scan() {
 			line := scanner.Text()
 			buf.WriteString(line)
 			buf.WriteString("\n")
 			if onOutput != nil {
 				onOutput(prefix + line + "\n")
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			errMsg := fmt.Sprintf("\n[stream read error: %s]\n", err)
+			buf.WriteString(errMsg)
+			if onOutput != nil {
+				onOutput(errMsg)
 			}
 		}
 	}

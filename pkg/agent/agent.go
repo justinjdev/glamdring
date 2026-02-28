@@ -249,6 +249,7 @@ func executeTools(
 		}
 
 		// Check configured permission rules (deny -> allow -> default).
+		skipPrompt := false
 		if permissions != nil {
 			switch permissions.Evaluate(tc.name, inputMap) {
 			case config.PermissionResultDeny:
@@ -268,12 +269,12 @@ func executeTools(
 				})
 				continue
 			case config.PermissionResultAllow:
-				goto execute
+				skipPrompt = true
 			}
 		}
 
 		// Check session/default permissions.
-		if !isAllowed(tc.name, sessionAllow) {
+		if !skipPrompt && !isAllowed(tc.name, sessionAllow) {
 			summary := permissionSummary(tc.name, inputMap)
 			permCh := make(chan PermissionAnswer, 1)
 
@@ -317,7 +318,6 @@ func executeTools(
 			}
 		}
 
-	execute:
 		// Execute the tool, streaming output if supported.
 		onOutput := func(text string) {
 			emit(ctx, out, Message{
