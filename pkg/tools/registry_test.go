@@ -84,3 +84,76 @@ func TestRegistryReRegisterPreservesOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistry_Get(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&stubTool{name: "Alpha"})
+	r.Register(&stubTool{name: "Beta"})
+
+	t.Run("found", func(t *testing.T) {
+		tool := r.Get("Alpha")
+		if tool == nil {
+			t.Fatal("expected tool, got nil")
+		}
+		if tool.Name() != "Alpha" {
+			t.Errorf("expected 'Alpha', got %q", tool.Name())
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		tool := r.Get("NonExistent")
+		if tool != nil {
+			t.Errorf("expected nil for unknown tool, got %v", tool)
+		}
+	})
+}
+
+func TestRegistry_Execute_UnknownTool(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&stubTool{name: "Known"})
+
+	result, err := r.Execute(context.Background(), "Unknown", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for unknown tool")
+	}
+	if result.Output != "unknown tool: Unknown" {
+		t.Errorf("unexpected output: %q", result.Output)
+	}
+}
+
+func TestRegistry_ExecuteStreaming_UnknownTool(t *testing.T) {
+	r := NewRegistry()
+
+	called := false
+	onOutput := func(_ string) { called = true }
+
+	result, err := r.ExecuteStreaming(context.Background(), "Missing", json.RawMessage(`{}`), onOutput)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for unknown tool")
+	}
+	if result.Output != "unknown tool: Missing" {
+		t.Errorf("unexpected output: %q", result.Output)
+	}
+	if called {
+		t.Error("onOutput should not have been called")
+	}
+}
+
+func TestRegistry_Execute_KnownTool(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&stubTool{name: "MyTool"})
+
+	result, err := r.Execute(context.Background(), "MyTool", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Error("expected IsError=false for known tool")
+	}
+}

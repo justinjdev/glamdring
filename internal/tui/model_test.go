@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -176,6 +177,116 @@ func TestSpinnerStopsOnError(t *testing.T) {
 	result, _ := m.handleAgentMsg(agentMsg)
 	if result.spinning {
 		t.Error("expected spinning to stop on error")
+	}
+}
+
+func TestSummarizeToolInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		toolName string
+		input    map[string]any
+		want     string
+	}{
+		{
+			name:     "Bash command",
+			toolName: "Bash",
+			input:    map[string]any{"command": "ls -la"},
+			want:     "ls -la",
+		},
+		{
+			name:     "Read file path",
+			toolName: "Read",
+			input:    map[string]any{"file_path": "/tmp/test.go"},
+			want:     "/tmp/test.go",
+		},
+		{
+			name:     "Write file path",
+			toolName: "Write",
+			input:    map[string]any{"file_path": "/tmp/out.go"},
+			want:     "/tmp/out.go",
+		},
+		{
+			name:     "Edit file path",
+			toolName: "Edit",
+			input:    map[string]any{"file_path": "/tmp/edit.go"},
+			want:     "/tmp/edit.go",
+		},
+		{
+			name:     "Glob pattern",
+			toolName: "Glob",
+			input:    map[string]any{"pattern": "**/*.go"},
+			want:     "**/*.go",
+		},
+		{
+			name:     "Grep pattern",
+			toolName: "Grep",
+			input:    map[string]any{"pattern": "func main"},
+			want:     "func main",
+		},
+		{
+			name:     "unknown tool with input",
+			toolName: "Custom",
+			input:    map[string]any{"key": "value"},
+			want:     "key=value",
+		},
+		{
+			name:     "no input",
+			toolName: "Custom",
+			input:    map[string]any{},
+			want:     "(no input)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := summarizeToolInput(tt.toolName, tt.input)
+			if got != tt.want {
+				t.Errorf("summarizeToolInput(%q, ...) = %q, want %q", tt.toolName, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSummarizeToolInput_LongBashCommand(t *testing.T) {
+	longCmd := strings.Repeat("x", 100)
+	got := summarizeToolInput("Bash", map[string]any{"command": longCmd})
+	if len(got) > 80 {
+		t.Errorf("expected truncated output (<=80 chars), got length %d", len(got))
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Error("expected '...' suffix for truncated command")
+	}
+}
+
+func TestExtractLastText(t *testing.T) {
+	m := New()
+	// No blocks -- should return empty.
+	if text := m.extractLastText(); text != "" {
+		t.Errorf("expected empty string, got %q", text)
+	}
+
+	// Add some blocks.
+	m.output.AppendText("first text")
+	m.output.AppendToolCall("Read", "file.go")
+	m.output.AppendText("second text")
+
+	text := m.extractLastText()
+	if text != "second text" {
+		t.Errorf("expected 'second text', got %q", text)
+	}
+}
+
+func TestLayoutComponents(t *testing.T) {
+	m := New()
+	m.width = 120
+	m.height = 40
+	m.layoutComponents()
+
+	// Verify components were sized.
+	if m.output.viewport.Width != 120 {
+		t.Errorf("expected output width 120, got %d", m.output.viewport.Width)
+	}
+	if m.output.viewport.Height < 1 {
+		t.Error("expected positive output height")
 	}
 }
 

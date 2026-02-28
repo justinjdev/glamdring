@@ -139,6 +139,59 @@ func TestParseContentBlocks_String(t *testing.T) {
 	}
 }
 
+func TestParseContentBlocks_AnySlice(t *testing.T) {
+	// Simulate JSON-deserialized content: []any of map[string]any.
+	raw := []byte(`[{"type":"text","text":"hello"},{"type":"tool_use","name":"Bash"}]`)
+	var anySlice []any
+	if err := json.Unmarshal(raw, &anySlice); err != nil {
+		t.Fatalf("failed to unmarshal test data: %v", err)
+	}
+
+	blocks := parseContentBlocks(anySlice)
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks, got %d", len(blocks))
+	}
+	if blocks[0].Type != "text" || blocks[0].Text != "hello" {
+		t.Errorf("expected text block with 'hello', got type=%q text=%q", blocks[0].Type, blocks[0].Text)
+	}
+	if blocks[1].Type != "tool_use" || blocks[1].Name != "Bash" {
+		t.Errorf("expected tool_use block with name 'Bash', got type=%q name=%q", blocks[1].Type, blocks[1].Name)
+	}
+}
+
+func TestParseContentBlocks_InvalidAny(t *testing.T) {
+	// Pass something that cannot be marshaled into ContentBlocks.
+	blocks := parseContentBlocks(12345)
+	if blocks != nil {
+		t.Errorf("expected nil for invalid input, got %d blocks", len(blocks))
+	}
+}
+
+func TestParseContentBlocks_InvalidAnySlice(t *testing.T) {
+	// []any with non-object elements that won't unmarshal to ContentBlock.
+	badSlice := []any{"not", "objects"}
+	blocks := parseContentBlocks(badSlice)
+	// Should still produce blocks (strings marshal/unmarshal as empty structs).
+	// The important thing is it doesn't panic.
+	_ = blocks
+}
+
+func TestExportMarkdown_EmptyMessages(t *testing.T) {
+	result := exportMarkdown([]api.RequestMessage{})
+	// Should produce minimal output (just a trailing newline).
+	if result != "\n" {
+		t.Errorf("expected single newline for empty messages, got %q", result)
+	}
+}
+
+func TestExportHTML_EmptyMessages(t *testing.T) {
+	result := exportHTML([]api.RequestMessage{})
+	// Should still produce valid HTML structure.
+	if !strings.Contains(result, "<!DOCTYPE html>") {
+		t.Error("expected HTML doctype even for empty messages")
+	}
+}
+
 func TestParseContentBlocks_TypedSlice(t *testing.T) {
 	input := []api.ContentBlock{
 		{Type: "text", Text: "test"},

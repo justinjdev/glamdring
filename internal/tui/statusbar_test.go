@@ -48,6 +48,30 @@ func TestCostForModel_SmallTokens(t *testing.T) {
 	}
 }
 
+func TestFormatTokens(t *testing.T) {
+	tests := []struct {
+		name string
+		n    int
+		want string
+	}{
+		{"zero", 0, "0"},
+		{"small", 500, "500"},
+		{"exactly 1k", 1000, "1.0k"},
+		{"thousands", 5000, "5.0k"},
+		{"large thousands", 999_999, "1000.0k"},
+		{"exactly 1M", 1_000_000, "1.0M"},
+		{"millions", 2_500_000, "2.5M"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatTokens(tt.n)
+			if got != tt.want {
+				t.Errorf("formatTokens(%d) = %q, want %q", tt.n, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStatusBarYoloIndicator(t *testing.T) {
 	styles := DefaultStyles()
 	sb := NewStatusBar(styles)
