@@ -41,6 +41,12 @@ func (c *Client) Model() string {
 	return c.model
 }
 
+// SetModel changes the model for subsequent API requests. This is used by
+// team agents when advancing workflow phases that specify different models.
+func (c *Client) SetModel(model string) {
+	c.model = model
+}
+
 // SetEndpoint overrides the API endpoint URL. This is intended for testing
 // with httptest servers.
 func (c *Client) SetEndpoint(url string) {

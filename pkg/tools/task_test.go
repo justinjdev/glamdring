@@ -452,3 +452,125 @@ func TestTaskTool_Execute_ExcludesTaskTool(t *testing.T) {
 		}
 	}
 }
+
+func TestTaskTool_Execute_TeamNameWithoutName(t *testing.T) {
+	tt := &TaskTool{
+		TeamSetupFunc: func(_ context.Context, _ TeamSetupParams) (*TeamSetupResult, error) {
+			return nil, nil
+		},
+	}
+	input := `{"prompt":"go","team_name":"my-team"}`
+	result, err := tt.Execute(context.Background(), json.RawMessage(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected error when team_name set but name missing")
+	}
+	if !strings.Contains(result.Output, "name is required") {
+		t.Errorf("expected 'name is required' in output, got %q", result.Output)
+	}
+}
+
+func TestTaskTool_Execute_TeamNameWithoutTeamsEnabled(t *testing.T) {
+	tt := &TaskTool{} // no TeamSetupFunc
+	input := `{"prompt":"go","team_name":"my-team","name":"agent-1"}`
+	result, err := tt.Execute(context.Background(), json.RawMessage(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected error when teams not enabled")
+	}
+	if !strings.Contains(result.Output, "teams are not enabled") {
+		t.Errorf("expected 'teams are not enabled' in output, got %q", result.Output)
+	}
+}
+
+func TestTaskTool_Execute_TeamNameCallsSetupFunc(t *testing.T) {
+	var capturedParams TeamSetupParams
+
+	setupFunc := func(_ context.Context, params TeamSetupParams) (*TeamSetupResult, error) {
+		capturedParams = params
+		return &TeamSetupResult{
+			Tools:        []Tool{&stubTool{name: "Read"}},
+			SystemPrompt: "team prompt",
+			Model:        "claude-sonnet-4-6",
+		}, nil
+	}
+
+	var capturedOpts SubagentOptions
+	runner := func(_ context.Context, opts SubagentOptions) <-chan SubagentResult {
+		capturedOpts = opts
+		ch := make(chan SubagentResult, 2)
+		ch <- SubagentResult{Text: "team output"}
+		ch <- SubagentResult{Done: true}
+		close(ch)
+		return ch
+	}
+
+	tt := &TaskTool{
+		runner:        runner,
+		allTools:      []Tool{&stubTool{name: "Read"}},
+		TeamSetupFunc: setupFunc,
+	}
+
+	input := `{"prompt":"do team work","team_name":"my-team","name":"worker-1","workflow":"rpiv","start_phase":"implement"}`
+	result, err := tt.Execute(context.Background(), json.RawMessage(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.Output)
+	}
+	if result.Output != "team output" {
+		t.Errorf("expected 'team output', got %q", result.Output)
+	}
+
+	// Verify setup params.
+	if capturedParams.TeamName != "my-team" {
+		t.Errorf("expected team name 'my-team', got %q", capturedParams.TeamName)
+	}
+	if capturedParams.AgentName != "worker-1" {
+		t.Errorf("expected agent name 'worker-1', got %q", capturedParams.AgentName)
+	}
+	if capturedParams.Workflow != "rpiv" {
+		t.Errorf("expected workflow 'rpiv', got %q", capturedParams.Workflow)
+	}
+	if capturedParams.StartPhase != "implement" {
+		t.Errorf("expected start phase 'implement', got %q", capturedParams.StartPhase)
+	}
+
+	// Verify runner received setup results.
+	if capturedOpts.SystemPrompt != "team prompt" {
+		t.Errorf("expected 'team prompt', got %q", capturedOpts.SystemPrompt)
+	}
+	if capturedOpts.Model != "claude-sonnet-4-6" {
+		t.Errorf("expected model 'claude-sonnet-4-6', got %q", capturedOpts.Model)
+	}
+}
+
+func TestTaskTool_Schema_IncludesTeamFields(t *testing.T) {
+	// Without TeamSetupFunc, no team fields.
+	tt := &TaskTool{}
+	raw := tt.Schema()
+	var schema map[string]any
+	json.Unmarshal(raw, &schema)
+	props := schema["properties"].(map[string]any)
+	if _, ok := props["team_name"]; ok {
+		t.Error("team_name should not be in schema without TeamSetupFunc")
+	}
+
+	// With TeamSetupFunc, team fields present.
+	tt.TeamSetupFunc = func(_ context.Context, _ TeamSetupParams) (*TeamSetupResult, error) {
+		return nil, nil
+	}
+	raw = tt.Schema()
+	json.Unmarshal(raw, &schema)
+	props = schema["properties"].(map[string]any)
+	for _, field := range []string{"team_name", "name", "workflow", "start_phase"} {
+		if _, ok := props[field]; !ok {
+			t.Errorf("expected %q in schema with TeamSetupFunc", field)
+		}
+	}
+}

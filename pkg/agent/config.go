@@ -19,6 +19,23 @@ type Config struct {
 	HookRunner   *hooks.HookRunner
 	Permissions  *config.PermissionConfig
 	Yolo         bool
+
+	// TeamState is opaque state for team agents. When non-nil, it indicates
+	// this agent is a team member and enables message channel injection.
+	TeamState any
+
+	// PriorityMessages delivers high-priority inter-agent messages (shutdown,
+	// approval) that are injected between tool executions.
+	PriorityMessages <-chan any
+
+	// RegularMessages delivers normal inter-agent messages that are injected
+	// between turns (before the next API call).
+	RegularMessages <-chan any
+
+	// ToolProvider optionally overrides the tool registry with a custom
+	// provider (e.g., PhaseRegistry for team agents). If nil, a standard
+	// Registry is built from Tools.
+	ToolProvider tools.ToolProvider
 }
 
 // DefaultModel is the default Claude model to use.

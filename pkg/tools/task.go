@@ -21,6 +21,8 @@ type SubagentOptions struct {
 	SystemPrompt string
 	Tools        []Tool
 	MaxTurns     int
+	Model        string // override model (used by team workflows)
+	TeamState    any    // opaque team state passed to agent.Config
 }
 
 // SubagentResult is a single unit of output from a running subagent.
@@ -30,12 +32,38 @@ type SubagentResult struct {
 	Done    bool
 }
 
+// TeamSetupFunc is a callback that configures a subagent for team participation.
+// It is called by TaskTool when team_name is provided, and returns modified
+// subagent options with team-specific tools, system prompt, and model.
+type TeamSetupFunc func(ctx context.Context, params TeamSetupParams) (*TeamSetupResult, error)
+
+// TeamSetupParams holds the inputs for configuring a team agent.
+type TeamSetupParams struct {
+	TeamName      string
+	AgentName     string
+	Workflow      string
+	InjectContext []string
+	StartPhase    string
+	BaseTools     []Tool
+	BaseSysPrompt string
+}
+
+// TeamSetupResult holds the configured outputs for a team agent.
+type TeamSetupResult struct {
+	Tools        []Tool
+	SystemPrompt string
+	Model        string
+	MaxTurns     int
+	TeamState    any
+}
+
 // TaskTool spawns a subagent to execute a task and returns the collected
 // text output. It implements the Tool interface.
 type TaskTool struct {
-	runner    SubagentRunner
-	agentDefs *agents.Registry
-	allTools  []Tool
+	runner        SubagentRunner
+	agentDefs     *agents.Registry
+	allTools      []Tool
+	TeamSetupFunc TeamSetupFunc // optional callback for team agent setup
 }
 
 // NewTaskTool creates a TaskTool. runner is the callback that starts a
@@ -52,9 +80,14 @@ func NewTaskTool(runner SubagentRunner, agentDefs *agents.Registry, allTools []T
 }
 
 type taskInput struct {
-	Prompt       string   `json:"prompt"`
-	SubagentType string   `json:"subagent_type"`
-	AllowedTools []string `json:"allowed_tools"`
+	Prompt        string   `json:"prompt"`
+	SubagentType  string   `json:"subagent_type"`
+	AllowedTools  []string `json:"allowed_tools"`
+	TeamName      string   `json:"team_name"`
+	Name          string   `json:"name"`
+	Workflow      string   `json:"workflow"`
+	InjectContext []string `json:"inject_context"`
+	StartPhase    string   `json:"start_phase"`
 }
 
 func (TaskTool) Name() string { return "Task" }
@@ -64,26 +97,53 @@ func (TaskTool) Description() string {
 }
 
 func (t TaskTool) Schema() json.RawMessage {
-	schema := map[string]any{
-		"type":     "object",
-		"required": []string{"prompt"},
-		"properties": map[string]any{
-			"prompt": map[string]any{
-				"type":        "string",
-				"description": "The task description / prompt for the subagent",
-			},
-			"subagent_type": map[string]any{
-				"type":        "string",
-				"description": "Name of a custom agent definition to use (applies its system prompt and tool restrictions)",
-			},
-			"allowed_tools": map[string]any{
-				"type":        "array",
-				"description": "Whitelist of tool names the subagent may use. If omitted, the subagent inherits the parent's tools.",
-				"items": map[string]any{
-					"type": "string",
-				},
+	props := map[string]any{
+		"prompt": map[string]any{
+			"type":        "string",
+			"description": "The task description / prompt for the subagent",
+		},
+		"subagent_type": map[string]any{
+			"type":        "string",
+			"description": "Name of a custom agent definition to use (applies its system prompt and tool restrictions)",
+		},
+		"allowed_tools": map[string]any{
+			"type":        "array",
+			"description": "Whitelist of tool names the subagent may use. If omitted, the subagent inherits the parent's tools.",
+			"items": map[string]any{
+				"type": "string",
 			},
 		},
+	}
+
+	// Add team-related properties when TeamSetupFunc is configured.
+	if t.TeamSetupFunc != nil {
+		props["team_name"] = map[string]any{
+			"type":        "string",
+			"description": "Name of the team this agent should join. Requires 'name' to be set.",
+		}
+		props["name"] = map[string]any{
+			"type":        "string",
+			"description": "Name for this agent within the team. Required when team_name is set.",
+		}
+		props["workflow"] = map[string]any{
+			"type":        "string",
+			"description": "Workflow preset name (rpiv, plan-implement, scoped, none).",
+		}
+		props["inject_context"] = map[string]any{
+			"type":        "array",
+			"description": "Context cache keys to inject into the agent's initial prompt.",
+			"items":       map[string]any{"type": "string"},
+		}
+		props["start_phase"] = map[string]any{
+			"type":        "string",
+			"description": "Phase name to start the agent in (defaults to first phase).",
+		}
+	}
+
+	schema := map[string]any{
+		"type":       "object",
+		"required":   []string{"prompt"},
+		"properties": props,
 	}
 
 	// Build the schema with agent names in the description if available.
@@ -94,7 +154,6 @@ func (t TaskTool) Schema() json.RawMessage {
 				"Name of a custom agent definition to use. Available agents: %s",
 				strings.Join(names, ", "),
 			)
-			props := schema["properties"].(map[string]any)
 			st := props["subagent_type"].(map[string]any)
 			st["description"] = desc
 		}
@@ -111,6 +170,17 @@ func (t TaskTool) Execute(ctx context.Context, input json.RawMessage) (Result, e
 	}
 	if in.Prompt == "" {
 		return Result{Output: "prompt is required", IsError: true}, nil
+	}
+
+	// Team agent path: delegate setup to TeamSetupFunc.
+	if in.TeamName != "" {
+		if t.TeamSetupFunc == nil {
+			return Result{Output: "teams are not enabled", IsError: true}, nil
+		}
+		if in.Name == "" {
+			return Result{Output: "name is required when team_name is set", IsError: true}, nil
+		}
+		return t.executeTeamAgent(ctx, in)
 	}
 
 	opts := SubagentOptions{
@@ -192,6 +262,57 @@ func filterTools(all []Tool, allowed []string) []Tool {
 		}
 	}
 	return filtered
+}
+
+// executeTeamAgent handles the team agent spawn path.
+func (t TaskTool) executeTeamAgent(ctx context.Context, in taskInput) (Result, error) {
+	setupResult, err := t.TeamSetupFunc(ctx, TeamSetupParams{
+		TeamName:      in.TeamName,
+		AgentName:     in.Name,
+		Workflow:      in.Workflow,
+		InjectContext: in.InjectContext,
+		StartPhase:    in.StartPhase,
+		BaseTools:     t.allTools,
+		BaseSysPrompt: "",
+	})
+	if err != nil {
+		return Result{Output: fmt.Sprintf("team setup failed: %s", err), IsError: true}, nil
+	}
+
+	opts := SubagentOptions{
+		Prompt:       in.Prompt,
+		SystemPrompt: setupResult.SystemPrompt,
+		Tools:        setupResult.Tools,
+		MaxTurns:     setupResult.MaxTurns,
+		Model:        setupResult.Model,
+		TeamState:    setupResult.TeamState,
+	}
+
+	ch := t.runner(ctx, opts)
+
+	var buf strings.Builder
+	var hadError bool
+
+	for result := range ch {
+		if result.Done {
+			break
+		}
+		if result.IsError {
+			hadError = true
+		}
+		if result.Text != "" {
+			buf.WriteString(result.Text)
+		}
+	}
+
+	output := buf.String()
+	if output == "" && hadError {
+		output = "team agent completed with errors but produced no output"
+	} else if output == "" {
+		output = "team agent completed with no output"
+	}
+
+	return Result{Output: output, IsError: hadError}, nil
 }
 
 // excludeTool returns a copy of tools with the named tool removed.

@@ -22,6 +22,7 @@ import (
 	"github.com/justin/glamdring/pkg/hooks"
 	"github.com/justin/glamdring/pkg/index"
 	"github.com/justin/glamdring/pkg/mcp"
+	"github.com/justin/glamdring/pkg/teams"
 	"github.com/justin/glamdring/pkg/tools"
 )
 
@@ -55,6 +56,7 @@ func main() {
 	cwd := flag.String("cwd", "", "working directory (defaults to current directory)")
 	model := flag.String("model", "", "Claude model to use (overrides settings)")
 	yolo := flag.Bool("yolo", false, "auto-approve all tool permissions")
+	experimentalTeams := flag.Bool("experimental-teams", false, "enable experimental agent teams support")
 	flag.Parse()
 
 	creds, err := auth.Resolve()
@@ -133,6 +135,28 @@ func main() {
 	// refreshMCPTools() can rebuild the full list without duplicating index tools.
 	taskTool := tools.NewTaskTool(subagentRunner, agentDefs, tools.DefaultTools(workDir))
 	baseTools := tools.DefaultToolsWithTask(workDir, taskTool)
+
+	// Enable team tools if the experimental flag or settings enable teams.
+	teamsEnabled := *experimentalTeams || settings.Experimental.Teams
+	var teamRegistry *teams.ManagerRegistry
+	if teamsEnabled {
+		teamRegistry = teams.NewManagerRegistry()
+		teamTools := []tools.Tool{
+			teams.TeamCreateTool{Registry: teamRegistry},
+			teams.TeamDeleteTool{Registry: teamRegistry},
+			teams.TaskCreateTool{Registry: teamRegistry},
+			teams.TaskListTool{Registry: teamRegistry},
+			teams.TaskGetTool{Registry: teamRegistry},
+			teams.TaskUpdateTool{Registry: teamRegistry},
+			teams.SendMessageTool{Registry: teamRegistry, AgentName: "lead"},
+			teams.AdvancePhaseTool{Registry: teamRegistry, AgentName: "lead"},
+		}
+		baseTools = append(baseTools, teamTools...)
+
+		// Set up the team setup function on the Task tool.
+		taskTool.TeamSetupFunc = makeTeamSetupFunc(teamRegistry, creds, settings.Model)
+	}
+
 	allTools := make([]tools.Tool, len(baseTools))
 	copy(allTools, baseTools)
 	if indexDB != nil {
@@ -227,13 +251,29 @@ func makeSubagentRunner(creds auth.Credentials, model string) tools.SubagentRunn
 			maxTurns = &opts.MaxTurns
 		}
 
+		agentModel := model
+		if opts.Model != "" {
+			agentModel = opts.Model
+		}
+
 		cfg := agent.Config{
 			Prompt:       opts.Prompt,
 			SystemPrompt: opts.SystemPrompt,
 			Creds:        creds,
-			Model:        model,
+			Model:        agentModel,
 			Tools:        opts.Tools,
 			MaxTurns:     maxTurns,
+			Yolo:         true, // subagents auto-approve tools
+		}
+
+		// Pass through team state for team agents.
+		if opts.TeamState != nil {
+			cfg.TeamState = opts.TeamState
+			if ts, ok := opts.TeamState.(*teamState); ok {
+				cfg.PriorityMessages = ts.priorityCh
+				cfg.RegularMessages = ts.regularCh
+				cfg.ToolProvider = ts.provider
+			}
 		}
 
 		agentCh := agent.Run(ctx, cfg)
@@ -277,5 +317,142 @@ func makeSubagentRunner(creds auth.Credentials, model string) tools.SubagentRunn
 		}()
 
 		return resultCh
+	}
+}
+
+// teamState holds the opaque state passed through agent.Config.TeamState
+// for team agents. It carries the message channels and tool provider.
+type teamState struct {
+	priorityCh <-chan any
+	regularCh  <-chan any
+	provider   tools.ToolProvider
+	mgr        *teams.TeamManager
+	agentName  string
+}
+
+// makeTeamSetupFunc creates the TeamSetupFunc callback that configures
+// subagents for team participation. It wires up message channels, phase
+// tracking, decorators, and team-specific tools.
+func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, defaultModel string) tools.TeamSetupFunc {
+	return func(ctx context.Context, params tools.TeamSetupParams) (*tools.TeamSetupResult, error) {
+		mgr := registry.Get(params.TeamName)
+		if mgr == nil {
+			return nil, fmt.Errorf("team %q not found", params.TeamName)
+		}
+
+		// Register the agent as a team member.
+		member := teams.Member{
+			Name:   params.AgentName,
+			Status: teams.MemberStatusActive,
+		}
+		if err := mgr.Members.Add(member); err != nil {
+			return nil, fmt.Errorf("add member: %w", err)
+		}
+
+		// Subscribe to message channels.
+		regularCh, priorityCh, err := mgr.Messages.Subscribe(params.AgentName, 32)
+		if err != nil {
+			return nil, fmt.Errorf("subscribe: %w", err)
+		}
+
+		// Wrap channels as chan any for the agent config.
+		regularAnyCh := make(chan any, 32)
+		priorityAnyCh := make(chan any, 32)
+		go func() {
+			for msg := range regularCh {
+				regularAnyCh <- msg
+			}
+			close(regularAnyCh)
+		}()
+		go func() {
+			for msg := range priorityCh {
+				priorityAnyCh <- msg
+			}
+			close(priorityAnyCh)
+		}()
+
+		// Resolve workflow phases for this agent.
+		phases := teams.ResolveWorkflow(params.Workflow, mgr.Config.Phases)
+		if len(phases) > 0 {
+			mgr.Phases.SetPhases(params.AgentName, phases)
+			if params.StartPhase != "" {
+				if _, err := mgr.Phases.AdvanceTo(params.AgentName, params.StartPhase); err != nil {
+					return nil, fmt.Errorf("advance to start phase: %w", err)
+				}
+			}
+		}
+
+		// Build the tool registry for this agent. Start with base tools,
+		// then add team-specific tools with this agent's name.
+		agentRegistry := tools.NewRegistry()
+		for _, t := range params.BaseTools {
+			agentRegistry.Register(t)
+		}
+
+		// Register team tools with this agent's identity.
+		agentRegistry.Register(teams.TaskCreateTool{Registry: registry})
+		agentRegistry.Register(teams.TaskListTool{Registry: registry})
+		agentRegistry.Register(teams.TaskGetTool{Registry: registry})
+		agentRegistry.Register(teams.TaskUpdateTool{Registry: registry})
+		agentRegistry.Register(teams.SendMessageTool{Registry: registry, AgentName: params.AgentName})
+		agentRegistry.Register(teams.AdvancePhaseTool{Registry: registry, AgentName: params.AgentName})
+
+		// Build the PhaseRegistry as the ToolProvider for this agent.
+		var provider tools.ToolProvider
+		if len(phases) > 0 {
+			provider = teams.NewPhaseRegistry(agentRegistry, mgr.Phases, params.AgentName, nil, nil)
+		} else {
+			provider = agentRegistry
+		}
+
+		// Determine the initial model from the current phase.
+		agentModel := defaultModel
+		if len(phases) > 0 {
+			if phase, _, err := mgr.Phases.Current(params.AgentName); err == nil && phase.Model != "" {
+				agentModel = phase.Model
+			}
+		}
+
+		// Build system prompt with team context.
+		var memberNames []string
+		for _, m := range mgr.Members.List() {
+			memberNames = append(memberNames, m.Name)
+		}
+		phaseName := ""
+		if len(phases) > 0 {
+			if phase, _, err := mgr.Phases.Current(params.AgentName); err == nil {
+				phaseName = phase.Name
+			}
+		}
+		teamPrompt := config.BuildTeamAgentPrompt(config.TeamAgentInfo{
+			TeamName:  params.TeamName,
+			AgentName: params.AgentName,
+			Phase:     phaseName,
+			Members:   memberNames,
+		})
+
+		sysPrompt := params.BaseSysPrompt + teamPrompt
+
+		// Inject context from cache if requested.
+		for _, key := range params.InjectContext {
+			if val, ok := mgr.Context.Load(key); ok {
+				sysPrompt += "\n\n## Injected Context: " + key + "\n\n" + val
+			}
+		}
+
+		state := &teamState{
+			priorityCh: priorityAnyCh,
+			regularCh:  regularAnyCh,
+			provider:   provider,
+			mgr:        mgr,
+			agentName:  params.AgentName,
+		}
+
+		return &tools.TeamSetupResult{
+			Tools:        agentRegistry.All(),
+			SystemPrompt: sysPrompt,
+			Model:        agentModel,
+			TeamState:    state,
+		}, nil
 	}
 }

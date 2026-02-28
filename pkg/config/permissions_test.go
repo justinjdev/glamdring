@@ -259,6 +259,80 @@ func TestLoadPermissions_BadGlobPattern(t *testing.T) {
 	}
 }
 
+func TestEvaluateTeamScope_NilScope(t *testing.T) {
+	result := EvaluateTeamScope(nil, "Write", map[string]any{"file_path": "/any/path"})
+	if result != PermissionResultDefault {
+		t.Errorf("expected default for nil scope, got %s", result)
+	}
+}
+
+func TestEvaluateTeamScope_NonFileTools(t *testing.T) {
+	scope := &TeamScope{AllowPatterns: []string{"src/**"}}
+	// Read and Bash are not scope-checked.
+	for _, tool := range []string{"Read", "Bash", "Glob", "Grep"} {
+		result := EvaluateTeamScope(scope, tool, map[string]any{"file_path": "/etc/passwd"})
+		if result != PermissionResultDefault {
+			t.Errorf("expected default for tool %s, got %s", tool, result)
+		}
+	}
+}
+
+func TestEvaluateTeamScope_AllowPatterns(t *testing.T) {
+	scope := &TeamScope{AllowPatterns: []string{"src/**", "tests/**"}}
+
+	tests := []struct {
+		path string
+		want PermissionResult
+	}{
+		{"src/main.go", PermissionResultDefault},
+		{"src/pkg/foo.go", PermissionResultDefault},
+		{"tests/test_main.go", PermissionResultDefault},
+		{"/etc/passwd", PermissionResultDeny},
+		{"other/file.go", PermissionResultDeny},
+	}
+	for _, tt := range tests {
+		got := EvaluateTeamScope(scope, "Write", map[string]any{"file_path": tt.path})
+		if got != tt.want {
+			t.Errorf("EvaluateTeamScope(Write, %q) = %s, want %s", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestEvaluateTeamScope_DenyPatterns(t *testing.T) {
+	scope := &TeamScope{DenyPatterns: []string{"/etc/**", "*.secret"}}
+
+	tests := []struct {
+		path string
+		want PermissionResult
+	}{
+		{"/etc/passwd", PermissionResultDeny},
+		{"src/main.go", PermissionResultDefault},
+	}
+	for _, tt := range tests {
+		got := EvaluateTeamScope(scope, "Edit", map[string]any{"file_path": tt.path})
+		if got != tt.want {
+			t.Errorf("EvaluateTeamScope(Edit, %q) = %s, want %s", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestEvaluateTeamScope_DenyOverridesAllow(t *testing.T) {
+	scope := &TeamScope{
+		AllowPatterns: []string{"src/**"},
+		DenyPatterns:  []string{"src/secret/**"},
+	}
+
+	got := EvaluateTeamScope(scope, "Write", map[string]any{"file_path": "src/secret/keys.go"})
+	if got != PermissionResultDeny {
+		t.Errorf("expected deny for denied sub-path, got %s", got)
+	}
+
+	got = EvaluateTeamScope(scope, "Write", map[string]any{"file_path": "src/main.go"})
+	if got != PermissionResultDefault {
+		t.Errorf("expected default for allowed path, got %s", got)
+	}
+}
+
 func TestLoadPermissions_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	claudeDir := filepath.Join(dir, ".claude")
