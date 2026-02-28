@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/justin/glamdring/pkg/api"
@@ -16,6 +17,21 @@ var alwaysAllowTools = map[string]bool{
 	"Read": true,
 	"Glob": true,
 	"Grep": true,
+}
+
+// maxToolResultSize is the maximum size of a tool result before truncation.
+// Results exceeding this are truncated before being sent to the API to protect
+// the context window.
+const maxToolResultSize = 50_000
+
+// truncateToolResult caps tool output at maxToolResultSize bytes to prevent
+// blowing the context window with huge results.
+func truncateToolResult(output string) string {
+	if len(output) <= maxToolResultSize {
+		return output
+	}
+	return output[:maxToolResultSize] +
+		"\n... (truncated, full output was " + strconv.Itoa(len(output)) + " bytes)"
 }
 
 // Run starts the agentic loop as a one-shot operation (no multi-turn memory).
@@ -283,17 +299,20 @@ func executeTools(
 			continue
 		}
 
+		// Truncate large outputs to protect the context window.
+		output := truncateToolResult(toolResult.Output)
+
 		results = append(results, api.ContentBlock{
 			Type:      "tool_result",
 			ToolUseID: tc.id,
-			Content:   toolResult.Output,
+			Content:   output,
 			IsError:   toolResult.IsError,
 		})
 		emit(ctx, out, Message{
 			Type:        MessageToolResult,
 			ToolName:    tc.name,
 			ToolID:      tc.id,
-			ToolOutput:  toolResult.Output,
+			ToolOutput:  toolResult.Output, // TUI gets full output
 			ToolIsError: toolResult.IsError,
 		})
 
