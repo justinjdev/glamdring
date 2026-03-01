@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"unicode/utf8"
 
@@ -56,13 +57,13 @@ func buildSSEResponse(text, stopReason string) string {
 }
 
 func newMockServer(responses ...string) *httptest.Server {
-	call := 0
+	var call atomic.Int32
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		idx := call
+		idx := int(call.Load())
 		if idx >= len(responses) {
 			idx = len(responses) - 1
 		}
-		call++
+		call.Add(1)
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -475,6 +476,669 @@ func TestSessionTurnWithBlocksAppendsToHistory(t *testing.T) {
 	}
 	if contentBlocks[0].Type != "image" {
 		t.Errorf("first block type = %q, want 'image'", contentBlocks[0].Type)
+	}
+}
+
+// --- Tests for SetModel ---
+
+func TestSessionSetModel(t *testing.T) {
+	s := newTestSessionWithTools()
+	if s.client.Model() != "test-model" {
+		t.Fatalf("initial model = %q, want 'test-model'", s.client.Model())
+	}
+
+	s.SetModel("claude-sonnet-4-20250514")
+	if s.client.Model() != "claude-sonnet-4-20250514" {
+		t.Errorf("model after SetModel = %q, want 'claude-sonnet-4-20250514'", s.client.Model())
+	}
+}
+
+// --- Tests for drainRegularMessages ---
+
+func TestDrainRegularMessages_NilChannel(t *testing.T) {
+	s := &Session{
+		regularCh: nil,
+		messages:  []api.RequestMessage{{Role: "user", Content: "hello"}},
+	}
+	s.drainRegularMessages()
+	// Should be a no-op.
+	if len(s.messages) != 1 {
+		t.Errorf("expected 1 message, got %d", len(s.messages))
+	}
+}
+
+func TestDrainRegularMessages_EmptyChannel(t *testing.T) {
+	ch := make(chan any, 5)
+	s := &Session{
+		regularCh: ch,
+		messages:  []api.RequestMessage{{Role: "user", Content: "hello"}},
+	}
+	s.drainRegularMessages()
+	// No messages pending, so no new messages should be appended.
+	if len(s.messages) != 1 {
+		t.Errorf("expected 1 message, got %d", len(s.messages))
+	}
+}
+
+func TestDrainRegularMessages_WithPendingMessages(t *testing.T) {
+	ch := make(chan any, 5)
+	ch <- "message one"
+	ch <- "message two"
+
+	s := &Session{
+		regularCh: ch,
+		messages:  []api.RequestMessage{{Role: "assistant", Content: "I responded"}},
+	}
+	s.drainRegularMessages()
+
+	if len(s.messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(s.messages))
+	}
+	if s.messages[1].Role != "user" {
+		t.Errorf("new message role = %q, want 'user'", s.messages[1].Role)
+	}
+	content, ok := s.messages[1].Content.(string)
+	if !ok {
+		t.Fatalf("expected string content, got %T", s.messages[1].Content)
+	}
+	if !strings.Contains(content, "message one") || !strings.Contains(content, "message two") {
+		t.Errorf("expected both messages in content, got: %q", content)
+	}
+}
+
+func TestDrainRegularMessages_MergesWithExistingUserMessage(t *testing.T) {
+	ch := make(chan any, 5)
+	ch <- "team update"
+
+	s := &Session{
+		regularCh: ch,
+		messages: []api.RequestMessage{
+			{Role: "user", Content: "original question"},
+		},
+	}
+	s.drainRegularMessages()
+
+	// Should merge with the existing user message, not add a new one.
+	if len(s.messages) != 1 {
+		t.Fatalf("expected 1 message (merged), got %d", len(s.messages))
+	}
+	content, ok := s.messages[0].Content.(string)
+	if !ok {
+		t.Fatalf("expected string content, got %T", s.messages[0].Content)
+	}
+	if !strings.Contains(content, "original question") {
+		t.Error("expected original question in merged content")
+	}
+	if !strings.Contains(content, "team update") {
+		t.Error("expected team update in merged content")
+	}
+}
+
+func TestDrainRegularMessages_DoesNotMergeBlockContent(t *testing.T) {
+	ch := make(chan any, 5)
+	ch <- "team update"
+
+	// Last user message has non-string content ([]ContentBlock), should not merge.
+	s := &Session{
+		regularCh: ch,
+		messages: []api.RequestMessage{
+			{Role: "user", Content: []api.ContentBlock{
+				{Type: "text", Text: "block content"},
+			}},
+		},
+	}
+	s.drainRegularMessages()
+
+	// Should add a new message since the existing user message has block content.
+	if len(s.messages) != 2 {
+		t.Fatalf("expected 2 messages (not merged), got %d", len(s.messages))
+	}
+	if s.messages[1].Role != "user" {
+		t.Errorf("new message role = %q, want 'user'", s.messages[1].Role)
+	}
+}
+
+func TestDrainRegularMessages_ClosedChannel(t *testing.T) {
+	ch := make(chan any, 5)
+	ch <- "final message"
+	close(ch)
+
+	s := &Session{
+		regularCh: ch,
+		messages:  []api.RequestMessage{{Role: "assistant", Content: "hi"}},
+	}
+	s.drainRegularMessages()
+
+	// The closed channel should be set to nil.
+	if s.regularCh != nil {
+		t.Error("expected regularCh to be nil after closed channel drain")
+	}
+	if len(s.messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(s.messages))
+	}
+	content, ok := s.messages[1].Content.(string)
+	if !ok {
+		t.Fatalf("expected string content, got %T", s.messages[1].Content)
+	}
+	if !strings.Contains(content, "final message") {
+		t.Errorf("expected 'final message' in content, got: %q", content)
+	}
+}
+
+// --- Tests for syncPhaseModel ---
+
+// mockPhaseProvider implements both ToolProvider and PhaseModelProvider.
+type mockPhaseProvider struct {
+	tools.ToolProvider
+	model    string
+	fallback string
+}
+
+func (m *mockPhaseProvider) CurrentPhaseModel() (string, string) {
+	return m.model, m.fallback
+}
+
+func (m *mockPhaseProvider) Schemas() []json.RawMessage     { return nil }
+func (m *mockPhaseProvider) Get(name string) tools.Tool      { return nil }
+func (m *mockPhaseProvider) Execute(ctx context.Context, name string, input json.RawMessage) (tools.Result, error) {
+	return tools.Result{}, nil
+}
+func (m *mockPhaseProvider) ExecuteStreaming(ctx context.Context, name string, input json.RawMessage, onOutput func(string)) (tools.Result, error) {
+	return tools.Result{}, nil
+}
+
+func TestSyncPhaseModel_ChangesModel(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.provider = &mockPhaseProvider{model: "claude-sonnet-4-20250514", fallback: "claude-haiku-4-20250514"}
+
+	s.syncPhaseModel()
+	if s.client.Model() != "claude-sonnet-4-20250514" {
+		t.Errorf("expected model to be 'claude-sonnet-4-20250514', got %q", s.client.Model())
+	}
+}
+
+func TestSyncPhaseModel_NoChangeWhenSameModel(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.provider = &mockPhaseProvider{model: "test-model", fallback: ""}
+
+	s.syncPhaseModel()
+	// Should not change since model is already test-model.
+	if s.client.Model() != "test-model" {
+		t.Errorf("expected model to remain 'test-model', got %q", s.client.Model())
+	}
+}
+
+func TestSyncPhaseModel_EmptyModel(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.provider = &mockPhaseProvider{model: "", fallback: ""}
+
+	s.syncPhaseModel()
+	// Empty model should not cause a change.
+	if s.client.Model() != "test-model" {
+		t.Errorf("expected model to remain 'test-model', got %q", s.client.Model())
+	}
+}
+
+func TestSyncPhaseModel_NonPhaseProvider(t *testing.T) {
+	s := newTestSessionWithTools()
+	// The default registry is not a PhaseModelProvider. syncPhaseModel should be a no-op.
+	s.syncPhaseModel()
+	if s.client.Model() != "test-model" {
+		t.Errorf("expected model to remain 'test-model', got %q", s.client.Model())
+	}
+}
+
+// --- Tests for tryFallbackModel ---
+
+func TestTryFallbackModel_NonAPIError(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.provider = &mockPhaseProvider{model: "test-model", fallback: "fallback-model"}
+
+	result := s.tryFallbackModel(fmt.Errorf("generic error"))
+	if result != "" {
+		t.Errorf("expected empty fallback for non-API error, got %q", result)
+	}
+}
+
+func TestTryFallbackModel_APIError429(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.provider = &mockPhaseProvider{model: "test-model", fallback: "fallback-model"}
+
+	apiErr := &api.APIError{StatusCode: 429, Type: "rate_limit", Message: "too many requests"}
+	result := s.tryFallbackModel(apiErr)
+	if result != "fallback-model" {
+		t.Errorf("expected 'fallback-model' for 429, got %q", result)
+	}
+}
+
+func TestTryFallbackModel_APIError500(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.provider = &mockPhaseProvider{model: "test-model", fallback: "fallback-model"}
+
+	apiErr := &api.APIError{StatusCode: 500, Type: "server_error", Message: "internal error"}
+	result := s.tryFallbackModel(apiErr)
+	if result != "fallback-model" {
+		t.Errorf("expected 'fallback-model' for 500, got %q", result)
+	}
+}
+
+func TestTryFallbackModel_APIError503(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.provider = &mockPhaseProvider{model: "test-model", fallback: "fallback-model"}
+
+	apiErr := &api.APIError{StatusCode: 503, Type: "overloaded", Message: "overloaded"}
+	result := s.tryFallbackModel(apiErr)
+	if result != "fallback-model" {
+		t.Errorf("expected 'fallback-model' for 503, got %q", result)
+	}
+}
+
+func TestTryFallbackModel_APIError400NotRetryable(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.provider = &mockPhaseProvider{model: "test-model", fallback: "fallback-model"}
+
+	apiErr := &api.APIError{StatusCode: 400, Type: "invalid_request", Message: "bad request"}
+	result := s.tryFallbackModel(apiErr)
+	if result != "" {
+		t.Errorf("expected empty fallback for 400, got %q", result)
+	}
+}
+
+func TestTryFallbackModel_APIError401NotRetryable(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.provider = &mockPhaseProvider{model: "test-model", fallback: "fallback-model"}
+
+	apiErr := &api.APIError{StatusCode: 401, Type: "authentication_error", Message: "unauthorized"}
+	result := s.tryFallbackModel(apiErr)
+	if result != "" {
+		t.Errorf("expected empty fallback for 401, got %q", result)
+	}
+}
+
+func TestTryFallbackModel_NoPhaseProvider(t *testing.T) {
+	s := newTestSessionWithTools()
+	// Default registry is not a PhaseModelProvider.
+
+	apiErr := &api.APIError{StatusCode: 429, Type: "rate_limit", Message: "too many requests"}
+	result := s.tryFallbackModel(apiErr)
+	if result != "" {
+		t.Errorf("expected empty fallback without PhaseModelProvider, got %q", result)
+	}
+}
+
+func TestTryFallbackModel_EmptyFallback(t *testing.T) {
+	s := newTestSessionWithTools()
+	s.provider = &mockPhaseProvider{model: "test-model", fallback: ""}
+
+	apiErr := &api.APIError{StatusCode: 429, Type: "rate_limit", Message: "too many requests"}
+	result := s.tryFallbackModel(apiErr)
+	if result != "" {
+		t.Errorf("expected empty fallback when PhaseModelProvider returns empty, got %q", result)
+	}
+}
+
+// --- Tests for runTurn error and edge case paths ---
+
+func TestRunTurn_APIStreamError(t *testing.T) {
+	// Server returns HTTP 500 to trigger an API error.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"server_error","message":"internal failure"}}`)
+	}))
+	defer srv.Close()
+
+	s := newTestSession(srv.URL)
+	msgs := drainMessages(s.Turn(context.Background(), "test"))
+
+	var gotErr bool
+	for _, m := range msgs {
+		if m.Type == MessageError {
+			gotErr = true
+		}
+	}
+	if !gotErr {
+		t.Error("expected error message from API failure")
+	}
+}
+
+func TestRunTurn_ContextCancelledBeforeStream(t *testing.T) {
+	srv := newMockServer(buildSSEResponse("Hello!", "end_turn"))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately.
+
+	s := newTestSession(srv.URL)
+	msgs := drainMessages(s.Turn(ctx, "test"))
+
+	// With a cancelled context, the loop either emits an error or terminates
+	// without producing output. Either outcome is valid.
+	var gotErr bool
+	for _, m := range msgs {
+		if m.Type == MessageError {
+			gotErr = true
+		}
+	}
+	// If messages were produced, at least one should be an error.
+	// If no messages were produced, that is also acceptable (context cancelled
+	// before the goroutine could emit anything).
+	if len(msgs) > 0 && !gotErr {
+		// Could have received a successful response if the HTTP request completed
+		// before cancellation was noticed. This is not an error.
+		var gotDone bool
+		for _, m := range msgs {
+			if m.Type == MessageDone {
+				gotDone = true
+			}
+		}
+		if !gotDone && !gotErr {
+			t.Error("expected either error or done message from cancelled context")
+		}
+	}
+}
+
+func TestRunTurn_UnknownStopReason(t *testing.T) {
+	// Build a response with an unknown stop reason.
+	unknownResp := buildSSEResponse("partial", "unknown_reason")
+
+	srv := newMockServer(unknownResp)
+	defer srv.Close()
+
+	s := newTestSession(srv.URL)
+	msgs := drainMessages(s.Turn(context.Background(), "test"))
+
+	var gotDone bool
+	for _, m := range msgs {
+		if m.Type == MessageDone {
+			gotDone = true
+		}
+	}
+	if !gotDone {
+		t.Error("expected done message for unknown stop reason")
+	}
+}
+
+func TestRunTurn_FallbackModelOnAPIError(t *testing.T) {
+	// First request returns 429, second (after fallback) succeeds.
+	var callCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount.Add(1)
+		if callCount.Load() == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"type":"error","error":{"type":"rate_limit_error","message":"too many requests"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, buildSSEResponse("fallback worked", "end_turn"))
+	}))
+	defer srv.Close()
+
+	cfg := Config{
+		Model:        "test-model",
+		Creds:        mockCreds{},
+		ToolProvider: &mockPhaseProvider{model: "test-model", fallback: "fallback-model"},
+	}
+	s := NewSession(cfg)
+	s.client.SetEndpoint(srv.URL)
+
+	msgs := drainMessages(s.Turn(context.Background(), "test"))
+
+	var gotText, gotDone bool
+	for _, m := range msgs {
+		if m.Type == MessageTextDelta && strings.Contains(m.Text, "fallback worked") {
+			gotText = true
+		}
+		if m.Type == MessageDone {
+			gotDone = true
+		}
+	}
+	if !gotText {
+		t.Error("expected text from fallback model response")
+	}
+	if !gotDone {
+		t.Error("expected done message")
+	}
+	if got := callCount.Load(); got != 2 {
+		t.Errorf("expected 2 API calls (initial + fallback), got %d", got)
+	}
+}
+
+func TestRunTurn_FallbackModelBothFail(t *testing.T) {
+	// Both requests return 429.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"rate_limit_error","message":"too many requests"}}`)
+	}))
+	defer srv.Close()
+
+	cfg := Config{
+		Model:        "test-model",
+		Creds:        mockCreds{},
+		ToolProvider: &mockPhaseProvider{model: "test-model", fallback: "fallback-model"},
+	}
+	s := NewSession(cfg)
+	s.client.SetEndpoint(srv.URL)
+
+	msgs := drainMessages(s.Turn(context.Background(), "test"))
+
+	var gotErr bool
+	for _, m := range msgs {
+		if m.Type == MessageError {
+			gotErr = true
+		}
+	}
+	if !gotErr {
+		t.Error("expected error message when both primary and fallback fail")
+	}
+}
+
+func TestRunTurn_RegularMessagesInjectedBetweenTurns(t *testing.T) {
+	// Two-turn conversation: tool_use then end_turn.
+	var toolUseResp strings.Builder
+	toolUseResp.WriteString("event: message_start\n")
+	toolUseResp.WriteString(`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"test","stop_reason":null,"usage":{"input_tokens":50,"output_tokens":0}}}`)
+	toolUseResp.WriteString("\n\n")
+	toolUseResp.WriteString("event: content_block_start\n")
+	toolUseResp.WriteString(`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tu_1","name":"Read"}}`)
+	toolUseResp.WriteString("\n\n")
+	toolUseResp.WriteString("event: content_block_delta\n")
+	toolUseResp.WriteString(`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}`)
+	toolUseResp.WriteString("\n\n")
+	toolUseResp.WriteString("event: content_block_stop\n")
+	toolUseResp.WriteString(`data: {"type":"content_block_stop","index":0}`)
+	toolUseResp.WriteString("\n\n")
+	toolUseResp.WriteString("event: message_delta\n")
+	toolUseResp.WriteString(`data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}`)
+	toolUseResp.WriteString("\n\n")
+	toolUseResp.WriteString("event: message_stop\n")
+	toolUseResp.WriteString(`data: {"type":"message_stop"}`)
+	toolUseResp.WriteString("\n\n")
+
+	srv := newMockServer(
+		toolUseResp.String(),
+		buildSSEResponse("Done!", "end_turn"),
+	)
+	defer srv.Close()
+
+	regularCh := make(chan any, 5)
+	// Queue a message that will be drained before the second API call.
+	regularCh <- "team notification: code review complete"
+
+	readTool := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "ok"},
+	}
+	cfg := Config{
+		Model:           "test-model",
+		Creds:           mockCreds{},
+		Tools:           []tools.Tool{readTool},
+		RegularMessages: regularCh,
+	}
+	s := NewSession(cfg)
+	s.client.SetEndpoint(srv.URL)
+
+	drainMessages(s.Turn(context.Background(), "test"))
+
+	// The regular message should have been injected into the conversation history.
+	found := false
+	for _, msg := range s.Messages() {
+		if msg.Role == "user" {
+			if content, ok := msg.Content.(string); ok {
+				if strings.Contains(content, "team notification") {
+					found = true
+					break
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("expected regular message to be injected into conversation history")
+	}
+}
+
+func TestRunTurn_TokenCountsAccumulate(t *testing.T) {
+	srv := newMockServer(
+		buildSSEResponse("First", "end_turn"),
+		buildSSEResponse("Second", "end_turn"),
+	)
+	defer srv.Close()
+
+	s := newTestSession(srv.URL)
+
+	drainMessages(s.Turn(context.Background(), "q1"))
+	firstTotal := s.TotalInput
+
+	drainMessages(s.Turn(context.Background(), "q2"))
+	secondTotal := s.TotalInput
+
+	if secondTotal <= firstTotal {
+		t.Errorf("expected cumulative input tokens to increase, got %d then %d", firstTotal, secondTotal)
+	}
+	// Note: Turns is only incremented on tool_use continuations within a single
+	// Turn() call. Simple end_turn responses don't increment it.
+	if s.TotalOutput == 0 {
+		t.Error("expected non-zero total output tokens")
+	}
+}
+
+func TestRunTurn_ToolExecutionErrorInLoop(t *testing.T) {
+	// Server returns a tool_use response, but tool execution will fail because
+	// context gets cancelled during permission request.
+	var toolUseResp strings.Builder
+	toolUseResp.WriteString("event: message_start\n")
+	toolUseResp.WriteString(`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"test","stop_reason":null,"usage":{"input_tokens":50,"output_tokens":0}}}`)
+	toolUseResp.WriteString("\n\n")
+	toolUseResp.WriteString("event: content_block_start\n")
+	toolUseResp.WriteString(`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tu_1","name":"Bash"}}`)
+	toolUseResp.WriteString("\n\n")
+	toolUseResp.WriteString("event: content_block_delta\n")
+	toolUseResp.WriteString(`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"test\"}"}}`)
+	toolUseResp.WriteString("\n\n")
+	toolUseResp.WriteString("event: content_block_stop\n")
+	toolUseResp.WriteString(`data: {"type":"content_block_stop","index":0}`)
+	toolUseResp.WriteString("\n\n")
+	toolUseResp.WriteString("event: message_delta\n")
+	toolUseResp.WriteString(`data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}`)
+	toolUseResp.WriteString("\n\n")
+	toolUseResp.WriteString("event: message_stop\n")
+	toolUseResp.WriteString(`data: {"type":"message_stop"}`)
+	toolUseResp.WriteString("\n\n")
+
+	srv := newMockServer(toolUseResp.String())
+	defer srv.Close()
+
+	// Use a tool that requires permission (Bash, not in alwaysAllowTools).
+	// When permission is requested, cancel the context to trigger error in executeTools.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bashTool := &configurableMockTool{
+		name:   "Bash",
+		result: tools.Result{Output: "ok"},
+	}
+	cfg := Config{
+		Model: "test-model",
+		Creds: mockCreds{},
+		Tools: []tools.Tool{bashTool},
+	}
+	s := NewSession(cfg)
+	s.client.SetEndpoint(srv.URL)
+
+	out := s.Turn(ctx, "run bash")
+
+	// Drain messages. When we see a permission request, cancel the context.
+	var gotPermReq, gotDone bool
+	for m := range out {
+		if m.Type == MessagePermissionRequest {
+			cancel()
+			gotPermReq = true
+		}
+		if m.Type == MessageDone {
+			gotDone = true
+		}
+	}
+
+	// The permission request should have been emitted before cancellation.
+	if !gotPermReq {
+		t.Error("expected permission request for Bash tool")
+	}
+	// After context cancellation, the turn should terminate without emitting
+	// a done message (emit drops messages when context is cancelled).
+	if gotDone {
+		t.Error("expected no done message after context cancellation")
+	}
+}
+
+func TestRunTurn_ProcessTurnErrorInLoop(t *testing.T) {
+	// Server returns a stream error during the response.
+	var errorResp strings.Builder
+	errorResp.WriteString("event: message_start\n")
+	errorResp.WriteString(`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"test","stop_reason":null,"usage":{"input_tokens":50,"output_tokens":0}}}`)
+	errorResp.WriteString("\n\n")
+	errorResp.WriteString("event: error\n")
+	errorResp.WriteString(`data: {"type":"error","error":{"type":"overloaded_error","message":"server overloaded"}}`)
+	errorResp.WriteString("\n\n")
+
+	srv := newMockServer(errorResp.String())
+	defer srv.Close()
+
+	s := newTestSession(srv.URL)
+	msgs := drainMessages(s.Turn(context.Background(), "test"))
+
+	var gotErr bool
+	for _, m := range msgs {
+		if m.Type == MessageError {
+			gotErr = true
+		}
+	}
+	if !gotErr {
+		t.Error("expected error message from stream error in processTurn")
+	}
+}
+
+func TestNewSession_DefaultModel(t *testing.T) {
+	cfg := Config{
+		Creds: mockCreds{},
+	}
+	s := NewSession(cfg)
+	if s.client.Model() != DefaultModel {
+		t.Errorf("expected default model %q, got %q", DefaultModel, s.client.Model())
+	}
+}
+
+func TestNewSession_CustomToolProvider(t *testing.T) {
+	provider := &mockPhaseProvider{model: "custom-model", fallback: ""}
+	cfg := Config{
+		Model:        "test-model",
+		Creds:        mockCreds{},
+		ToolProvider: provider,
+	}
+	s := NewSession(cfg)
+	if s.provider != provider {
+		t.Error("expected custom ToolProvider to be used")
 	}
 }
 

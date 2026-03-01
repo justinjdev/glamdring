@@ -1169,6 +1169,637 @@ func TestRunTurn_MaxTurnsReached(t *testing.T) {
 	}
 }
 
+// --- Tests for formatPriorityMessage ---
+
+func TestFormatPriorityMessage_String(t *testing.T) {
+	result := formatPriorityMessage("hello from leader")
+	expected := "[Team Message] hello from leader"
+	if result != expected {
+		t.Errorf("formatPriorityMessage(string) = %q, want %q", result, expected)
+	}
+}
+
+type stringerMsg struct{ text string }
+
+func (s stringerMsg) String() string { return s.text }
+
+func TestFormatPriorityMessage_Stringer(t *testing.T) {
+	msg := stringerMsg{text: "stringer message"}
+	result := formatPriorityMessage(msg)
+	expected := "[Team Message] stringer message"
+	if result != expected {
+		t.Errorf("formatPriorityMessage(Stringer) = %q, want %q", result, expected)
+	}
+}
+
+func TestFormatPriorityMessage_JSONMarshalable(t *testing.T) {
+	msg := map[string]string{"key": "value"}
+	result := formatPriorityMessage(msg)
+	if !strings.Contains(result, "[Team Message]") {
+		t.Error("expected [Team Message] prefix")
+	}
+	if !strings.Contains(result, `"key":"value"`) {
+		t.Errorf("expected JSON content, got: %q", result)
+	}
+}
+
+func TestFormatPriorityMessage_FallbackFormat(t *testing.T) {
+	// A channel cannot be JSON-marshaled, so it falls back to fmt.Sprintf.
+	ch := make(chan int)
+	result := formatPriorityMessage(ch)
+	if !strings.Contains(result, "[Team Message]") {
+		t.Error("expected [Team Message] prefix in fallback")
+	}
+}
+
+// --- Tests for formatTeamMessage ---
+
+func TestFormatTeamMessage_String(t *testing.T) {
+	result := formatTeamMessage("team hello")
+	if result != "team hello" {
+		t.Errorf("formatTeamMessage(string) = %q, want %q", result, "team hello")
+	}
+}
+
+func TestFormatTeamMessage_Stringer(t *testing.T) {
+	msg := stringerMsg{text: "from stringer"}
+	result := formatTeamMessage(msg)
+	if result != "from stringer" {
+		t.Errorf("formatTeamMessage(Stringer) = %q, want %q", result, "from stringer")
+	}
+}
+
+func TestFormatTeamMessage_JSONMarshalable(t *testing.T) {
+	msg := map[string]int{"count": 42}
+	result := formatTeamMessage(msg)
+	if !strings.Contains(result, `"count":42`) {
+		t.Errorf("expected JSON content, got: %q", result)
+	}
+}
+
+func TestFormatTeamMessage_FallbackFormat(t *testing.T) {
+	ch := make(chan int)
+	result := formatTeamMessage(ch)
+	// Should produce some string representation via fmt.Sprintf("%v", ch).
+	if result == "" {
+		t.Error("expected non-empty fallback format")
+	}
+}
+
+// --- Tests for executeTools with priority channel ---
+
+func TestExecuteTools_PriorityChannelDrain(t *testing.T) {
+	mockT := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "file content"},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(mockT)
+
+	ctx := context.Background()
+	out := make(chan Message, 64)
+	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{"file_path": "/tmp/x"})}
+
+	// Create a buffered priority channel with messages ready to drain.
+	priorityCh := make(chan any, 3)
+	priorityCh <- "urgent: deploy now"
+	priorityCh <- "urgent: rollback"
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, priorityCh)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	// The last result should have priority messages appended.
+	if !strings.Contains(results[0].Content, "[Team Message] urgent: deploy now") {
+		t.Errorf("expected priority message in result, got: %q", results[0].Content)
+	}
+	if !strings.Contains(results[0].Content, "[Team Message] urgent: rollback") {
+		t.Errorf("expected second priority message in result, got: %q", results[0].Content)
+	}
+}
+
+func TestExecuteTools_PriorityChannelClosed(t *testing.T) {
+	mockT := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "ok"},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(mockT)
+
+	ctx := context.Background()
+	out := make(chan Message, 64)
+	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{})}
+
+	// Create and immediately close the priority channel.
+	priorityCh := make(chan any, 1)
+	close(priorityCh)
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, priorityCh)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+}
+
+// --- Tests for executeTools with team scope ---
+
+func TestExecuteTools_TeamScopeBlock(t *testing.T) {
+	mockT := &configurableMockTool{
+		name:   "Write",
+		result: tools.Result{Output: "should not run"},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(mockT)
+
+	scope := &config.TeamScope{
+		AllowPatterns: []string{"/allowed/**"},
+	}
+
+	ctx := context.Background()
+	out := make(chan Message, 64)
+	calls := []toolCall{makeToolCall("tc1", "Write", map[string]any{"file_path": "/forbidden/secret.txt"})}
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{"Write": true}, nil, nil, scope, nil)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].IsError {
+		t.Error("expected error result for scope-blocked tool")
+	}
+	if !strings.Contains(results[0].Content, "blocked by team scope") {
+		t.Errorf("unexpected content: %q", results[0].Content)
+	}
+	if mockT.execCount != 0 {
+		t.Error("tool should not have been executed when blocked by scope")
+	}
+}
+
+// --- Tests for executeTools with streaming output callback ---
+
+type streamingMockTool struct {
+	name     string
+	result   tools.Result
+	onOutput func(string) // captured callback
+}
+
+func (t *streamingMockTool) Name() string        { return t.name }
+func (t *streamingMockTool) Description() string  { return "streaming mock" }
+func (t *streamingMockTool) Schema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{}}`)
+}
+func (t *streamingMockTool) Execute(_ context.Context, _ json.RawMessage) (tools.Result, error) {
+	return t.result, nil
+}
+
+// --- Test for processTurn signature_delta ---
+
+func TestProcessTurn_SignatureDelta(t *testing.T) {
+	events := make(chan api.StreamEvent, 20)
+
+	events <- api.StreamEvent{
+		Type:    "message_start",
+		Message: &api.MessageResponse{Usage: api.Usage{InputTokens: 50}},
+	}
+	events <- api.StreamEvent{
+		Type:         "content_block_start",
+		Index:        0,
+		ContentBlock: &api.ContentBlock{Type: "thinking"},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_delta",
+		Index: 0,
+		Delta: &api.Delta{Type: "thinking_delta", Thinking: "hmm"},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_delta",
+		Index: 0,
+		Delta: &api.Delta{Type: "signature_delta", Signature: "sig123"},
+	}
+	events <- api.StreamEvent{Type: "content_block_stop", Index: 0}
+	events <- api.StreamEvent{
+		Type:       "message_delta",
+		StopReason: "end_turn",
+		Usage:      &api.Usage{OutputTokens: 10},
+	}
+	events <- api.StreamEvent{Type: "message_stop"}
+	close(events)
+
+	out := make(chan Message, 64)
+	result, err := processTurn(context.Background(), events, out)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.contentBlocks[0].Signature != "sig123" {
+		t.Errorf("expected signature 'sig123', got %q", result.contentBlocks[0].Signature)
+	}
+}
+
+// --- Test for processTurn with message_start nil message ---
+
+func TestProcessTurn_NilMessageStart(t *testing.T) {
+	events := make(chan api.StreamEvent, 10)
+
+	// message_start with nil Message should be handled gracefully.
+	events <- api.StreamEvent{
+		Type:    "message_start",
+		Message: nil,
+	}
+	events <- api.StreamEvent{
+		Type:         "content_block_start",
+		Index:        0,
+		ContentBlock: &api.ContentBlock{Type: "text"},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_delta",
+		Index: 0,
+		Delta: &api.Delta{Type: "text_delta", Text: "Hello"},
+	}
+	events <- api.StreamEvent{Type: "content_block_stop", Index: 0}
+	events <- api.StreamEvent{
+		Type:       "message_delta",
+		StopReason: "end_turn",
+		Usage:      &api.Usage{OutputTokens: 5},
+	}
+	events <- api.StreamEvent{Type: "message_stop"}
+	close(events)
+
+	out := make(chan Message, 64)
+	result, err := processTurn(context.Background(), events, out)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Input tokens should be 0 since message was nil.
+	if result.inputTokens != 0 {
+		t.Errorf("expected 0 input tokens with nil message, got %d", result.inputTokens)
+	}
+	if result.contentBlocks[0].Text != "Hello" {
+		t.Errorf("expected text 'Hello', got %q", result.contentBlocks[0].Text)
+	}
+}
+
+// --- Test for processTurn error event with nil Err ---
+
+func TestProcessTurn_ErrorEventNilErr(t *testing.T) {
+	events := make(chan api.StreamEvent, 10)
+
+	events <- api.StreamEvent{
+		Type:    "message_start",
+		Message: &api.MessageResponse{Usage: api.Usage{InputTokens: 10}},
+	}
+	events <- api.StreamEvent{
+		Type: "error",
+		Err:  nil, // nil error should not cause a return error
+	}
+	events <- api.StreamEvent{
+		Type:       "message_delta",
+		StopReason: "end_turn",
+		Usage:      &api.Usage{OutputTokens: 5},
+	}
+	events <- api.StreamEvent{Type: "message_stop"}
+	close(events)
+
+	out := make(chan Message, 64)
+	result, err := processTurn(context.Background(), events, out)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("expected no error with nil Err, got: %v", err)
+	}
+	if result.stopReason != "end_turn" {
+		t.Errorf("expected stop_reason 'end_turn', got %q", result.stopReason)
+	}
+}
+
+// --- Test for processTurn message_delta with nil usage ---
+
+func TestProcessTurn_MessageDeltaNilUsage(t *testing.T) {
+	events := make(chan api.StreamEvent, 10)
+
+	events <- api.StreamEvent{
+		Type:    "message_start",
+		Message: &api.MessageResponse{Usage: api.Usage{InputTokens: 10}},
+	}
+	events <- api.StreamEvent{
+		Type:         "content_block_start",
+		Index:        0,
+		ContentBlock: &api.ContentBlock{Type: "text"},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_delta",
+		Index: 0,
+		Delta: &api.Delta{Type: "text_delta", Text: "test"},
+	}
+	events <- api.StreamEvent{Type: "content_block_stop", Index: 0}
+	events <- api.StreamEvent{
+		Type:       "message_delta",
+		StopReason: "end_turn",
+		Usage:      nil, // nil usage
+	}
+	events <- api.StreamEvent{Type: "message_stop"}
+	close(events)
+
+	out := make(chan Message, 64)
+	result, err := processTurn(context.Background(), events, out)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.outputTokens != 0 {
+		t.Errorf("expected 0 output tokens with nil usage, got %d", result.outputTokens)
+	}
+}
+
+// --- Test for content_block_delta with out-of-range index ---
+
+func TestProcessTurn_DeltaOutOfRangeIndex(t *testing.T) {
+	events := make(chan api.StreamEvent, 10)
+
+	events <- api.StreamEvent{
+		Type:    "message_start",
+		Message: &api.MessageResponse{Usage: api.Usage{InputTokens: 10}},
+	}
+	// Delta for index 5, but no blocks have been started.
+	events <- api.StreamEvent{
+		Type:  "content_block_delta",
+		Index: 5,
+		Delta: &api.Delta{Type: "text_delta", Text: "orphan"},
+	}
+	events <- api.StreamEvent{
+		Type:       "message_delta",
+		StopReason: "end_turn",
+		Usage:      &api.Usage{OutputTokens: 5},
+	}
+	events <- api.StreamEvent{Type: "message_stop"}
+	close(events)
+
+	out := make(chan Message, 64)
+	result, err := processTurn(context.Background(), events, out)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The orphan delta is emitted to the channel but not stored in blocks.
+	if len(result.contentBlocks) != 0 {
+		t.Errorf("expected 0 content blocks, got %d", len(result.contentBlocks))
+	}
+}
+
+// --- Test for content_block_stop with out-of-range index ---
+
+func TestProcessTurn_StopOutOfRangeIndex(t *testing.T) {
+	events := make(chan api.StreamEvent, 10)
+
+	events <- api.StreamEvent{
+		Type:    "message_start",
+		Message: &api.MessageResponse{Usage: api.Usage{InputTokens: 10}},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_stop",
+		Index: 99, // no block at this index
+	}
+	events <- api.StreamEvent{
+		Type:       "message_delta",
+		StopReason: "end_turn",
+		Usage:      &api.Usage{OutputTokens: 5},
+	}
+	events <- api.StreamEvent{Type: "message_stop"}
+	close(events)
+
+	out := make(chan Message, 64)
+	result, err := processTurn(context.Background(), events, out)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.contentBlocks) != 0 {
+		t.Errorf("expected 0 content blocks, got %d", len(result.contentBlocks))
+	}
+}
+
+// --- Tests for executeTools: invalid JSON input fallback ---
+
+func TestExecuteTools_InvalidJSONInput(t *testing.T) {
+	mockT := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "ok"},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(mockT)
+
+	ctx := context.Background()
+	out := make(chan Message, 64)
+
+	// Create a tool call with invalid JSON input.
+	tc := toolCall{id: "tc1", name: "Read", input: json.RawMessage(`not valid json`)}
+	calls := []toolCall{tc}
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	// The tool should still execute successfully.
+	if results[0].Content != "ok" {
+		t.Errorf("expected 'ok', got %q", results[0].Content)
+	}
+
+	// Verify the emitted ToolCall message has the fallback input.
+	for m := range out {
+		if m.Type == MessageToolCall {
+			if _, ok := m.ToolInput["raw"]; !ok {
+				t.Error("expected 'raw' key in ToolInput for invalid JSON")
+			}
+			break
+		}
+	}
+}
+
+// --- Tests for executeTools: context cancelled while waiting for permission ---
+
+func TestExecuteTools_ContextCancelledDuringPermission(t *testing.T) {
+	mockT := &configurableMockTool{
+		name:   "Bash",
+		result: tools.Result{Output: "should not run"},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(mockT)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	out := make(chan Message, 64)
+	calls := []toolCall{makeToolCall("tc1", "Bash", map[string]any{"command": "echo hi"})}
+
+	// Start a goroutine that cancels context when permission is requested
+	// (but does NOT respond to it).
+	go func() {
+		for m := range out {
+			if m.Type == MessagePermissionRequest {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
+	close(out)
+
+	if err == nil {
+		t.Fatal("expected error from context cancellation during permission wait")
+	}
+	if !strings.Contains(err.Error(), "context cancelled") {
+		t.Errorf("expected 'context cancelled' in error, got: %v", err)
+	}
+}
+
+// --- Tests for executeTools: PostToolUse hook ---
+
+func TestExecuteTools_PostToolUseHookSuccess(t *testing.T) {
+	mockT := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "file content"},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(mockT)
+
+	// PostToolUse hook that succeeds.
+	hookRunner := hooks.NewHookRunner([]hooks.Hook{
+		{Event: hooks.PostToolUse, Command: "exit 0"},
+	})
+
+	ctx := context.Background()
+	out := make(chan Message, 64)
+	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{"file_path": "/tmp/x"})}
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, hookRunner, nil, nil, nil)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Content != "file content" {
+		t.Errorf("expected 'file content', got %q", results[0].Content)
+	}
+}
+
+func TestExecuteTools_PostToolUseHookFailure(t *testing.T) {
+	mockT := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "file content"},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(mockT)
+
+	// PostToolUse hook that fails -- should only warn, not block.
+	hookRunner := hooks.NewHookRunner([]hooks.Hook{
+		{Event: hooks.PostToolUse, Command: "exit 1"},
+	})
+
+	ctx := context.Background()
+	out := make(chan Message, 64)
+	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{"file_path": "/tmp/x"})}
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, hookRunner, nil, nil, nil)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	// Tool result should still be successful (PostToolUse failure is a warning).
+	if results[0].Content != "file content" {
+		t.Errorf("expected 'file content', got %q", results[0].Content)
+	}
+}
+
+// --- Tests for streaming tool output callback ---
+
+// streamingMockProvider is a ToolProvider that captures the onOutput callback
+// and invokes it during ExecuteStreaming.
+type streamingMockProvider struct {
+	outputChunks []string
+	result       tools.Result
+}
+
+func (p *streamingMockProvider) Schemas() []json.RawMessage {
+	return []json.RawMessage{json.RawMessage(`{"name":"Read","description":"mock","input_schema":{"type":"object","properties":{}}}`)}
+}
+func (p *streamingMockProvider) Get(name string) tools.Tool { return nil }
+func (p *streamingMockProvider) Execute(ctx context.Context, name string, input json.RawMessage) (tools.Result, error) {
+	return p.result, nil
+}
+func (p *streamingMockProvider) ExecuteStreaming(ctx context.Context, name string, input json.RawMessage, onOutput func(string)) (tools.Result, error) {
+	for _, chunk := range p.outputChunks {
+		onOutput(chunk)
+	}
+	return p.result, nil
+}
+
+func TestExecuteTools_StreamingOutput(t *testing.T) {
+	provider := &streamingMockProvider{
+		outputChunks: []string{"chunk1", "chunk2"},
+		result:       tools.Result{Output: "final result"},
+	}
+
+	ctx := context.Background()
+	out := make(chan Message, 64)
+	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{})}
+
+	results, err := executeTools(ctx, out, provider, calls, map[string]bool{"Read": true}, nil, nil, nil, nil)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	// Verify streaming output delta messages were emitted.
+	var streamDeltas []string
+	for m := range out {
+		if m.Type == MessageToolOutputDelta {
+			streamDeltas = append(streamDeltas, m.Text)
+		}
+	}
+	if len(streamDeltas) != 2 {
+		t.Errorf("expected 2 streaming deltas, got %d", len(streamDeltas))
+	}
+	if len(streamDeltas) >= 2 {
+		if streamDeltas[0] != "chunk1" || streamDeltas[1] != "chunk2" {
+			t.Errorf("unexpected streaming deltas: %v", streamDeltas)
+		}
+	}
+}
+
 func TestRunTurn_MaxTokensContinuation(t *testing.T) {
 	// First response hits max_tokens, second completes normally.
 	maxTokensResp := buildSSEResponse("partial...", "max_tokens")

@@ -28,7 +28,7 @@ jobs:
 
       - name: Check coverage threshold
         run: |
-          threshold=50
+          threshold=70
           coverage=$(go tool cover -func=coverage.out | grep ^total: | awk '{print int($3)}')
           echo "Total coverage: ${coverage}%"
           if [ "$coverage" -lt "$threshold" ]; then

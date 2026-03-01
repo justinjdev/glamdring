@@ -11,6 +11,15 @@ import (
 
 const keychainService = "Claude Code-credentials"
 
+// Keychain operation hooks. Declared as vars to allow test overrides
+// that avoid hitting the macOS Keychain. Tests that override these
+// must not use t.Parallel().
+var (
+	readKeychainFn   = ReadKeychain
+	writeKeychainFn  = WriteKeychain
+	removeKeychainFn = RemoveKeychain
+)
+
 // ReadKeychain reads OAuth tokens from the macOS Keychain entry for Claude Code.
 // The Keychain entry is stored as {"claudeAiOauth": {...tokens...}}.
 func ReadKeychain() (*OAuthTokens, error) {
