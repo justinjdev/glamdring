@@ -152,7 +152,7 @@ func main() {
 			teams.TaskCreateTool{Registry: teamRegistry},
 			teams.TaskListTool{Registry: teamRegistry},
 			teams.TaskGetTool{Registry: teamRegistry},
-			teams.TaskUpdateTool{Registry: teamRegistry},
+			teams.TaskUpdateTool{Registry: teamRegistry, AgentName: "lead"},
 			teams.SendMessageTool{Registry: teamRegistry, AgentName: "lead"},
 			teams.AdvancePhaseTool{Registry: teamRegistry, AgentName: "lead"},
 		}

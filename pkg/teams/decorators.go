@@ -129,6 +129,9 @@ func (s *ScopedBash) ExecuteStreaming(ctx context.Context, input json.RawMessage
 	return s.inner.Execute(ctx, input)
 }
 
+// shellMetachars are characters that can chain or inject additional commands.
+var shellMetachars = []string{";", "&&", "||", "|", "`", "$(", "\n"}
+
 func (s *ScopedBash) checkCommand(input json.RawMessage) string {
 	if len(s.allowCommands) == 0 {
 		return ""
@@ -140,6 +143,15 @@ func (s *ScopedBash) checkCommand(input json.RawMessage) string {
 		return fmt.Sprintf("invalid input: %s", err)
 	}
 	cmd := strings.TrimSpace(parsed.Command)
+
+	// Reject commands containing shell metacharacters that could chain
+	// arbitrary commands after an allowed prefix.
+	for _, meta := range shellMetachars {
+		if strings.Contains(cmd, meta) {
+			return fmt.Sprintf("command contains disallowed shell metacharacter %q", meta)
+		}
+	}
+
 	for _, prefix := range s.allowCommands {
 		if strings.HasPrefix(cmd, prefix) {
 			return ""

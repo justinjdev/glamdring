@@ -174,7 +174,9 @@ func (s *FileTaskStorage) List() []TaskSummary {
 	}
 
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].ID < out[j].ID
+		ni, _ := strconv.Atoi(out[i].ID)
+		nj, _ := strconv.Atoi(out[j].ID)
+		return ni < nj
 	})
 
 	return out
@@ -182,6 +184,9 @@ func (s *FileTaskStorage) List() []TaskSummary {
 
 // Delete removes a task's file from disk.
 func (s *FileTaskStorage) Delete(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	path := s.taskPath(id)
 	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {

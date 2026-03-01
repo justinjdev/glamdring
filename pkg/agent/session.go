@@ -303,6 +303,14 @@ drain:
 	}
 	if len(msgs) > 0 {
 		combined := strings.Join(msgs, "\n\n")
+		// If the last message is already a user message, merge to avoid
+		// consecutive user-role messages (which violate the API contract).
+		if n := len(s.messages); n > 0 && s.messages[n-1].Role == "user" {
+			if existing, ok := s.messages[n-1].Content.(string); ok {
+				s.messages[n-1].Content = existing + "\n\n" + combined
+				return
+			}
+		}
 		s.messages = append(s.messages, api.RequestMessage{
 			Role:    "user",
 			Content: combined,

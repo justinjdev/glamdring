@@ -14,6 +14,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev
+
       - name: Vet
         run: go vet ./...
 
