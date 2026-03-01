@@ -75,6 +75,16 @@ type ContentBlock struct {
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   string `json:"content,omitempty"`
 	IsError   bool   `json:"is_error,omitempty"`
+
+	// type: "image"
+	Source *ImageSource `json:"source,omitempty"`
+}
+
+// ImageSource represents the source data for an image content block.
+type ImageSource struct {
+	Type      string `json:"type"`       // "base64"
+	MediaType string `json:"media_type"` // "image/png"
+	Data      string `json:"data"`       // base64-encoded image data
 }
 
 // Usage tracks token consumption.
