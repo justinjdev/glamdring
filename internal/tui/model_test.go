@@ -290,6 +290,60 @@ func TestLayoutComponents(t *testing.T) {
 	}
 }
 
+func TestBuildContentBlocks_ImagesAndText(t *testing.T) {
+	images := []PendingImage{
+		{Data: []byte{0x89, 0x50, 0x4E, 0x47}, Width: 100, Height: 200},
+	}
+	blocks := buildContentBlocks("describe this", images)
+
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks, got %d", len(blocks))
+	}
+	if blocks[0].Type != "image" {
+		t.Errorf("first block type = %q, want 'image'", blocks[0].Type)
+	}
+	if blocks[0].Source == nil {
+		t.Fatal("expected non-nil source on image block")
+	}
+	if blocks[0].Source.MediaType != "image/png" {
+		t.Errorf("media_type = %q, want 'image/png'", blocks[0].Source.MediaType)
+	}
+	if blocks[1].Type != "text" {
+		t.Errorf("second block type = %q, want 'text'", blocks[1].Type)
+	}
+	if blocks[1].Text != "describe this" {
+		t.Errorf("text = %q, want 'describe this'", blocks[1].Text)
+	}
+}
+
+func TestBuildContentBlocks_ImagesOnly(t *testing.T) {
+	images := []PendingImage{
+		{Data: []byte{1}},
+		{Data: []byte{2}},
+	}
+	blocks := buildContentBlocks("", images)
+
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks (no text), got %d", len(blocks))
+	}
+	for _, b := range blocks {
+		if b.Type != "image" {
+			t.Errorf("expected all image blocks, got %q", b.Type)
+		}
+	}
+}
+
+func TestBuildContentBlocks_TextOnly(t *testing.T) {
+	blocks := buildContentBlocks("hello", nil)
+
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(blocks))
+	}
+	if blocks[0].Type != "text" || blocks[0].Text != "hello" {
+		t.Errorf("expected text block with 'hello'")
+	}
+}
+
 func TestExpandCollapseKeyToggle(t *testing.T) {
 	m := New()
 	m.state = StateRunning
