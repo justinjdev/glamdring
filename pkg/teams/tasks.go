@@ -55,10 +55,8 @@ func NewFileTaskStorage(dir string) (*FileTaskStorage, error) {
 	return s, nil
 }
 
-// NextID returns the next available task ID as a string.
-func (s *FileTaskStorage) NextID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// nextID returns the next available task ID as a string.
+func (s *FileTaskStorage) nextID() string {
 	id := strconv.Itoa(s.nextN)
 	s.nextN++
 	return id
@@ -66,7 +64,9 @@ func (s *FileTaskStorage) NextID() string {
 
 // Create persists a new task. It assigns an ID and sets timestamps.
 func (s *FileTaskStorage) Create(task Task) (*Task, error) {
-	task.ID = s.NextID()
+	s.mu.Lock()
+	task.ID = s.nextID()
+	s.mu.Unlock()
 	now := time.Now()
 	task.CreatedAt = now
 	task.UpdatedAt = now
@@ -145,6 +145,7 @@ func (s *FileTaskStorage) List() []TaskSummary {
 
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
+		log.Printf("warning: failed to read task directory %s: %v", s.dir, err)
 		return nil
 	}
 
@@ -156,6 +157,7 @@ func (s *FileTaskStorage) List() []TaskSummary {
 		idStr := strings.TrimSuffix(e.Name(), ".json")
 		task, err := s.readTaskLocked(idStr)
 		if err != nil {
+			log.Printf("warning: skipping unreadable task file %s: %v", e.Name(), err)
 			continue
 		}
 		if task.Status == TaskStatusDeleted {
@@ -225,8 +227,14 @@ func (s *FileTaskStorage) writeTaskLocked(task *Task) error {
 	if err != nil {
 		return fmt.Errorf("marshal task: %w", err)
 	}
-	if err := os.WriteFile(s.taskPath(task.ID), data, 0644); err != nil {
+	// Write to temp file then rename for atomic updates. This prevents
+	// partial writes from corrupting task files on crash.
+	tmpPath := s.taskPath(task.ID) + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("write task: %w", err)
+	}
+	if err := os.Rename(tmpPath, s.taskPath(task.ID)); err != nil {
+		return fmt.Errorf("rename task: %w", err)
 	}
 	return nil
 }

@@ -1,6 +1,9 @@
 package teams
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // TeamManager composes all team subsystems into a single coordinator.
 type TeamManager struct {
@@ -36,16 +39,18 @@ func NewTeamManager(cfg TeamConfig, taskDir string) (*TeamManager, error) {
 
 // CleanupAgent performs cross-cutting teardown for the named agent:
 // sets status to shutdown, unsubscribes from messages, releases all locks,
-// and removes phase and checkin tracking.
+// and removes phase and checkin tracking. All cleanup steps are attempted
+// even if earlier ones fail, to avoid resource leaks.
 func (m *TeamManager) CleanupAgent(name string) error {
+	var errs []error
 	if err := m.Members.SetStatus(name, MemberStatusShutdown); err != nil {
-		return fmt.Errorf("set member status: %w", err)
+		errs = append(errs, fmt.Errorf("set member status: %w", err))
 	}
 	m.Messages.Unsubscribe(name)
 	m.Locks.ReleaseAll(name)
 	m.Phases.Remove(name)
 	m.Checkins.Remove(name)
-	return nil
+	return errors.Join(errs...)
 }
 
 // Delete verifies no active members remain and tears down the team.

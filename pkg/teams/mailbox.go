@@ -59,7 +59,8 @@ func (t *ChannelTransport) Unsubscribe(agentName string) {
 // Send routes a message to the appropriate mailbox. Priority messages
 // (shutdown and approval related) go to the priority channel. Broadcast
 // messages are sent to all agents except the sender. Sends are non-blocking;
-// if a channel is full the message is dropped for that recipient.
+// if a channel is full the message is dropped and an error is returned for
+// direct messages.
 func (t *ChannelTransport) Send(msg AgentMessage) error {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -75,7 +76,9 @@ func (t *ChannelTransport) Send(msg AgentMessage) error {
 			if name == msg.From {
 				continue
 			}
-			t.sendNonBlocking(mb, msg, isPriority)
+			if !t.sendNonBlocking(mb, msg, isPriority, name) {
+				log.Printf("warning: dropped broadcast message (kind=%s) from %q to %q: channel full", msg.Kind, msg.From, name)
+			}
 		}
 		return nil
 	}
@@ -85,17 +88,19 @@ func (t *ChannelTransport) Send(msg AgentMessage) error {
 	if !exists {
 		return fmt.Errorf("recipient %q is not subscribed", msg.To)
 	}
-	t.sendNonBlocking(mb, msg, isPriority)
+	if !t.sendNonBlocking(mb, msg, isPriority, msg.To) {
+		return fmt.Errorf("message to %q dropped: channel full", msg.To)
+	}
 	return nil
 }
 
-func (t *ChannelTransport) sendNonBlocking(mb *mailbox, msg AgentMessage, isPriority bool) bool {
+func (t *ChannelTransport) sendNonBlocking(mb *mailbox, msg AgentMessage, isPriority bool, recipient string) bool {
 	if isPriority {
 		select {
 		case mb.priority <- msg:
 			return true
 		default:
-			log.Printf("warning: dropped priority message (kind=%s) from %q to %q: channel full", msg.Kind, msg.From, msg.To)
+			log.Printf("warning: dropped priority message (kind=%s) from %q to %q: channel full", msg.Kind, msg.From, recipient)
 			return false
 		}
 	}
@@ -103,6 +108,7 @@ func (t *ChannelTransport) sendNonBlocking(mb *mailbox, msg AgentMessage, isPrio
 	case mb.regular <- msg:
 		return true
 	default:
+		log.Printf("warning: dropped regular message (kind=%s) from %q to %q: channel full", msg.Kind, msg.From, recipient)
 		return false
 	}
 }

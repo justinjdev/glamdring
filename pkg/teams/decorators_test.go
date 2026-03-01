@@ -52,6 +52,9 @@ func newMockLockManager() *mockLockManager {
 }
 
 func (m *mockLockManager) Acquire(path string, owner string) error {
+	if existing, locked := m.locks[path]; locked && existing != owner {
+		return fmt.Errorf("locked by agent %q", existing)
+	}
 	m.locks[path] = owner
 	return nil
 }
@@ -418,7 +421,7 @@ func TestFileLockDecorator_DifferentAgentBlocked(t *testing.T) {
 	if !result.IsError {
 		t.Error("expected error when file is locked by different agent")
 	}
-	if !strings.Contains(result.Output, "locked by agent") {
+	if !strings.Contains(result.Output, "locked") {
 		t.Errorf("unexpected error message: %s", result.Output)
 	}
 }

@@ -43,21 +43,24 @@ func TestFileTaskStorage_GetNonExistent(t *testing.T) {
 	}
 }
 
-func TestFileTaskStorage_NextIDUniqueness(t *testing.T) {
+func TestFileTaskStorage_IDUniqueness(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewFileTaskStorage(dir)
 
 	ids := make(map[string]bool)
 	for range 10 {
-		id := s.NextID()
-		if ids[id] {
-			t.Fatalf("duplicate ID: %s", id)
+		task, err := s.Create(Task{Subject: "task", Status: TaskStatusPending})
+		if err != nil {
+			t.Fatalf("create: %v", err)
 		}
-		ids[id] = true
+		if ids[task.ID] {
+			t.Fatalf("duplicate ID: %s", task.ID)
+		}
+		ids[task.ID] = true
 	}
 }
 
-func TestFileTaskStorage_NextIDResumesAfterReopen(t *testing.T) {
+func TestFileTaskStorage_IDResumesAfterReopen(t *testing.T) {
 	dir := t.TempDir()
 	s1, _ := NewFileTaskStorage(dir)
 
@@ -71,9 +74,12 @@ func TestFileTaskStorage_NextIDResumesAfterReopen(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 
-	id := s2.NextID()
-	if id == "1" || id == "2" {
-		t.Errorf("expected ID > 2 after reopen, got %s", id)
+	task, err := s2.Create(Task{Subject: "t3", Status: TaskStatusPending})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if task.ID == "1" || task.ID == "2" {
+		t.Errorf("expected ID > 2 after reopen, got %s", task.ID)
 	}
 }
 

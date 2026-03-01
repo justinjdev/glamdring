@@ -102,10 +102,13 @@ func (t TeamCreateTool) Execute(_ context.Context, input json.RawMessage) (tools
 		return tools.Result{Output: fmt.Sprintf("failed to create team: %s", err), IsError: true}, nil
 	}
 
-	out, _ := json.Marshal(map[string]string{
+	out, err := json.Marshal(map[string]string{
 		"team_name": in.TeamName,
 		"message":   fmt.Sprintf("team %q created", in.TeamName),
 	})
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal result: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }
 
@@ -152,9 +155,12 @@ func (t TeamDeleteTool) Execute(_ context.Context, input json.RawMessage) (tools
 		return tools.Result{Output: fmt.Sprintf("failed to delete team: %s", err), IsError: true}, nil
 	}
 
-	out, _ := json.Marshal(map[string]string{
+	out, err := json.Marshal(map[string]string{
 		"team_name": in.TeamName,
 		"message":   fmt.Sprintf("team %q deleted", in.TeamName),
 	})
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal result: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }

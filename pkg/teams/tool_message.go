@@ -146,8 +146,11 @@ func (s SendMessageTool) Execute(_ context.Context, input json.RawMessage) (tool
 
 	mgr.Checkins.Reset(s.AgentName)
 
-	out, _ := json.Marshal(map[string]string{
+	out, err := json.Marshal(map[string]string{
 		"message": fmt.Sprintf("%s message sent", in.Type),
 	})
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal result: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }

@@ -125,18 +125,6 @@ func TestSingleCtrlCShowsHint(t *testing.T) {
 	}
 }
 
-func TestSpinnerStartsOnSubmit(t *testing.T) {
-	m := New()
-	// We can't easily test the full submit flow without an agent session,
-	// but we can verify the spinning field is set in handleSubmit.
-	// Instead, test the field directly since handleSubmit needs a session.
-	m.spinning = false
-	m.spinning = true // simulating what handleSubmit does
-	if !m.spinning {
-		t.Error("expected spinning to be true")
-	}
-}
-
 func TestSpinnerStopsOnTextDelta(t *testing.T) {
 	m := New()
 	m.spinning = true

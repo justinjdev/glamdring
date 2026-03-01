@@ -51,14 +51,16 @@ func TestAdvancePhaseTool_AdvancesToNext(t *testing.T) {
 	}
 }
 
-func TestAdvancePhaseTool_AdvancesToSpecific(t *testing.T) {
+func TestAdvancePhaseTool_SequentialAdvance(t *testing.T) {
 	reg, _ := setupPhaseTestTeam(t)
 	tool := AdvancePhaseTool{Registry: reg, AgentName: "worker"}
 
-	input, _ := json.Marshal(map[string]string{
-		"team_name":  "phase-team",
-		"phase_name": "implement",
-	})
+	input, _ := json.Marshal(map[string]string{"team_name": "phase-team"})
+
+	// Advance research -> plan (already tested above).
+	tool.Execute(context.Background(), input)
+
+	// Advance plan -> implement.
 	result, err := tool.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -77,7 +79,6 @@ func TestAdvancePhaseTool_AdvancesToSpecific(t *testing.T) {
 		t.Errorf("expected model 'opus', got %v", out["model"])
 	}
 
-	// Verify tools in output.
 	toolsList, ok := out["tools"].([]any)
 	if !ok {
 		t.Fatal("expected tools to be a list")

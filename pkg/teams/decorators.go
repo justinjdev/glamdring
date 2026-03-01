@@ -190,14 +190,8 @@ func (d *FileLockDecorator) checkFileLock(input json.RawMessage) string {
 		return fmt.Sprintf("invalid input: %s", err)
 	}
 	if parsed.FilePath != "" {
-		owner, locked := d.locks.Check(parsed.FilePath)
-		if locked && owner != d.agent {
-			return fmt.Sprintf("file %q is locked by agent %q", parsed.FilePath, owner)
-		}
-		if !locked {
-			if err := d.locks.Acquire(parsed.FilePath, d.agent); err != nil {
-				return fmt.Sprintf("failed to acquire lock on %q: %s", parsed.FilePath, err)
-			}
+		if err := d.locks.Acquire(parsed.FilePath, d.agent); err != nil {
+			return fmt.Sprintf("file %q is locked: %s", parsed.FilePath, err)
 		}
 	}
 	return ""
@@ -227,25 +221,25 @@ func (d *CheckinGateDecorator) Description() string      { return d.inner.Descri
 func (d *CheckinGateDecorator) Schema() json.RawMessage  { return d.inner.Schema() }
 
 func (d *CheckinGateDecorator) Execute(ctx context.Context, input json.RawMessage) (tools.Result, error) {
-	count := d.checkins.Increment(d.agent)
-	if count > d.threshold {
+	if d.checkins.Count(d.agent) >= d.threshold {
 		return tools.Result{
 			Output:  fmt.Sprintf("agent has exceeded %d tool calls without checking in; use TaskUpdate or SendMessage to report progress", d.threshold),
 			IsError: true,
 		}, nil
 	}
+	d.checkins.Increment(d.agent)
 	return d.inner.Execute(ctx, input)
 }
 
 // ExecuteStreaming implements tools.StreamingTool if the inner tool supports it.
 func (d *CheckinGateDecorator) ExecuteStreaming(ctx context.Context, input json.RawMessage, onOutput func(string)) (tools.Result, error) {
-	count := d.checkins.Increment(d.agent)
-	if count > d.threshold {
+	if d.checkins.Count(d.agent) >= d.threshold {
 		return tools.Result{
 			Output:  fmt.Sprintf("agent has exceeded %d tool calls without checking in; use TaskUpdate or SendMessage to report progress", d.threshold),
 			IsError: true,
 		}, nil
 	}
+	d.checkins.Increment(d.agent)
 	if st, ok := d.inner.(tools.StreamingTool); ok {
 		return st.ExecuteStreaming(ctx, input, onOutput)
 	}

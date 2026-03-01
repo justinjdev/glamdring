@@ -11,6 +11,16 @@ const (
 	MemberStatusShutdown MemberStatus = "shutdown"
 )
 
+// Valid returns true if the status is one of the known member statuses.
+func (s MemberStatus) Valid() bool {
+	switch s {
+	case MemberStatusIdle, MemberStatusActive, MemberStatusShutdown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Member represents a team agent.
 type Member struct {
 	Name      string       `json:"name"`
@@ -100,7 +110,6 @@ type AgentMessage struct {
 	Content   string      `json:"content"`
 	RequestID string      `json:"request_id,omitempty"`
 	Approve   *bool       `json:"approve,omitempty"`
-	Priority  bool        `json:"priority,omitempty"`
 }
 
 // Phase defines a workflow stage with tool access and model configuration.
@@ -110,15 +119,6 @@ type Phase struct {
 	Model    string   `json:"model,omitempty"`
 	Fallback string   `json:"fallback,omitempty"`
 }
-
-// GateType defines how phase transitions are triggered.
-type GateType string
-
-const (
-	GateTypeAuto      GateType = "auto"
-	GateTypeLeader    GateType = "leader"
-	GateTypeCondition GateType = "condition"
-)
 
 // TeamConfig holds the configuration for a team.
 type TeamConfig struct {

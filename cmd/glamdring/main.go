@@ -414,7 +414,7 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 		}
 		phases, err := teams.ResolveWorkflow(params.Workflow, customPhases)
 		if err != nil && len(mgr.Config.Phases) > 0 {
-			// Fall back to team config phases if workflow resolution fails.
+			log.Printf("warning: workflow %q not found, falling back to team config phases", params.Workflow)
 			phases = mgr.Config.Phases
 		} else if err != nil {
 			return nil, fmt.Errorf("resolve workflow: %w", err)
@@ -439,7 +439,7 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 		agentRegistry.Register(teams.TaskCreateTool{Registry: registry})
 		agentRegistry.Register(teams.TaskListTool{Registry: registry})
 		agentRegistry.Register(teams.TaskGetTool{Registry: registry})
-		agentRegistry.Register(teams.TaskUpdateTool{Registry: registry})
+		agentRegistry.Register(teams.TaskUpdateTool{Registry: registry, AgentName: params.AgentName})
 		agentRegistry.Register(teams.SendMessageTool{Registry: registry, AgentName: params.AgentName})
 		agentRegistry.Register(teams.AdvancePhaseTool{Registry: registry, AgentName: params.AgentName})
 
@@ -500,7 +500,9 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 			Model:        agentModel,
 			TeamState:    state,
 			Cleanup: func() {
-				mgr.CleanupAgent(params.AgentName)
+				if err := mgr.CleanupAgent(params.AgentName); err != nil {
+					log.Printf("warning: cleanup errors for agent %q: %v", params.AgentName, err)
+				}
 			},
 		}, nil
 	}

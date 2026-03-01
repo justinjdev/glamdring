@@ -182,10 +182,10 @@ func TestChannelTransport_SendDropsWhenFull(t *testing.T) {
 		t.Fatalf("first send failed: %v", err)
 	}
 
-	// Second message should be dropped (buffer full).
+	// Second message should be dropped (buffer full) and return an error.
 	msg2 := AgentMessage{Kind: MessageKindDM, From: "alice", To: "bob", Content: "second"}
-	if err := tr.Send(msg2); err != nil {
-		t.Fatalf("second send returned error: %v", err)
+	if err := tr.Send(msg2); err == nil {
+		t.Fatal("expected error for dropped DM, got nil")
 	}
 
 	// Only the first message should be in the channel.

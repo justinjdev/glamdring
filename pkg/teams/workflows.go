@@ -2,12 +2,13 @@ package teams
 
 import "fmt"
 
-// WorkflowRPIV returns the Research-Plan-Implement-Verify workflow.
+// WorkflowRPIV returns the Research-Plan-Implement-Verify workflow
+// with tiered models: lighter models for research/planning, heavier for implementation.
 func WorkflowRPIV() []Phase {
 	return []Phase{
-		{Name: "research", Tools: []string{"Read", "Glob", "Grep", "Bash"}, Model: "claude-sonnet-4-6"},
+		{Name: "research", Tools: []string{"Read", "Glob", "Grep", "Bash"}, Model: "claude-haiku-4-5-20251001", Fallback: "claude-sonnet-4-6"},
 		{Name: "plan", Tools: []string{"Read", "Glob", "Grep"}, Model: "claude-sonnet-4-6"},
-		{Name: "implement", Tools: []string{"Read", "Write", "Edit", "Bash", "Glob", "Grep"}, Model: "claude-sonnet-4-6"},
+		{Name: "implement", Tools: []string{"Read", "Write", "Edit", "Bash", "Glob", "Grep"}, Model: "claude-opus-4-6", Fallback: "claude-sonnet-4-6"},
 		{Name: "verify", Tools: []string{"Read", "Bash", "Glob", "Grep"}, Model: "claude-sonnet-4-6"},
 	}
 }
@@ -16,7 +17,7 @@ func WorkflowRPIV() []Phase {
 func WorkflowPlanImplement() []Phase {
 	return []Phase{
 		{Name: "plan", Tools: []string{"Read", "Glob", "Grep"}, Model: "claude-sonnet-4-6"},
-		{Name: "implement", Tools: []string{"Read", "Write", "Edit", "Bash", "Glob", "Grep"}, Model: "claude-sonnet-4-6"},
+		{Name: "implement", Tools: []string{"Read", "Write", "Edit", "Bash", "Glob", "Grep"}, Model: "claude-opus-4-6", Fallback: "claude-sonnet-4-6"},
 	}
 }
 

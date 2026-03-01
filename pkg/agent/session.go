@@ -286,21 +286,21 @@ func (s *Session) drainRegularMessages() {
 		return
 	}
 	var msgs []string
+drain:
 	for {
 		select {
 		case msg, ok := <-s.regularCh:
 			if !ok {
 				s.regularCh = nil
-				goto done
+				break drain
 			}
 			if text := formatTeamMessage(msg); text != "" {
 				msgs = append(msgs, text)
 			}
 		default:
-			goto done
+			break drain
 		}
 	}
-done:
 	if len(msgs) > 0 {
 		combined := strings.Join(msgs, "\n\n")
 		s.messages = append(s.messages, api.RequestMessage{
