@@ -1,6 +1,6 @@
 # Glamdring Improvement Plan
 
-Grouped into 10 implementation chunks, ordered by dependency and impact. Each chunk is self-contained and shippable independently. Chunks 1-9 are complete.
+Grouped into 10 implementation chunks, ordered by dependency and impact. Each chunk is self-contained and shippable independently. All 10 chunks are complete.
 
 ---
 
@@ -884,11 +884,12 @@ This is a larger change that touches the `Tool` interface (needs a streaming var
 
 ---
 
-## Chunk 10: Agent Teams
+## Chunk 10: Agent Teams [DONE] COMPLETED
 
 **Priority:** P2 -- Enables multi-agent coordination (fellowship-style workflows).
 **Estimated scope:** ~600-800 lines across 6-8 new files.
 **Dependencies:** Chunk 1 (session struct), Chunk 7 (subagent infrastructure).
+**Status:** Completed. PR #16.
 
 ### 10.1 Team lifecycle tools
 
@@ -946,10 +947,10 @@ Chunk 5 (Config/Auth)  [DONE] ─┤
 Chunk 6 (MCP)          [DONE] ─┤                                  Chunk 8 (Performance)  [DONE]
 Chunk 7 (CLI Parity)   [DONE] ─┘
                          │
-                         └──→  Chunk 10 (Agent Teams) -- depends on 1 + 7
+                         └──→  Chunk 10 (Agent Teams) [DONE] -- depends on 1 + 7
 ```
 
-Chunks 1-9 are complete. Remaining chunk 10 (Agent Teams) can be done next -- all dependencies are satisfied.
+All 10 chunks are complete.
 
 ## Test Plan
 

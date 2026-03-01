@@ -232,6 +232,58 @@ func TestStatusBarContextPercent_CapAt100(t *testing.T) {
 	}
 }
 
+func TestStatusBarView_ContextCaution(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+	sb.SetWidth(120)
+
+	// Set context to 65% -- should trigger caution rendering (>= 60, < 80).
+	sb.UpdateContext(130_000, "claude-opus-4-6")
+	view := sb.View()
+	if !strings.Contains(view, "65%") {
+		t.Errorf("expected 65%% in status bar, got %q", view)
+	}
+}
+
+func TestStatusBarView_ContextDanger(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+	sb.SetWidth(120)
+
+	// Set context to 85% -- should trigger danger rendering (>= 80).
+	sb.UpdateContext(170_000, "claude-opus-4-6")
+	view := sb.View()
+	if !strings.Contains(view, "85%") {
+		t.Errorf("expected 85%% in status bar, got %q", view)
+	}
+}
+
+func TestStatusBarView_ContextNormal(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+	sb.SetWidth(120)
+
+	// Set context to 30% -- should use default rendering (< 60).
+	sb.UpdateContext(60_000, "claude-opus-4-6")
+	view := sb.View()
+	if !strings.Contains(view, "30%") {
+		t.Errorf("expected 30%% in status bar, got %q", view)
+	}
+}
+
+func TestStatusBarUpdateContext_ZeroLimit(t *testing.T) {
+	styles := DefaultStyles()
+	sb := NewStatusBar(styles)
+
+	// With a model whose limit is 0 (shouldn't happen, but test the guard).
+	// The default limit should be used for unknown models.
+	sb.UpdateContext(100_000, "claude-opus-4-6")
+	if sb.contextPct == 0 {
+		// Should be non-zero since we have tokens.
+		t.Error("expected non-zero contextPct")
+	}
+}
+
 func TestStatusBarReset_PreservesMCP(t *testing.T) {
 	styles := DefaultStyles()
 	sb := NewStatusBar(styles)

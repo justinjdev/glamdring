@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const tokenURL = "https://platform.claude.com/v1/oauth/token"
+var tokenURL = "https://platform.claude.com/v1/oauth/token"
 
 // tokenResponse is the JSON body returned by the token endpoint.
 type tokenResponse struct {

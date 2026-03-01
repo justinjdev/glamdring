@@ -14,9 +14,14 @@ import (
 )
 
 const (
-	defaultEndpoint   = "https://api.anthropic.com/v1/messages"
-	anthropicVersion  = "2023-06-01"
+	defaultEndpoint  = "https://api.anthropic.com/v1/messages"
+	anthropicVersion = "2023-06-01"
 )
+
+// refresher is implemented by credential types that support token refresh (e.g. OAuth).
+type refresher interface {
+	Refresh() error
+}
 
 // Client is the HTTP client for the Claude Messages API.
 type Client struct {
@@ -148,8 +153,11 @@ func (c *Client) doWithRetry(ctx context.Context, body []byte) (*http.Response, 
 
 		// OAuth 401 handling: refresh token and retry exactly once.
 		if resp.StatusCode == http.StatusUnauthorized && c.creds.IsOAuth() {
-			oauthCreds := c.creds.(*auth.OAuthCredentials)
-			if err := oauthCreds.Refresh(); err != nil {
+			rc, ok := c.creds.(refresher)
+			if !ok {
+				return nil, parseAPIError(resp.StatusCode, errBody)
+			}
+			if err := rc.Refresh(); err != nil {
 				return nil, parseAPIError(resp.StatusCode, errBody)
 			}
 
