@@ -63,17 +63,6 @@ func TestInputResetClearsPendingImages(t *testing.T) {
 	}
 }
 
-func TestInputHasImages(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
-	if m.HasImages() {
-		t.Error("expected no images initially")
-	}
-	m.pendingImages = []PendingImage{{Data: []byte{1}}}
-	if !m.HasImages() {
-		t.Error("expected images after staging")
-	}
-}
-
 func TestSubmitMsgCarriesImages(t *testing.T) {
 	images := []PendingImage{
 		{Data: []byte{1}, Width: 100, Height: 200},

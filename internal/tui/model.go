@@ -424,7 +424,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleSubmit processes user input submission.
 func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
-	if msg.Text == "" {
+	if msg.Text == "" && len(msg.Images) == 0 {
 		return m, nil
 	}
 
@@ -447,7 +447,9 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	m.input.history.Add(msg.Text)
+	if msg.Text != "" {
+		m.input.history.Add(msg.Text)
+	}
 	if len(msg.Images) > 0 {
 		var parts []string
 		for i, img := range msg.Images {

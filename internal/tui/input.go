@@ -342,16 +342,6 @@ func (m *InputModel) SetAvailableCommands(names []string) {
 	m.slashCmd.SetCommands(names)
 }
 
-// HasImages returns true if there are staged images.
-func (m InputModel) HasImages() bool {
-	return len(m.pendingImages) > 0
-}
-
-// ImageCount returns the number of staged images.
-func (m InputModel) ImageCount() int {
-	return len(m.pendingImages)
-}
-
 // pngDimensions extracts width and height from a PNG file's IHDR chunk.
 // Returns 0, 0 if the data is not a valid PNG.
 func pngDimensions(data []byte) (int, int) {
@@ -362,6 +352,10 @@ func pngDimensions(data []byte) (int, int) {
 	}
 	// Check PNG signature.
 	if data[0] != 0x89 || data[1] != 'P' || data[2] != 'N' || data[3] != 'G' {
+		return 0, 0
+	}
+	// Verify IHDR chunk type.
+	if data[12] != 'I' || data[13] != 'H' || data[14] != 'D' || data[15] != 'R' {
 		return 0, 0
 	}
 	w := int(data[16])<<24 | int(data[17])<<16 | int(data[18])<<8 | int(data[19])
