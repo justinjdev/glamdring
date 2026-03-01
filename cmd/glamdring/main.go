@@ -76,6 +76,11 @@ func main() {
 		}
 	}
 
+	// Initialize clipboard subsystem (needed for Ctrl+V image paste and /copy).
+	if err := tui.InitClipboard(); err != nil {
+		log.Printf("warning: clipboard not available: %v", err)
+	}
+
 	// Load settings.
 	settings := config.LoadSettings(workDir)
 	if *model != "" {
