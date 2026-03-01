@@ -179,7 +179,7 @@ type sseError struct {
 	} `json:"error"`
 }
 
-// APIError represents a non-retryable error from the Claude API.
+// APIError represents a structured error response from the Claude API.
 type APIError struct {
 	StatusCode int
 	Type       string

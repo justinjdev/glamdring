@@ -402,16 +402,20 @@ func executeTools(
 			}
 		}
 
-		// Check for priority inter-agent messages between tool executions.
+		// Drain all pending priority inter-agent messages between tool executions.
 		if priorityCh != nil {
-			select {
-			case msg, ok := <-priorityCh:
-				if ok {
-					text := formatPriorityMessage(msg)
-					results[len(results)-1].Content += "\n\n" + text
+			for {
+				select {
+				case msg, ok := <-priorityCh:
+					if ok {
+						text := formatPriorityMessage(msg)
+						results[len(results)-1].Content += "\n\n" + text
+					}
+				default:
+					goto drained
 				}
-			default:
 			}
+		drained:
 		}
 	}
 

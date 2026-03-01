@@ -1,6 +1,9 @@
 package teams
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // MemberStatus represents the current state of a team member.
 type MemberStatus string
@@ -102,6 +105,17 @@ const (
 	MessageKindApprovalResponse MessageKind = "approval_response"
 )
 
+// Valid returns true if the kind is one of the known message kinds.
+func (k MessageKind) Valid() bool {
+	switch k {
+	case MessageKindDM, MessageKindBroadcast, MessageKindShutdownRequest,
+		MessageKindShutdownResponse, MessageKindApprovalRequest, MessageKindApprovalResponse:
+		return true
+	default:
+		return false
+	}
+}
+
 // AgentMessage is a message between team agents.
 type AgentMessage struct {
 	Kind      MessageKind `json:"kind"`
@@ -110,6 +124,55 @@ type AgentMessage struct {
 	Content   string      `json:"content"`
 	RequestID string      `json:"request_id,omitempty"`
 	Approve   *bool       `json:"approve,omitempty"`
+}
+
+// Validate checks that the message has the required fields for its Kind.
+func (m AgentMessage) Validate() error {
+	if !m.Kind.Valid() {
+		return fmt.Errorf("invalid message kind %q", m.Kind)
+	}
+	if m.From == "" {
+		return fmt.Errorf("from is required")
+	}
+	switch m.Kind {
+	case MessageKindDM:
+		if m.To == "" {
+			return fmt.Errorf("dm requires To")
+		}
+		if m.Content == "" {
+			return fmt.Errorf("dm requires Content")
+		}
+	case MessageKindBroadcast:
+		if m.To != "" {
+			return fmt.Errorf("broadcast must not set To")
+		}
+	case MessageKindShutdownRequest:
+		if m.To == "" {
+			return fmt.Errorf("shutdown_request requires To")
+		}
+	case MessageKindShutdownResponse:
+		if m.RequestID == "" {
+			return fmt.Errorf("shutdown_response requires RequestID")
+		}
+		if m.Approve == nil {
+			return fmt.Errorf("shutdown_response requires Approve")
+		}
+	case MessageKindApprovalRequest:
+		if m.To == "" {
+			return fmt.Errorf("approval_request requires To")
+		}
+	case MessageKindApprovalResponse:
+		if m.To == "" {
+			return fmt.Errorf("approval_response requires To")
+		}
+		if m.RequestID == "" {
+			return fmt.Errorf("approval_response requires RequestID")
+		}
+		if m.Approve == nil {
+			return fmt.Errorf("approval_response requires Approve")
+		}
+	}
+	return nil
 }
 
 // Phase defines a workflow stage with tool access and model configuration.

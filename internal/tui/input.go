@@ -114,12 +114,15 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlV {
 			if imgData, ok := ReadClipboardImage(); ok {
 				w, h := pngDimensions(imgData)
-				m.pendingImages = append(m.pendingImages, PendingImage{
-					Data:   imgData,
-					Width:  w,
-					Height: h,
-				})
-				return m, nil
+				if w > 0 && h > 0 {
+					m.pendingImages = append(m.pendingImages, PendingImage{
+						Data:   imgData,
+						Width:  w,
+						Height: h,
+					})
+					return m, nil
+				}
+				// Not a valid PNG; fall through to text paste.
 			}
 			// No image -- fall through to paste text.
 			if text, ok := ReadClipboardText(); ok {

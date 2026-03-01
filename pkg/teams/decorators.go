@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/justin/glamdring/pkg/config"
@@ -62,6 +63,9 @@ func (s *ScopedTool) checkPath(input json.RawMessage) string {
 		return ""
 	}
 
+	// Normalize to prevent traversal bypasses (e.g. "src/../../secret").
+	parsed.FilePath = filepath.Clean(parsed.FilePath)
+
 	// Check deny patterns first: if any match, block.
 	for _, pattern := range s.denyPatterns {
 		if config.MatchGlobPattern(pattern, parsed.FilePath) {
@@ -94,7 +98,8 @@ type ScopedBash struct {
 
 // NewScopedBash creates a ScopedBash that restricts commands to those matching
 // any of the given command prefixes. If allowCommands is empty, all commands
-// are allowed.
+// are allowed. Prefixes should include a trailing space to avoid partial matches
+// (e.g. "go " not "go") unless exact-prefix semantics are intended.
 func NewScopedBash(inner tools.Tool, allowCommands []string) *ScopedBash {
 	return &ScopedBash{
 		inner:         inner,

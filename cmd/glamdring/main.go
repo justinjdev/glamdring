@@ -292,9 +292,7 @@ func makeSubagentRunner(creds auth.Credentials, model string) tools.SubagentRunn
 					resultCh <- tools.SubagentResult{Text: msg.Text}
 
 				case agent.MessageToolResult:
-					// Include tool results so the parent sees what the
-					// subagent discovered, but only the output text.
-					// Skip this to keep the result focused on final text.
+					// Tool results are skipped to keep the parent's output focused on final text.
 
 				case agent.MessageError:
 					errText := "unknown error"
@@ -335,9 +333,6 @@ type teamState struct {
 	agentName  string
 }
 
-// makeTeamSetupFunc creates the TeamSetupFunc callback that configures
-// subagents for team participation. It wires up message channels, phase
-// tracking, decorators, and team-specific tools.
 // phaseConfigToPhases converts settings PhaseConfigs to teams.Phase values.
 func phaseConfigToPhases(configs []config.PhaseConfig) []teams.Phase {
 	phases := make([]teams.Phase, len(configs))
@@ -352,6 +347,9 @@ func phaseConfigToPhases(configs []config.PhaseConfig) []teams.Phase {
 	return phases
 }
 
+// makeTeamSetupFunc creates the TeamSetupFunc callback that configures
+// subagents for team participation. It wires up message channels, phase
+// tracking, and team-specific tools.
 func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, settings config.Settings) tools.TeamSetupFunc {
 	return func(ctx context.Context, params tools.TeamSetupParams) (*tools.TeamSetupResult, error) {
 		mgr := registry.Get(params.TeamName)
@@ -413,11 +411,8 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 			customPhases = phaseConfigToPhases(wf.Phases)
 		}
 		phases, err := teams.ResolveWorkflow(params.Workflow, customPhases)
-		if err != nil && len(mgr.Config.Phases) > 0 {
-			log.Printf("warning: workflow %q not found, falling back to team config phases", params.Workflow)
-			phases = mgr.Config.Phases
-		} else if err != nil {
-			return nil, fmt.Errorf("resolve workflow: %w", err)
+		if err != nil {
+			return nil, fmt.Errorf("resolve workflow %q: %w", params.Workflow, err)
 		}
 		if len(phases) > 0 {
 			mgr.Phases.SetPhases(params.AgentName, phases)

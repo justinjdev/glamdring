@@ -35,7 +35,10 @@ func (AdvancePhaseTool) Schema() json.RawMessage {
 			},
 		},
 	}
-	b, _ := json.Marshal(schema)
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: failed to marshal schema: %v", err))
+	}
 	return json.RawMessage(b)
 }
 
@@ -55,10 +58,13 @@ func (a AdvancePhaseTool) Execute(_ context.Context, input json.RawMessage) (too
 		return tools.Result{Output: fmt.Sprintf("failed to advance phase: %s", err), IsError: true}, nil
 	}
 
-	out, _ := json.Marshal(map[string]any{
+	out, err := json.Marshal(map[string]any{
 		"phase_name": phase.Name,
 		"tools":      phase.Tools,
 		"model":      phase.Model,
 	})
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal phase result: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }

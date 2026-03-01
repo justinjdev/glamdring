@@ -115,8 +115,11 @@ func TestChannelTransport_PriorityRouting(t *testing.T) {
 			tr := NewChannelTransport()
 			reg, pri, _ := tr.Subscribe("bob", 10)
 
-			msg := AgentMessage{Kind: kind, From: "alice", To: "bob", Content: "urgent"}
-			tr.Send(msg)
+			approve := true
+			msg := AgentMessage{Kind: kind, From: "alice", To: "bob", Content: "urgent", RequestID: "req-1", Approve: &approve}
+			if err := tr.Send(msg); err != nil {
+				t.Fatalf("Send failed: %v", err)
+			}
 
 			// Should be on priority channel.
 			select {

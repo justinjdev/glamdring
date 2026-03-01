@@ -65,8 +65,13 @@ func (r *InMemoryMemberRegistry) Get(name string) (*Member, error) {
 	return &copy, nil
 }
 
-// SetStatus updates a member's status. Returns an error if not found.
+// SetStatus updates a member's status. Returns an error if not found or if
+// the status is invalid.
 func (r *InMemoryMemberRegistry) SetStatus(name string, status MemberStatus) error {
+	if !status.Valid() {
+		return fmt.Errorf("invalid member status %q", status)
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

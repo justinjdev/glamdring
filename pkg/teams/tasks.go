@@ -65,13 +65,14 @@ func (s *FileTaskStorage) nextID() string {
 // Create persists a new task. It assigns an ID and sets timestamps.
 func (s *FileTaskStorage) Create(task Task) (*Task, error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	task.ID = s.nextID()
-	s.mu.Unlock()
 	now := time.Now()
 	task.CreatedAt = now
 	task.UpdatedAt = now
 
-	if err := s.writeTask(&task); err != nil {
+	if err := s.writeTaskLocked(&task); err != nil {
 		return nil, err
 	}
 	return &task, nil
@@ -131,7 +132,7 @@ func (s *FileTaskStorage) Update(id string, update TaskUpdate) (*Task, error) {
 	// When a task is completed, remove it from other tasks' BlockedBy lists.
 	if update.Status != nil && *update.Status == TaskStatusCompleted {
 		if err := s.clearBlockedByLocked(id); err != nil {
-			log.Printf("warning: errors clearing blockedBy for task %s: %v", id, err)
+			return task, fmt.Errorf("task %s completed but failed to unblock dependents: %w", id, err)
 		}
 	}
 
@@ -214,12 +215,6 @@ func (s *FileTaskStorage) readTaskLocked(id string) (*Task, error) {
 		return nil, fmt.Errorf("unmarshal task: %w", err)
 	}
 	return &task, nil
-}
-
-func (s *FileTaskStorage) writeTask(task *Task) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.writeTaskLocked(task)
 }
 
 func (s *FileTaskStorage) writeTaskLocked(task *Task) error {

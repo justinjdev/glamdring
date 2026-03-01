@@ -1,6 +1,7 @@
 package teams
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -62,6 +63,10 @@ func (t *ChannelTransport) Unsubscribe(agentName string) {
 // if a channel is full the message is dropped and an error is returned for
 // direct messages.
 func (t *ChannelTransport) Send(msg AgentMessage) error {
+	if err := msg.Validate(); err != nil {
+		return fmt.Errorf("invalid message: %w", err)
+	}
+
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -72,15 +77,20 @@ func (t *ChannelTransport) Send(msg AgentMessage) error {
 
 	// Broadcast: send to all except sender.
 	if msg.To == "" {
+		var errs []error
 		for name, mb := range t.mailboxes {
 			if name == msg.From {
 				continue
 			}
 			if !t.sendNonBlocking(mb, msg, isPriority, name) {
-				log.Printf("warning: dropped broadcast message (kind=%s) from %q to %q: channel full", msg.Kind, msg.From, name)
+				if isPriority {
+					errs = append(errs, fmt.Errorf("dropped priority %s to %q: channel full", msg.Kind, name))
+				} else {
+					log.Printf("warning: dropped broadcast message (kind=%s) from %q to %q: channel full", msg.Kind, msg.From, name)
+				}
 			}
 		}
-		return nil
+		return errors.Join(errs...)
 	}
 
 	// Direct message.
