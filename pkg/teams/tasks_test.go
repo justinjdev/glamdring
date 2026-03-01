@@ -284,6 +284,46 @@ func TestFileTaskStorage_UpdateNonExistent(t *testing.T) {
 	}
 }
 
+func TestFileTaskStorage_RejectClaimOnBlockedTask(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewFileTaskStorage(dir)
+
+	// Create a task blocked by another.
+	t1, _ := s.Create(Task{Subject: "blocker", Status: TaskStatusPending})
+	t2, _ := s.Create(Task{Subject: "blocked", Status: TaskStatusPending, BlockedBy: []string{t1.ID}})
+
+	// Attempt to claim the blocked task should fail.
+	owner := "alice"
+	_, err := s.Update(t2.ID, TaskUpdate{Owner: &owner})
+	if err == nil {
+		t.Fatal("expected error when claiming blocked task")
+	}
+
+	// After unblocking (completing t1), claiming should succeed.
+	completed := TaskStatusCompleted
+	s.Update(t1.ID, TaskUpdate{Status: &completed})
+
+	_, err = s.Update(t2.ID, TaskUpdate{Owner: &owner})
+	if err != nil {
+		t.Fatalf("expected claim to succeed after unblock: %v", err)
+	}
+}
+
+func TestFileTaskStorage_AllowClearOwnerOnBlockedTask(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewFileTaskStorage(dir)
+
+	t1, _ := s.Create(Task{Subject: "blocker", Status: TaskStatusPending})
+	t2, _ := s.Create(Task{Subject: "blocked", Status: TaskStatusPending, Owner: "alice", BlockedBy: []string{t1.ID}})
+
+	// Clearing the owner (empty string) on a blocked task should be allowed.
+	empty := ""
+	_, err := s.Update(t2.ID, TaskUpdate{Owner: &empty})
+	if err != nil {
+		t.Fatalf("expected clearing owner on blocked task to succeed: %v", err)
+	}
+}
+
 func TestFileTaskStorage_Concurrent(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewFileTaskStorage(dir)

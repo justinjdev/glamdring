@@ -231,7 +231,7 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 			return
 
 		case "tool_use":
-			toolResults, err := executeTools(ctx, out, s.provider, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner, s.cfg.Permissions, s.teamScope, s.priorityCh)
+			toolResults, err := executeTools(ctx, out, s.provider, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner, s.cfg.Permissions, s.teamScope, s.priorityCh, s.cfg.CancelFunc)
 			if err != nil {
 				emit(ctx, out, Message{Type: MessageError, Err: err})
 				return
@@ -320,12 +320,30 @@ drain:
 
 // syncPhaseModel checks if the ToolProvider is phase-aware and updates the
 // client model to match the current phase. Called after tool execution to
-// handle AdvancePhase transitions.
+// handle AdvancePhase transitions. If a phase change is detected and a
+// PhaseTransitionCallback is configured, it is invoked with the current
+// conversation history (as serialized message strings).
 func (s *Session) syncPhaseModel() {
 	if pmp, ok := s.provider.(tools.PhaseModelProvider); ok {
 		if model, _ := pmp.CurrentPhaseModel(); model != "" && model != s.client.Model() {
 			log.Printf("phase model changed to %s", model)
 			s.client.SetModel(model)
+
+			if s.cfg.PhaseTransitionCallback != nil {
+				var history []string
+				for _, m := range s.messages {
+					switch v := m.Content.(type) {
+					case string:
+						history = append(history, v)
+					default:
+						data, err := json.Marshal(v)
+						if err == nil {
+							history = append(history, string(data))
+						}
+					}
+				}
+				s.cfg.PhaseTransitionCallback(history)
+			}
 		}
 	}
 }

@@ -255,3 +255,84 @@ func TestTaskUpdateTool_ResetsCheckin(t *testing.T) {
 		t.Errorf("expected checkin count 0 after reset, got %d", mgr.Checkins.Count("alice"))
 	}
 }
+
+func TestTaskUpdateTool_CompletionReleasesLocks(t *testing.T) {
+	reg := setupTaskTestTeam(t)
+	createTool := TaskCreateTool{Registry: reg}
+	updateTool := TaskUpdateTool{Registry: reg, AgentName: "alice"}
+
+	// Create a task and get its ID.
+	createInput, _ := json.Marshal(map[string]string{"team_name": "proj", "subject": "lock test"})
+	createResult, _ := createTool.Execute(context.Background(), createInput)
+	var created map[string]string
+	json.Unmarshal([]byte(createResult.Output), &created)
+	taskID := created["task_id"]
+
+	// Acquire locks tagged with this task ID.
+	mgr := reg.Get("proj")
+	mgr.Locks.AcquireForTask("/project/a.go", "alice", taskID)
+	mgr.Locks.AcquireForTask("/project/b.go", "alice", taskID)
+	// A lock for a different task should not be released.
+	mgr.Locks.AcquireForTask("/project/c.go", "alice", "other-task")
+
+	// Complete the task.
+	updateInput, _ := json.Marshal(map[string]any{
+		"team_name": "proj",
+		"task_id":   taskID,
+		"status":    "completed",
+	})
+	result, err := updateTool.Execute(context.Background(), updateInput)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Output)
+	}
+
+	// Locks for the completed task should be released.
+	_, aLocked := mgr.Locks.Check("/project/a.go")
+	_, bLocked := mgr.Locks.Check("/project/b.go")
+	_, cLocked := mgr.Locks.Check("/project/c.go")
+
+	if aLocked {
+		t.Error("a.go should be unlocked after task completion")
+	}
+	if bLocked {
+		t.Error("b.go should be unlocked after task completion")
+	}
+	if !cLocked {
+		t.Error("c.go should still be locked (different task)")
+	}
+}
+
+func TestTaskUpdateTool_NonCompletionDoesNotReleaseLocks(t *testing.T) {
+	reg := setupTaskTestTeam(t)
+	createTool := TaskCreateTool{Registry: reg}
+	updateTool := TaskUpdateTool{Registry: reg, AgentName: "alice"}
+
+	createInput, _ := json.Marshal(map[string]string{"team_name": "proj", "subject": "no release test"})
+	createResult, _ := createTool.Execute(context.Background(), createInput)
+	var created map[string]string
+	json.Unmarshal([]byte(createResult.Output), &created)
+	taskID := created["task_id"]
+
+	mgr := reg.Get("proj")
+	mgr.Locks.AcquireForTask("/project/a.go", "alice", taskID)
+
+	// Set to in_progress (not completed).
+	updateInput, _ := json.Marshal(map[string]any{
+		"team_name": "proj",
+		"task_id":   taskID,
+		"status":    "in_progress",
+	})
+	result, _ := updateTool.Execute(context.Background(), updateInput)
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Output)
+	}
+
+	// Lock should still be held.
+	_, locked := mgr.Locks.Check("/project/a.go")
+	if !locked {
+		t.Error("lock should remain when task is not completed")
+	}
+}

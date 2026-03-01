@@ -33,11 +33,17 @@ func WorkflowNone() []Phase {
 	return nil
 }
 
-// ResolveWorkflow returns phases for a named built-in workflow, or custom phases if provided.
-// Returns an error for unknown workflow names.
-func ResolveWorkflow(name string, custom []Phase) ([]Phase, error) {
+// ResolveWorkflow returns phases for a named workflow. It checks:
+// 1. Custom phases (inline) if provided
+// 2. Registered workflows from settings
+// 3. Built-in presets
+func ResolveWorkflow(name string, custom []Phase, registered map[string][]Phase) ([]Phase, error) {
 	if len(custom) > 0 {
 		return custom, nil
+	}
+	// Check registered workflows from settings.
+	if phases, ok := registered[name]; ok {
+		return phases, nil
 	}
 	switch name {
 	case "rpiv":
@@ -47,6 +53,9 @@ func ResolveWorkflow(name string, custom []Phase) ([]Phase, error) {
 	case "scoped":
 		return WorkflowScopedOnly(), nil
 	case "", "none":
+		// Default is "none" -- no phase enforcement. This intentionally
+		// diverges from the spec's default of "rpiv" to keep the simpler
+		// experience for teams that don't need workflow phases.
 		return WorkflowNone(), nil
 	default:
 		return nil, fmt.Errorf("unknown workflow %q", name)

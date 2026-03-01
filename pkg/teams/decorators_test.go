@@ -44,36 +44,60 @@ func (s *stubStreamingTool) ExecuteStreaming(ctx context.Context, input json.Raw
 }
 
 type mockLockManager struct {
-	locks map[string]string // path -> owner
+	locks map[string]LockEntry // path -> entry
 }
 
 func newMockLockManager() *mockLockManager {
-	return &mockLockManager{locks: make(map[string]string)}
+	return &mockLockManager{locks: make(map[string]LockEntry)}
 }
 
 func (m *mockLockManager) Acquire(path string, owner string) error {
-	if existing, locked := m.locks[path]; locked && existing != owner {
-		return fmt.Errorf("locked by agent %q", existing)
+	if existing, locked := m.locks[path]; locked && existing.Owner != owner {
+		return fmt.Errorf("locked by agent %q", existing.Owner)
 	}
-	m.locks[path] = owner
+	m.locks[path] = LockEntry{Owner: owner}
+	return nil
+}
+
+func (m *mockLockManager) AcquireForTask(path, owner, taskID string) error {
+	if existing, locked := m.locks[path]; locked && existing.Owner != owner {
+		return fmt.Errorf("locked by agent %q", existing.Owner)
+	}
+	m.locks[path] = LockEntry{Owner: owner, TaskID: taskID}
 	return nil
 }
 
 func (m *mockLockManager) Release(path string, owner string) error {
-	if m.locks[path] == owner {
+	if m.locks[path].Owner == owner {
 		delete(m.locks, path)
 	}
 	return nil
 }
 
+func (m *mockLockManager) ReleaseByTask(taskID string) {
+	for path, entry := range m.locks {
+		if entry.TaskID == taskID {
+			delete(m.locks, path)
+		}
+	}
+}
+
 func (m *mockLockManager) Check(path string) (string, bool) {
-	owner, ok := m.locks[path]
-	return owner, ok
+	entry, ok := m.locks[path]
+	return entry.Owner, ok
+}
+
+func (m *mockLockManager) ListLocks() map[string]LockEntry {
+	out := make(map[string]LockEntry, len(m.locks))
+	for path, entry := range m.locks {
+		out[path] = entry
+	}
+	return out
 }
 
 func (m *mockLockManager) ReleaseAll(owner string) {
-	for path, o := range m.locks {
-		if o == owner {
+	for path, entry := range m.locks {
+		if entry.Owner == owner {
 			delete(m.locks, path)
 		}
 	}
@@ -423,6 +447,75 @@ func TestFileLockDecorator_DifferentAgentBlocked(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, "locked") {
 		t.Errorf("unexpected error message: %s", result.Output)
+	}
+}
+
+// --- FileLockDecoratorForTask tests ---
+
+func TestFileLockDecoratorForTask_UsesAcquireForTask(t *testing.T) {
+	locks := newMockLockManager()
+	inner := &stubTool{name: "Write"}
+	dec := NewFileLockDecoratorForTask(inner, locks, "agent-a", "task-1")
+
+	input := json.RawMessage(`{"file_path": "/project/main.go"}`)
+	result, err := dec.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %s", result.Output)
+	}
+
+	// Verify the lock was acquired with the task ID.
+	entry, ok := locks.locks["/project/main.go"]
+	if !ok {
+		t.Fatal("expected lock to be acquired")
+	}
+	if entry.Owner != "agent-a" {
+		t.Errorf("expected owner agent-a, got %q", entry.Owner)
+	}
+	if entry.TaskID != "task-1" {
+		t.Errorf("expected taskID task-1, got %q", entry.TaskID)
+	}
+}
+
+func TestFileLockDecoratorForTask_DifferentAgentBlocked(t *testing.T) {
+	locks := newMockLockManager()
+	locks.AcquireForTask("/project/main.go", "agent-b", "task-2")
+	inner := &stubTool{name: "Write"}
+	dec := NewFileLockDecoratorForTask(inner, locks, "agent-a", "task-1")
+
+	input := json.RawMessage(`{"file_path": "/project/main.go"}`)
+	result, err := dec.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected error when file is locked by different agent")
+	}
+}
+
+func TestFileLockDecoratorWithoutTaskID_UsesAcquire(t *testing.T) {
+	locks := newMockLockManager()
+	inner := &stubTool{name: "Write"}
+	dec := NewFileLockDecorator(inner, locks, "agent-a")
+
+	input := json.RawMessage(`{"file_path": "/project/main.go"}`)
+	result, err := dec.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %s", result.Output)
+	}
+
+	// Verify the lock was acquired without a task ID.
+	entry, ok := locks.locks["/project/main.go"]
+	if !ok {
+		t.Fatal("expected lock to be acquired")
+	}
+	if entry.TaskID != "" {
+		t.Errorf("expected empty taskID, got %q", entry.TaskID)
 	}
 }
 

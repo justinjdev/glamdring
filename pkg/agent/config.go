@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"context"
+
 	"github.com/justin/glamdring/pkg/auth"
 	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/hooks"
@@ -36,6 +38,18 @@ type Config struct {
 	// provider (e.g., PhaseRegistry for team agents). If nil, a standard
 	// Registry is built from Tools.
 	ToolProvider tools.ToolProvider
+
+	// CancelFunc allows external callers (e.g., force shutdown) to cancel
+	// the agent's context, terminating the agentic loop.
+	CancelFunc context.CancelFunc
+
+	// PhaseTransitionCallback is called after a workflow phase change is
+	// detected in syncPhaseModel. The session passes its current messages
+	// so the callback can trigger compaction or context archiving.
+	// v1 limitation: inject_context conflicts across phases are not resolved;
+	// callers should be aware that archived context may include stale
+	// inject_context blocks from prior phases.
+	PhaseTransitionCallback func(messages []string)
 
 	// TeamScope restricts file-modifying tools to specific path patterns.
 	// When set, operations outside the scope are denied before normal

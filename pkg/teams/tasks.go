@@ -101,6 +101,11 @@ func (s *FileTaskStorage) Update(id string, update TaskUpdate) (*Task, error) {
 		}
 	}
 
+	// Reject claiming a blocked task.
+	if update.Owner != nil && *update.Owner != "" && len(task.BlockedBy) > 0 {
+		return nil, fmt.Errorf("cannot claim task %s: blocked by %v", id, task.BlockedBy)
+	}
+
 	if update.Status != nil {
 		task.Status = *update.Status
 	}

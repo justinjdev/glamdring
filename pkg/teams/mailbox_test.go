@@ -265,6 +265,41 @@ func TestChannelTransport_Concurrent(t *testing.T) {
 	wg.Wait()
 }
 
+func TestChannelTransport_MessageTimestamps(t *testing.T) {
+	tr := NewChannelTransport()
+	reg, _, _ := tr.Subscribe("bob", 10)
+
+	before := time.Now()
+	tr.Send(AgentMessage{Kind: MessageKindDM, From: "alice", To: "bob", Content: "hello"})
+	after := time.Now()
+
+	msg := <-reg
+	if msg.Timestamp.Before(before) || msg.Timestamp.After(after) {
+		t.Errorf("timestamp %v outside expected range [%v, %v]", msg.Timestamp, before, after)
+	}
+	if msg.SeqNum < 1 {
+		t.Errorf("expected SeqNum >= 1, got %d", msg.SeqNum)
+	}
+}
+
+func TestChannelTransport_MessageOrdering(t *testing.T) {
+	tr := NewChannelTransport()
+	reg, _, _ := tr.Subscribe("bob", 10)
+
+	for i := 0; i < 5; i++ {
+		tr.Send(AgentMessage{Kind: MessageKindDM, From: "alice", To: "bob", Content: fmt.Sprintf("msg-%d", i)})
+	}
+
+	var prevSeq int
+	for i := 0; i < 5; i++ {
+		msg := <-reg
+		if msg.SeqNum <= prevSeq {
+			t.Errorf("message %d: SeqNum %d not monotonically increasing (prev: %d)", i, msg.SeqNum, prevSeq)
+		}
+		prevSeq = msg.SeqNum
+	}
+}
+
 func TestChannelTransport_UnsubscribeClosesChannels(t *testing.T) {
 	tr := NewChannelTransport()
 	reg, pri, _ := tr.Subscribe("alice", 10)

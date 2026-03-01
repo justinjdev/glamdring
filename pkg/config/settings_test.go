@@ -339,6 +339,44 @@ func TestLoadSettings_WorkflowValidation(t *testing.T) {
 	}
 }
 
+func TestValidateWorkflows_WarnsUnknownTools(t *testing.T) {
+	// Unknown tools should produce warnings but NOT errors.
+	wf := map[string]WorkflowConfig{
+		"custom": {Phases: []PhaseConfig{
+			{Name: "step", Tools: []string{"Read", "MagicTool"}},
+		}},
+	}
+	err := validateWorkflows(wf)
+	if err != nil {
+		t.Errorf("expected no error for unknown tool (just a warning), got: %v", err)
+	}
+}
+
+func TestValidateWorkflows_WarnsBadModelPattern(t *testing.T) {
+	// Non-matching model names should produce warnings but NOT errors.
+	wf := map[string]WorkflowConfig{
+		"custom": {Phases: []PhaseConfig{
+			{Name: "step", Tools: []string{"Read"}, Model: "gpt-4o"},
+		}},
+	}
+	err := validateWorkflows(wf)
+	if err != nil {
+		t.Errorf("expected no error for bad model pattern (just a warning), got: %v", err)
+	}
+}
+
+func TestValidateWorkflows_ValidModelPasses(t *testing.T) {
+	wf := map[string]WorkflowConfig{
+		"custom": {Phases: []PhaseConfig{
+			{Name: "step", Tools: []string{"Read"}, Model: "claude-sonnet-4-6", Fallback: "claude-haiku-4-5-20251001"},
+		}},
+	}
+	err := validateWorkflows(wf)
+	if err != nil {
+		t.Errorf("expected no error for valid config, got: %v", err)
+	}
+}
+
 func TestMergeSettings_ZeroMaxTurnsOverride(t *testing.T) {
 	base := Settings{
 		Model:    "default-model",

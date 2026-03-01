@@ -410,7 +410,7 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 		if wf, ok := settings.Workflows[params.Workflow]; ok {
 			customPhases = phaseConfigToPhases(wf.Phases)
 		}
-		phases, err := teams.ResolveWorkflow(params.Workflow, customPhases)
+		phases, err := teams.ResolveWorkflow(params.Workflow, customPhases, nil)
 		if err != nil {
 			return nil, fmt.Errorf("resolve workflow %q: %w", params.Workflow, err)
 		}

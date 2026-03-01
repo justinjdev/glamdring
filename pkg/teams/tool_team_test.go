@@ -111,3 +111,40 @@ func TestTeamDeleteTool_MissingName(t *testing.T) {
 		t.Fatal("expected error for missing team_name")
 	}
 }
+
+func TestTeamCreateTool_RegisteredWorkflow(t *testing.T) {
+	reg := NewManagerRegistry()
+	registered := map[string][]Phase{
+		"custom-flow": {
+			{Name: "step1", Tools: []string{"Read"}, Model: "claude-sonnet-4-6"},
+		},
+	}
+	tool := TeamCreateTool{
+		Registry:            reg,
+		TaskDirBase:         t.TempDir(),
+		RegisteredWorkflows: registered,
+	}
+
+	input, _ := json.Marshal(map[string]string{
+		"team_name": "wf-team",
+		"workflow":  "custom-flow",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Output)
+	}
+
+	mgr := reg.Get("wf-team")
+	if mgr == nil {
+		t.Fatal("team should exist in registry after create")
+	}
+	if len(mgr.Config.Phases) != 1 {
+		t.Fatalf("expected 1 phase from registered workflow, got %d", len(mgr.Config.Phases))
+	}
+	if mgr.Config.Phases[0].Name != "step1" {
+		t.Errorf("expected phase 'step1', got %q", mgr.Config.Phases[0].Name)
+	}
+}

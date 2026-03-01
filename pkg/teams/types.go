@@ -124,6 +124,9 @@ type AgentMessage struct {
 	Content   string      `json:"content"`
 	RequestID string      `json:"request_id,omitempty"`
 	Approve   *bool       `json:"approve,omitempty"`
+	Force     bool        `json:"force,omitempty"`
+	Timestamp time.Time   `json:"timestamp,omitempty"`
+	SeqNum    int         `json:"seq_num,omitempty"`
 }
 
 // Validate checks that the message has the required fields for its Kind.

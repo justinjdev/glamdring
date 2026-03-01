@@ -230,7 +230,7 @@ func TestExecuteTools_PermissionDeny(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Bash", map[string]any{"command": "rm -rf /"})}
 
-	results, err := executeTools(ctx, out, registry, calls, nil, nil, perms, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, nil, nil, perms, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -285,7 +285,7 @@ func TestExecuteTools_PermissionAllow(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Write", map[string]any{"file_path": "/tmp/x"})}
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, perms, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, perms, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -322,7 +322,7 @@ func TestExecuteTools_HookBlock(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Bash", map[string]any{"command": "echo hi"})}
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{"Bash": true}, hookRunner, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{"Bash": true}, hookRunner, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -355,7 +355,7 @@ func TestExecuteTools_ToolError(t *testing.T) {
 	calls := []toolCall{makeToolCall("tc1", "Bash", map[string]any{"command": "false"})}
 	sessionAllow := map[string]bool{"Bash": true}
 
-	results, err := executeTools(ctx, out, registry, calls, sessionAllow, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, sessionAllow, nil, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -385,7 +385,7 @@ func TestExecuteTools_Success(t *testing.T) {
 	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{"file_path": "/tmp/test"})}
 
 	// Read is in alwaysAllowTools, so no permission needed.
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -442,7 +442,7 @@ func TestExecuteTools_MultipleTools(t *testing.T) {
 		makeToolCall("tc2", "Grep", map[string]any{"pattern": "test"}),
 	}
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -481,7 +481,7 @@ func TestExecuteTools_UserDeniesPermission(t *testing.T) {
 		}
 	}()
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -529,7 +529,7 @@ func TestExecuteTools_UserAlwaysApprove(t *testing.T) {
 		}
 	}()
 
-	results, err := executeTools(ctx, out, registry, calls, sessionAllow, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, sessionAllow, nil, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -562,7 +562,7 @@ func TestExecuteTools_ContextCancelled(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{})}
 
-	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
+	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
 	close(out)
 
 	if err == nil {
@@ -1265,7 +1265,7 @@ func TestExecuteTools_PriorityChannelDrain(t *testing.T) {
 	priorityCh <- "urgent: deploy now"
 	priorityCh <- "urgent: rollback"
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, priorityCh)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, priorityCh, nil)
 	close(out)
 
 	if err != nil {
@@ -1299,12 +1299,134 @@ func TestExecuteTools_PriorityChannelClosed(t *testing.T) {
 	priorityCh := make(chan any, 1)
 	close(priorityCh)
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, priorityCh)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, priorityCh, nil)
 	close(out)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+}
+
+// --- Tests for isForceShutdown ---
+
+func TestIsForceShutdown_True(t *testing.T) {
+	msg := map[string]any{
+		"kind":  "shutdown_request",
+		"force": true,
+		"from":  "leader",
+		"to":    "worker",
+	}
+	if !isForceShutdown(msg) {
+		t.Error("expected isForceShutdown to return true for force shutdown_request")
+	}
+}
+
+func TestIsForceShutdown_NonForce(t *testing.T) {
+	msg := map[string]any{
+		"kind": "shutdown_request",
+		"from": "leader",
+		"to":   "worker",
+	}
+	if isForceShutdown(msg) {
+		t.Error("expected isForceShutdown to return false for non-force shutdown_request")
+	}
+}
+
+func TestIsForceShutdown_WrongKind(t *testing.T) {
+	msg := map[string]any{
+		"kind":  "dm",
+		"force": true,
+		"from":  "leader",
+	}
+	if isForceShutdown(msg) {
+		t.Error("expected isForceShutdown to return false for non-shutdown_request kind")
+	}
+}
+
+func TestIsForceShutdown_StringMessage(t *testing.T) {
+	if isForceShutdown("just a string") {
+		t.Error("expected isForceShutdown to return false for plain string")
+	}
+}
+
+// --- Tests for executeTools force shutdown ---
+
+func TestExecuteTools_ForceShutdownCancelsContext(t *testing.T) {
+	mockT := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "file content"},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(mockT)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out := make(chan Message, 64)
+	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{"file_path": "/tmp/x"})}
+
+	// Send a force shutdown message on the priority channel.
+	priorityCh := make(chan any, 1)
+	priorityCh <- map[string]any{
+		"kind":  "shutdown_request",
+		"force": true,
+		"from":  "leader",
+		"to":    "worker",
+	}
+
+	cancelled := false
+	cancelFunc := func() { cancelled = true; cancel() }
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, priorityCh, cancelFunc)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cancelled {
+		t.Error("expected cancelFunc to be called")
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !strings.Contains(results[0].Content, "[Force shutdown received -- terminating]") {
+		t.Errorf("expected force shutdown message in result, got: %q", results[0].Content)
+	}
+}
+
+func TestExecuteTools_ForceShutdownNilCancelFunc(t *testing.T) {
+	// Force shutdown without a cancelFunc should not panic -- it should
+	// be treated like a normal priority message.
+	mockT := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "file content"},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(mockT)
+
+	ctx := context.Background()
+	out := make(chan Message, 64)
+	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{"file_path": "/tmp/x"})}
+
+	priorityCh := make(chan any, 1)
+	priorityCh <- map[string]any{
+		"kind":  "shutdown_request",
+		"force": true,
+		"from":  "leader",
+		"to":    "worker",
+	}
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, priorityCh, nil)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Without a cancelFunc, the force shutdown message is formatted as a normal
+	// priority message (not treated as force shutdown).
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -1328,7 +1450,7 @@ func TestExecuteTools_TeamScopeBlock(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Write", map[string]any{"file_path": "/forbidden/secret.txt"})}
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{"Write": true}, nil, nil, scope, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{"Write": true}, nil, nil, scope, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -1614,7 +1736,7 @@ func TestExecuteTools_InvalidJSONInput(t *testing.T) {
 	tc := toolCall{id: "tc1", name: "Read", input: json.RawMessage(`not valid json`)}
 	calls := []toolCall{tc}
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -1664,7 +1786,7 @@ func TestExecuteTools_ContextCancelledDuringPermission(t *testing.T) {
 		}
 	}()
 
-	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil)
+	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
 	close(out)
 
 	if err == nil {
@@ -1694,7 +1816,7 @@ func TestExecuteTools_PostToolUseHookSuccess(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{"file_path": "/tmp/x"})}
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, hookRunner, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, hookRunner, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -1725,7 +1847,7 @@ func TestExecuteTools_PostToolUseHookFailure(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{"file_path": "/tmp/x"})}
 
-	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, hookRunner, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, hookRunner, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {
@@ -1773,7 +1895,7 @@ func TestExecuteTools_StreamingOutput(t *testing.T) {
 	out := make(chan Message, 64)
 	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{})}
 
-	results, err := executeTools(ctx, out, provider, calls, map[string]bool{"Read": true}, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, provider, calls, map[string]bool{"Read": true}, nil, nil, nil, nil, nil)
 	close(out)
 
 	if err != nil {

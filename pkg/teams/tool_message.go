@@ -21,6 +21,7 @@ type sendMessageInput struct {
 	Content   string `json:"content"`
 	RequestID string `json:"request_id"`
 	Approve   *bool  `json:"approve"`
+	Force     *bool  `json:"force"`
 }
 
 func (SendMessageTool) Name() string { return "SendMessage" }
@@ -58,6 +59,10 @@ func (SendMessageTool) Schema() json.RawMessage {
 			"approve": map[string]any{
 				"type":        "boolean",
 				"description": "Whether to approve or deny (for shutdown_response, approval_response)",
+			},
+			"force": map[string]any{
+				"type":        "boolean",
+				"description": "Force shutdown (kills agent without waiting for approval)",
 			},
 		},
 	}
@@ -108,6 +113,7 @@ func (s SendMessageTool) Execute(_ context.Context, input json.RawMessage) (tool
 		msg.Kind = MessageKindShutdownRequest
 		msg.To = in.Recipient
 		msg.Content = in.Content
+		msg.Force = in.Force != nil && *in.Force
 
 	case "shutdown_response":
 		if in.RequestID == "" {

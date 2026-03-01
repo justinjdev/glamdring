@@ -53,16 +53,22 @@ func (a AdvancePhaseTool) Execute(_ context.Context, input json.RawMessage) (too
 		return *errResult, nil
 	}
 
+	prevPhase, _, _ := mgr.Phases.Current(a.AgentName)
 	phase, err := mgr.Phases.Advance(a.AgentName)
 	if err != nil {
 		return tools.Result{Output: fmt.Sprintf("failed to advance phase: %s", err), IsError: true}, nil
 	}
 
-	out, err := json.Marshal(map[string]any{
+	result := map[string]any{
 		"phase_name": phase.Name,
 		"tools":      phase.Tools,
 		"model":      phase.Model,
-	})
+	}
+	if prevPhase != nil {
+		result["previous_phase"] = prevPhase.Name
+	}
+
+	out, err := json.Marshal(result)
 	if err != nil {
 		return tools.Result{Output: fmt.Sprintf("failed to marshal phase result: %s", err), IsError: true}, nil
 	}

@@ -144,3 +144,115 @@ func TestInMemoryLockManager_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestLockManager_AcquireForTask(t *testing.T) {
+	m := NewInMemoryLockManager()
+
+	if err := m.AcquireForTask("file.go", "alice", "task-1"); err != nil {
+		t.Fatalf("AcquireForTask: %v", err)
+	}
+
+	owner, locked := m.Check("file.go")
+	if !locked {
+		t.Error("expected locked")
+	}
+	if owner != "alice" {
+		t.Errorf("expected owner alice, got %q", owner)
+	}
+
+	// Same owner re-acquire should succeed.
+	if err := m.AcquireForTask("file.go", "alice", "task-1"); err != nil {
+		t.Fatalf("re-acquire by same owner should not error: %v", err)
+	}
+
+	// Different owner should fail.
+	err := m.AcquireForTask("file.go", "bob", "task-2")
+	if err == nil {
+		t.Fatal("expected error for different owner acquiring same path")
+	}
+}
+
+func TestLockManager_AcquireBackwardCompat(t *testing.T) {
+	m := NewInMemoryLockManager()
+
+	// Acquire without task ID should work and store empty TaskID.
+	if err := m.Acquire("file.go", "alice"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+
+	// ReleaseByTask with empty string should not release it (Acquire stores
+	// empty TaskID, but ReleaseByTask("") would match -- this tests that
+	// normal Acquire locks are not accidentally released by a specific task).
+	m.ReleaseByTask("task-1")
+
+	_, locked := m.Check("file.go")
+	if !locked {
+		t.Error("expected lock to remain after ReleaseByTask with non-matching taskID")
+	}
+}
+
+func TestLockManager_ReleaseByTask(t *testing.T) {
+	m := NewInMemoryLockManager()
+
+	m.AcquireForTask("a.go", "alice", "task-1")
+	m.AcquireForTask("b.go", "alice", "task-1")
+	m.AcquireForTask("c.go", "alice", "task-2")
+	m.Acquire("d.go", "alice") // no task ID
+
+	m.ReleaseByTask("task-1")
+
+	_, aLocked := m.Check("a.go")
+	_, bLocked := m.Check("b.go")
+	_, cLocked := m.Check("c.go")
+	_, dLocked := m.Check("d.go")
+
+	if aLocked {
+		t.Error("a.go should be unlocked after ReleaseByTask")
+	}
+	if bLocked {
+		t.Error("b.go should be unlocked after ReleaseByTask")
+	}
+	if !cLocked {
+		t.Error("c.go should still be locked (different task)")
+	}
+	if !dLocked {
+		t.Error("d.go should still be locked (no task ID)")
+	}
+}
+
+func TestLockManager_ReleaseByTaskConcurrent(t *testing.T) {
+	m := NewInMemoryLockManager()
+	const n = 20
+	var wg sync.WaitGroup
+
+	// Acquire locks for two tasks concurrently.
+	wg.Add(n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			taskID := "task-1"
+			if i%2 == 0 {
+				taskID = "task-2"
+			}
+			m.AcquireForTask(fmt.Sprintf("file-%d.go", i), "alice", taskID)
+		}(i)
+	}
+	wg.Wait()
+
+	m.ReleaseByTask("task-1")
+
+	for i := range n {
+		_, locked := m.Check(fmt.Sprintf("file-%d.go", i))
+		if i%2 == 0 {
+			// task-2 locks should remain.
+			if !locked {
+				t.Errorf("file-%d.go (task-2) should still be locked", i)
+			}
+		} else {
+			// task-1 locks should be released.
+			if locked {
+				t.Errorf("file-%d.go (task-1) should be unlocked", i)
+			}
+		}
+	}
+}

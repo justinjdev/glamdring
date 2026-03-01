@@ -30,6 +30,9 @@ type TeamCreateTool struct {
 	// When set, task files are stored under TaskDirBase/<team>/tasks/ instead.
 	// Used by tests to avoid writing to the real home directory.
 	TaskDirBase string
+	// RegisteredWorkflows holds user-defined workflows from settings.
+	// These are checked by ResolveWorkflow before built-in presets.
+	RegisteredWorkflows map[string][]Phase
 }
 
 type teamCreateInput struct {
@@ -85,7 +88,7 @@ func (t TeamCreateTool) Execute(_ context.Context, input json.RawMessage) (tools
 		return tools.Result{Output: "team_name must contain only alphanumeric characters, hyphens, and underscores", IsError: true}, nil
 	}
 
-	phases, err := ResolveWorkflow(in.Workflow, nil)
+	phases, err := ResolveWorkflow(in.Workflow, nil, t.RegisteredWorkflows)
 	if err != nil {
 		return tools.Result{Output: fmt.Sprintf("unknown workflow %q", in.Workflow), IsError: true}, nil
 	}

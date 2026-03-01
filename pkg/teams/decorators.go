@@ -162,9 +162,10 @@ func (s *ScopedBash) checkCommand(input json.RawMessage) string {
 
 // FileLockDecorator wraps a tool to check file locks before execution.
 type FileLockDecorator struct {
-	inner tools.Tool
-	locks LockManager
-	agent string
+	inner  tools.Tool
+	locks  LockManager
+	agent  string
+	TaskID string
 }
 
 // NewFileLockDecorator creates a decorator that checks and acquires file locks
@@ -174,6 +175,17 @@ func NewFileLockDecorator(inner tools.Tool, locks LockManager, agent string) *Fi
 		inner: inner,
 		locks: locks,
 		agent: agent,
+	}
+}
+
+// NewFileLockDecoratorForTask creates a decorator that acquires file locks
+// tagged with a task ID before delegating to the inner tool.
+func NewFileLockDecoratorForTask(inner tools.Tool, locks LockManager, agent, taskID string) *FileLockDecorator {
+	return &FileLockDecorator{
+		inner:  inner,
+		locks:  locks,
+		agent:  agent,
+		TaskID: taskID,
 	}
 }
 
@@ -207,7 +219,13 @@ func (d *FileLockDecorator) checkFileLock(input json.RawMessage) string {
 		return fmt.Sprintf("invalid input: %s", err)
 	}
 	if parsed.FilePath != "" {
-		if err := d.locks.Acquire(parsed.FilePath, d.agent); err != nil {
+		var err error
+		if d.TaskID != "" {
+			err = d.locks.AcquireForTask(parsed.FilePath, d.agent, d.TaskID)
+		} else {
+			err = d.locks.Acquire(parsed.FilePath, d.agent)
+		}
+		if err != nil {
 			return fmt.Sprintf("file %q is locked: %s", parsed.FilePath, err)
 		}
 	}

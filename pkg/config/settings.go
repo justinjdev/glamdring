@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 // Settings holds resolved configuration values.
@@ -215,7 +216,18 @@ func mergeSettings(base, override *Settings) {
 	}
 }
 
+// knownToolNames is the set of built-in tool names recognized by glamdring.
+var knownToolNames = map[string]bool{
+	"Read": true, "Write": true, "Edit": true, "Bash": true,
+	"Glob": true, "Grep": true,
+}
+
+// validModelPattern matches expected Claude model name formats.
+var validModelPattern = regexp.MustCompile(`^claude-[a-z0-9-]+$`)
+
 // validateWorkflows checks user-defined workflows for common configuration errors.
+// Hard errors are returned for structural problems (empty phases, missing names, etc.).
+// Warnings are logged for unrecognized tool names and unexpected model name formats.
 func validateWorkflows(workflows map[string]WorkflowConfig) error {
 	for name, wf := range workflows {
 		if len(wf.Phases) == 0 {
@@ -232,6 +244,17 @@ func validateWorkflows(workflows map[string]WorkflowConfig) error {
 			seen[p.Name] = true
 			if len(p.Tools) == 0 {
 				return fmt.Errorf("workflow %q phase %q has no tools", name, p.Name)
+			}
+			for _, tool := range p.Tools {
+				if !knownToolNames[tool] {
+					log.Printf("warning: workflow %q phase %q references unknown tool %q", name, p.Name, tool)
+				}
+			}
+			if p.Model != "" && !validModelPattern.MatchString(p.Model) {
+				log.Printf("warning: workflow %q phase %q has unexpected model name %q", name, p.Name, p.Model)
+			}
+			if p.Fallback != "" && !validModelPattern.MatchString(p.Fallback) {
+				log.Printf("warning: workflow %q phase %q has unexpected fallback model name %q", name, p.Name, p.Fallback)
 			}
 		}
 	}

@@ -334,6 +334,10 @@ func (t TaskUpdateTool) Execute(_ context.Context, input json.RawMessage) (tools
 		return tools.Result{Output: fmt.Sprintf("failed to update task: %s", err), IsError: true}, nil
 	}
 
+	if update.Status != nil && *update.Status == TaskStatusCompleted {
+		mgr.Locks.ReleaseByTask(in.TaskID)
+	}
+
 	if t.AgentName != "" {
 		mgr.Checkins.Reset(t.AgentName)
 	}

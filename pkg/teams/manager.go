@@ -7,14 +7,15 @@ import (
 
 // TeamManager composes all team subsystems into a single coordinator.
 type TeamManager struct {
-	Config   TeamConfig
-	Members  MemberRegistry
-	Tasks    TaskStorage
-	Messages MessageTransport
-	Locks    LockManager
-	Context  ContextCache
-	Phases   PhaseTracker
-	Checkins CheckinTracker
+	Config    TeamConfig
+	Members   MemberRegistry
+	Tasks     TaskStorage
+	Messages  MessageTransport
+	Locks     LockManager
+	Context   ContextCache
+	Phases    PhaseTracker
+	Checkins  CheckinTracker
+	Compactor ContextCompactor
 }
 
 // NewTeamManager creates a TeamManager with all subsystem instances.
@@ -26,14 +27,15 @@ func NewTeamManager(cfg TeamConfig, taskDir string) (*TeamManager, error) {
 	}
 
 	return &TeamManager{
-		Config:   cfg,
-		Members:  NewInMemoryMemberRegistry(),
-		Tasks:    tasks,
-		Messages: NewChannelTransport(),
-		Locks:    NewInMemoryLockManager(),
-		Context:  NewInMemoryContextCache(),
-		Phases:   NewInMemoryPhaseTracker(),
-		Checkins: NewInMemoryCheckinTracker(),
+		Config:    cfg,
+		Members:   NewInMemoryMemberRegistry(),
+		Tasks:     tasks,
+		Messages:  NewChannelTransport(),
+		Locks:     NewInMemoryLockManager(),
+		Context:   NewInMemoryContextCache(),
+		Phases:    NewInMemoryPhaseTracker(),
+		Checkins:  NewInMemoryCheckinTracker(),
+		Compactor: NoOpCompactor{},
 	}, nil
 }
 

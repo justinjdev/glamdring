@@ -13,7 +13,7 @@ import (
 var DefaultReadTools = []string{"Read", "Glob", "Grep"}
 
 // DefaultTeamTools are tool names always available for team coordination.
-var DefaultTeamTools = []string{"TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "SendMessage", "AdvancePhase"}
+var DefaultTeamTools = []string{"TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "SendMessage", "AdvancePhase", "TeamStatus"}
 
 // PhaseRegistry wraps a tools.Registry and filters available tools based on
 // the current workflow phase. It implements tools.ToolProvider.

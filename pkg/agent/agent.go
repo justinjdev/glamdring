@@ -199,6 +199,22 @@ func processTurn(ctx context.Context, events <-chan api.StreamEvent, out chan<- 
 	return result, nil
 }
 
+// isForceShutdown checks if a priority message is a force shutdown request.
+func isForceShutdown(msg any) bool {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return false
+	}
+	var parsed struct {
+		Kind  string `json:"kind"`
+		Force bool   `json:"force"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return false
+	}
+	return parsed.Kind == "shutdown_request" && parsed.Force
+}
+
 // executeTools runs each tool call, handling permissions, and returns the
 // tool_result content blocks for the next API request. If priorityCh is
 // non-nil, high-priority inter-agent messages are checked between tool
@@ -213,6 +229,7 @@ func executeTools(
 	permissions *config.PermissionConfig,
 	teamScope *config.TeamScope,
 	priorityCh <-chan any,
+	cancelFunc context.CancelFunc,
 ) ([]api.ContentBlock, error) {
 	results := make([]api.ContentBlock, 0, len(calls))
 
@@ -411,6 +428,11 @@ func executeTools(
 					if !ok {
 						priorityCh = nil
 						break drain
+					}
+					if isForceShutdown(msg) && cancelFunc != nil {
+						results[len(results)-1].Content += "\n\n[Force shutdown received -- terminating]"
+						cancelFunc()
+						return results, nil
 					}
 					text := formatPriorityMessage(msg)
 					results[len(results)-1].Content += "\n\n" + text

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 type mailbox struct {
@@ -16,6 +18,7 @@ type mailbox struct {
 type ChannelTransport struct {
 	mu        sync.RWMutex
 	mailboxes map[string]*mailbox
+	seqNum    atomic.Int64
 }
 
 // NewChannelTransport creates a new ChannelTransport.
@@ -66,6 +69,10 @@ func (t *ChannelTransport) Send(msg AgentMessage) error {
 	if err := msg.Validate(); err != nil {
 		return fmt.Errorf("invalid message: %w", err)
 	}
+
+	// Assign monotonic ordering.
+	msg.Timestamp = time.Now()
+	msg.SeqNum = int(t.seqNum.Add(1))
 
 	t.mu.RLock()
 	defer t.mu.RUnlock()

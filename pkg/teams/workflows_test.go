@@ -64,7 +64,7 @@ func TestResolveWorkflow(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			phases, err := ResolveWorkflow(tc.workflow, tc.custom)
+			phases, err := ResolveWorkflow(tc.workflow, tc.custom, nil)
 			if tc.expectErr {
 				if err == nil {
 					t.Error("expected error for unknown workflow")
@@ -84,7 +84,7 @@ func TestResolveWorkflow(t *testing.T) {
 
 func TestResolveWorkflow_CustomOverridesName(t *testing.T) {
 	custom := []Phase{{Name: "my-phase", Tools: []string{"Read"}}}
-	phases, err := ResolveWorkflow("rpiv", custom)
+	phases, err := ResolveWorkflow("rpiv", custom, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -98,8 +98,48 @@ func TestResolveWorkflow_CustomOverridesName(t *testing.T) {
 }
 
 func TestResolveWorkflow_UnknownReturnsError(t *testing.T) {
-	_, err := ResolveWorkflow("nonexistent", nil)
+	_, err := ResolveWorkflow("nonexistent", nil, nil)
 	if err == nil {
 		t.Error("expected error for unknown workflow name")
+	}
+}
+
+func TestResolveWorkflow_RegisteredWorkflow(t *testing.T) {
+	registered := map[string][]Phase{
+		"my-workflow": {
+			{Name: "analyze", Tools: []string{"Read", "Grep"}, Model: "claude-sonnet-4-6"},
+			{Name: "execute", Tools: []string{"Write", "Edit"}, Model: "claude-opus-4-6"},
+		},
+	}
+	phases, err := ResolveWorkflow("my-workflow", nil, registered)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(phases) != 2 {
+		t.Fatalf("expected 2 phases, got %d", len(phases))
+	}
+	if phases[0].Name != "analyze" {
+		t.Errorf("expected 'analyze', got %q", phases[0].Name)
+	}
+	if phases[1].Name != "execute" {
+		t.Errorf("expected 'execute', got %q", phases[1].Name)
+	}
+}
+
+func TestResolveWorkflow_RegisteredOverridesBuiltin(t *testing.T) {
+	registered := map[string][]Phase{
+		"rpiv": {
+			{Name: "custom-research", Tools: []string{"Read"}, Model: "claude-sonnet-4-6"},
+		},
+	}
+	phases, err := ResolveWorkflow("rpiv", nil, registered)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(phases) != 1 {
+		t.Fatalf("expected 1 phase (registered override), got %d", len(phases))
+	}
+	if phases[0].Name != "custom-research" {
+		t.Errorf("expected 'custom-research', got %q", phases[0].Name)
 	}
 }

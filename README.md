@@ -22,7 +22,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Slash commands** — custom prompts from `.claude/commands/` with tab completion
 - **Custom agents** — define specialized subagents in `.claude/agents/`
 - **Subagents** — parallel task spawning via the Task tool
-- **Agent teams** (experimental) — coordinated multi-agent workflows with phase-gated tool access, inter-agent messaging, file locking, task dependencies, and built-in workflow presets (RPIV, plan-implement, scoped). Enable with `--experimental-teams` flag or `"experimental": {"teams": true}` in settings.
+- **Agent teams** (experimental) — coordinated multi-agent workflows with phase-gated tool access, inter-agent messaging, per-task file locking with automatic release, task dependencies with blocked-claim prevention, message ordering (timestamps + sequence numbers), force shutdown, team observability, context compaction archiving, and built-in workflow presets (RPIV, plan-implement, scoped) plus custom workflows from settings. Enable with `--experimental-teams` flag or `"experimental": {"teams": true}` in settings.
 
 ## Install
 
@@ -194,7 +194,7 @@ Enable via `--experimental-teams` flag or settings:
 }
 ```
 
-When enabled, the agent gets access to team coordination tools: `TeamCreate`, `TeamDelete`, `TaskCreate`, `TaskList`, `TaskGet`, `TaskUpdate`, `SendMessage`, `AdvancePhase`.
+When enabled, the agent gets access to team coordination tools: `TeamCreate`, `TeamDelete`, `TaskCreate`, `TaskList`, `TaskGet`, `TaskUpdate`, `SendMessage`, `AdvancePhase`, `TeamStatus`.
 
 **Built-in workflows:**
 
@@ -220,7 +220,19 @@ When enabled, the agent gets access to team coordination tools: `TeamCreate`, `T
 }
 ```
 
-Each phase controls which tools are available to team agents and optionally overrides the model. Phase transitions are managed via the `AdvancePhase` tool.
+Each phase controls which tools are available to team agents and optionally overrides the model. Phase transitions are managed via the `AdvancePhase` tool. Custom workflows from settings take precedence over built-in presets when names conflict.
+
+**File locking:** File locks are scoped to the active task. When a task is completed via `TaskUpdate`, all locks acquired for that task are automatically released. This prevents lock leaks across task boundaries.
+
+**Task dependencies:** Agents cannot claim (set owner on) a task that has unresolved `BlockedBy` dependencies. Clear blockers first, then claim.
+
+**Message ordering:** All inter-agent messages carry a monotonic sequence number and timestamp for reliable ordering.
+
+**Force shutdown:** Send a shutdown request with `force: true` to terminate an agent immediately via context cancellation, bypassing the normal approval flow.
+
+**Team observability:** The `TeamStatus` tool returns structured JSON with member statuses, lock state, task summary (counts by status), and per-agent phase information.
+
+**Context compaction:** When a `PhaseTransitionCallback` is configured, phase changes trigger compaction of the conversation history. The `ArchivingCompactor` stores raw conversation history in the context cache before compaction, providing an escape hatch if compacted summaries lose critical information.
 
 ## Architecture
 

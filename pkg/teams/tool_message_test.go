@@ -184,6 +184,82 @@ func TestSendMessageTool_InvalidType(t *testing.T) {
 	}
 }
 
+func TestSendMessageTool_ForceShutdownRequest(t *testing.T) {
+	reg, mgr := setupMessageTestTeam(t)
+
+	// Subscribe bob to receive the shutdown request.
+	_, priority, err := mgr.Messages.Subscribe("bob", 10)
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	tool := SendMessageTool{Registry: reg, AgentName: "leader"}
+	input, _ := json.Marshal(map[string]any{
+		"team_name": "msg-team",
+		"type":      "shutdown_request",
+		"recipient": "bob",
+		"content":   "shutting you down",
+		"force":     true,
+	})
+
+	result, execErr := tool.Execute(context.Background(), input)
+	if execErr != nil {
+		t.Fatalf("Execute: %v", execErr)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Output)
+	}
+
+	select {
+	case msg := <-priority:
+		if msg.Kind != MessageKindShutdownRequest {
+			t.Errorf("expected shutdown_request kind, got %q", msg.Kind)
+		}
+		if !msg.Force {
+			t.Error("expected Force to be true")
+		}
+	default:
+		t.Fatal("expected force shutdown_request in priority channel")
+	}
+}
+
+func TestSendMessageTool_ShutdownRequestWithoutForce(t *testing.T) {
+	reg, mgr := setupMessageTestTeam(t)
+
+	_, priority, err := mgr.Messages.Subscribe("bob", 10)
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	tool := SendMessageTool{Registry: reg, AgentName: "leader"}
+	input, _ := json.Marshal(map[string]any{
+		"team_name": "msg-team",
+		"type":      "shutdown_request",
+		"recipient": "bob",
+		"content":   "please shut down",
+	})
+
+	result, execErr := tool.Execute(context.Background(), input)
+	if execErr != nil {
+		t.Fatalf("Execute: %v", execErr)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Output)
+	}
+
+	select {
+	case msg := <-priority:
+		if msg.Kind != MessageKindShutdownRequest {
+			t.Errorf("expected shutdown_request kind, got %q", msg.Kind)
+		}
+		if msg.Force {
+			t.Error("expected Force to be false when not set")
+		}
+	default:
+		t.Fatal("expected shutdown_request in priority channel")
+	}
+}
+
 func TestSendMessageTool_ShutdownResponse(t *testing.T) {
 	reg, mgr := setupMessageTestTeam(t)
 

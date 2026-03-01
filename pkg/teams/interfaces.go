@@ -30,9 +30,12 @@ type MessageTransport interface {
 // LockManager provides file-level locking for agents.
 type LockManager interface {
 	Acquire(path string, owner string) error
+	AcquireForTask(path, owner, taskID string) error
 	Release(path string, owner string) error
+	ReleaseByTask(taskID string)
 	Check(path string) (owner string, locked bool)
 	ReleaseAll(owner string)
+	ListLocks() map[string]LockEntry
 }
 
 // ContextCache stores summarized context for phase transitions.
