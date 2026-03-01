@@ -89,6 +89,22 @@ func (s *Session) Turn(ctx context.Context, prompt string) <-chan Message {
 	return out
 }
 
+// TurnWithBlocks sends structured content blocks (text + images) as a user message.
+// Use this instead of Turn when the message includes non-text content.
+func (s *Session) TurnWithBlocks(ctx context.Context, blocks []api.ContentBlock) <-chan Message {
+	s.messages = append(s.messages, api.RequestMessage{
+		Role:    "user",
+		Content: blocks,
+	})
+
+	out := make(chan Message, 64)
+	go func() {
+		defer close(out)
+		s.runTurn(ctx, out)
+	}()
+	return out
+}
+
 // Messages returns the current conversation history.
 func (s *Session) Messages() []api.RequestMessage {
 	return s.messages
