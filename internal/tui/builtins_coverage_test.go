@@ -462,12 +462,6 @@ func TestCmdExport_Markdown(t *testing.T) {
 	}
 }
 
-func TestCmdExport_WriteFailure(t *testing.T) {
-	m := newTestModel()
-	m.session = agent.NewSession(m.agentCfg)
-	// Can't easily trigger write failure without messages, skip this.
-}
-
 // --- cmdCopy ---
 
 func TestCmdCopy_NoResponse(t *testing.T) {
@@ -540,16 +534,6 @@ func TestCmdCopy_SkipsEmptyTextBlocks(t *testing.T) {
 
 // --- cmdExport with temp directory for file write ---
 
-func TestCmdExport_WritesToFile(t *testing.T) {
-	m := newTestModel()
-	m.session = agent.NewSession(m.agentCfg)
-	// Manually create a session with messages by poking at the internals.
-	// Since we can't, we'll test the file write path by providing a writable location.
-	// The session has no messages, so it won't write anything. We already test that above.
-	// Let's instead verify that the path generation works.
-	_ = m
-}
-
 // --- Helper: verify cmdCompact sets correct flags ---
 
 func TestCmdCompact_SetsFlags(t *testing.T) {
@@ -600,18 +584,6 @@ func TestCmdExport_MarkdownToFile(t *testing.T) {
 	if !found {
 		t.Error("expected error when no session")
 	}
-}
-
-// Test writing an export file to a specific path using the os temp dir.
-func TestCmdExport_WritePath(t *testing.T) {
-	// Can't easily create a session with messages for export testing.
-	// The coverage gain for cmdExport is limited without it.
-	// Skip detailed test; the error paths are already covered.
-}
-
-// Test that the export path uses --html flag.
-func TestCmdExport_HTMLFlag(t *testing.T) {
-	// Already tested via the no-session error path above.
 }
 
 // --- cmdExport: successful file write paths ---

@@ -15,6 +15,20 @@ import (
 	"time"
 )
 
+// TestMain stubs keychain operations so tests never trigger macOS Keychain prompts.
+func TestMain(m *testing.M) {
+	readKeychainFn = func() (*OAuthTokens, error) {
+		return nil, fmt.Errorf("keychain disabled in tests")
+	}
+	writeKeychainFn = func(_ *OAuthTokens) error {
+		return nil
+	}
+	removeKeychainFn = func() (bool, error) {
+		return false, nil
+	}
+	os.Exit(m.Run())
+}
+
 // ---------------------------------------------------------------------------
 // 1. PKCE Generation
 // ---------------------------------------------------------------------------
@@ -1103,9 +1117,6 @@ func TestIsExpired_JustOverFiveMinutes(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLogout_WithTokens(t *testing.T) {
-	if os.Getenv("CI") == "" {
-		t.Skip("skipping: Logout() calls RemoveKeychain() which hits macOS Keychain")
-	}
 	setupTempHome(t)
 
 	// Write tokens first.
@@ -1126,9 +1137,6 @@ func TestLogout_WithTokens(t *testing.T) {
 }
 
 func TestLogout_NoCredentials(t *testing.T) {
-	if os.Getenv("CI") == "" {
-		t.Skip("skipping: Logout() calls RemoveKeychain() which hits macOS Keychain")
-	}
 	setupTempHome(t) // empty HOME, no tokens
 
 	// Logout should succeed (prints "No stored credentials found.").

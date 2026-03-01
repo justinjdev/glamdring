@@ -108,13 +108,13 @@ func TestStreamContextCancellation(t *testing.T) {
 // Each call to the server returns the next response in the sequence.
 // If the sequence is exhausted, it returns the last response.
 func newMockSSEServer(responses ...string) *httptest.Server {
-	call := 0
+	var call atomic.Int32
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		idx := call
+		idx := int(call.Load())
 		if idx >= len(responses) {
 			idx = len(responses) - 1
 		}
-		call++
+		call.Add(1)
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -707,9 +707,9 @@ func TestDoWithRetryNonOAuth401(t *testing.T) {
 func TestDoWithRetryOAuth401RetryNetworkError(t *testing.T) {
 	// Server returns 401 on first request, then we simulate a network error
 	// on the retry after refresh.
-	callCount := 0
+	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid token"}}`)
 	}))
@@ -722,7 +722,7 @@ func TestDoWithRetryOAuth401RetryNetworkError(t *testing.T) {
 	origTransport := http.DefaultTransport
 	client.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		resp, err := origTransport.RoundTrip(req)
-		if err == nil && callCount == 1 {
+		if err == nil && callCount.Load() == 1 {
 			// After first 401, close server so retry gets a network error.
 			server.Close()
 		}

@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+// tokenURL is the OAuth token endpoint. Declared as var (not const) to allow
+// test endpoint injection. Tests that override this value must not use t.Parallel().
 var tokenURL = "https://platform.claude.com/v1/oauth/token"
 
 // tokenResponse is the JSON body returned by the token endpoint.
@@ -81,7 +83,7 @@ func RefreshAccessToken(refreshToken string) (*OAuthTokens, error) {
 	}
 
 	// Best-effort keychain update.
-	_ = WriteKeychain(tokens)
+	_ = writeKeychainFn(tokens)
 
 	return tokens, nil
 }

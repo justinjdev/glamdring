@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"unicode/utf8"
 
@@ -56,13 +57,13 @@ func buildSSEResponse(text, stopReason string) string {
 }
 
 func newMockServer(responses ...string) *httptest.Server {
-	call := 0
+	var call atomic.Int32
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		idx := call
+		idx := int(call.Load())
 		if idx >= len(responses) {
 			idx = len(responses) - 1
 		}
-		call++
+		call.Add(1)
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -860,10 +861,10 @@ func TestRunTurn_UnknownStopReason(t *testing.T) {
 
 func TestRunTurn_FallbackModelOnAPIError(t *testing.T) {
 	// First request returns 429, second (after fallback) succeeds.
-	callCount := 0
+	var callCount atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		if callCount == 1 {
+		callCount.Add(1)
+		if callCount.Load() == 1 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
 			fmt.Fprint(w, `{"type":"error","error":{"type":"rate_limit_error","message":"too many requests"}}`)
@@ -900,8 +901,8 @@ func TestRunTurn_FallbackModelOnAPIError(t *testing.T) {
 	if !gotDone {
 		t.Error("expected done message")
 	}
-	if callCount != 2 {
-		t.Errorf("expected 2 API calls (initial + fallback), got %d", callCount)
+	if got := callCount.Load(); got != 2 {
+		t.Errorf("expected 2 API calls (initial + fallback), got %d", got)
 	}
 }
 
@@ -1026,7 +1027,7 @@ func TestRunTurn_TokenCountsAccumulate(t *testing.T) {
 
 func TestRunTurn_ToolExecutionErrorInLoop(t *testing.T) {
 	// Server returns a tool_use response, but tool execution will fail because
-	// context gets cancelled.
+	// context gets cancelled during permission request.
 	var toolUseResp strings.Builder
 	toolUseResp.WriteString("event: message_start\n")
 	toolUseResp.WriteString(`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"test","stop_reason":null,"usage":{"input_tokens":50,"output_tokens":0}}}`)
@@ -1069,22 +1070,25 @@ func TestRunTurn_ToolExecutionErrorInLoop(t *testing.T) {
 	out := s.Turn(ctx, "run bash")
 
 	// Drain messages. When we see a permission request, cancel the context.
-	var msgs []Message
+	var gotPermReq, gotDone bool
 	for m := range out {
 		if m.Type == MessagePermissionRequest {
 			cancel()
+			gotPermReq = true
 		}
-		msgs = append(msgs, m)
+		if m.Type == MessageDone {
+			gotDone = true
+		}
 	}
 
-	var gotErr bool
-	for _, m := range msgs {
-		if m.Type == MessageError {
-			gotErr = true
-		}
+	// The permission request should have been emitted before cancellation.
+	if !gotPermReq {
+		t.Error("expected permission request for Bash tool")
 	}
-	if !gotErr {
-		t.Error("expected error message when tool execution context is cancelled")
+	// After context cancellation, the turn should terminate without emitting
+	// a done message (emit drops messages when context is cancelled).
+	if gotDone {
+		t.Error("expected no done message after context cancellation")
 	}
 }
 

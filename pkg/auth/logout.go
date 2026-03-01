@@ -9,7 +9,7 @@ func Logout() error {
 		return fmt.Errorf("remove tokens from file: %w", err)
 	}
 
-	removedKeychain, _ := RemoveKeychain()
+	removedKeychain, _ := removeKeychainFn()
 
 	if !removedFile && !removedKeychain {
 		fmt.Println("No stored credentials found.")

@@ -19,7 +19,7 @@ func Resolve() (Credentials, error) {
 	}
 
 	// 3. OAuth tokens from macOS Keychain.
-	if tokens, err := ReadKeychain(); err == nil {
+	if tokens, err := readKeychainFn(); err == nil {
 		return NewOAuthCredentials(tokens), nil
 	}
 
