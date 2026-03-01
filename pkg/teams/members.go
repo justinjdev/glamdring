@@ -105,6 +105,16 @@ func (r *InMemoryMemberRegistry) Count() int {
 	return len(r.members)
 }
 
+// FirstMember returns the name of the alphabetically first member, or false
+// if the registry is empty.
+func (r *InMemoryMemberRegistry) FirstMember() (string, bool) {
+	members := r.List()
+	if len(members) == 0 {
+		return "", false
+	}
+	return members[0].Name, true
+}
+
 // ActiveCount returns the number of members whose status is not shutdown.
 func (r *InMemoryMemberRegistry) ActiveCount() int {
 	r.mu.RLock()

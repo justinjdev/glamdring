@@ -119,6 +119,16 @@ func (pr *PhaseRegistry) CurrentPhaseModel() (model string, fallback string) {
 	return phase.Model, phase.Fallback
 }
 
+// CurrentPhaseGate returns the gate type for the current phase, or "" if
+// no gate is configured (defaults to auto).
+func (pr *PhaseRegistry) CurrentPhaseGate() string {
+	phase, _, err := pr.phases.Current(pr.agentName)
+	if err != nil || phase == nil {
+		return ""
+	}
+	return phase.Gate
+}
+
 // allowedNames returns a set of tool names allowed in the current phase,
 // combined with teamTools and readTools. Returns nil if no phases are
 // configured (phase == nil and no error), signaling that all tools should

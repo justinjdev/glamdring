@@ -31,10 +31,12 @@ type WorkflowConfig struct {
 
 // PhaseConfig defines a single phase in a workflow.
 type PhaseConfig struct {
-	Name     string   `json:"name"`
-	Tools    []string `json:"tools"`
-	Model    string   `json:"model,omitempty"`
-	Fallback string   `json:"fallback,omitempty"`
+	Name       string            `json:"name"`
+	Tools      []string          `json:"tools"`
+	Model      string            `json:"model,omitempty"`
+	Fallback   string            `json:"fallback,omitempty"`
+	Gate       string            `json:"gate,omitempty"`
+	GateConfig map[string]string `json:"gate_config,omitempty"`
 }
 
 // IndexerConfig controls the shire code indexer integration.
@@ -255,6 +257,17 @@ func validateWorkflows(workflows map[string]WorkflowConfig) error {
 			}
 			if p.Fallback != "" && !validModelPattern.MatchString(p.Fallback) {
 				log.Printf("warning: workflow %q phase %q has unexpected fallback model name %q", name, p.Name, p.Fallback)
+			}
+			if p.Gate != "" {
+				switch p.Gate {
+				case "auto", "leader", "condition":
+					// valid
+				default:
+					log.Printf("warning: workflow %q phase %q has unknown gate type %q", name, p.Name, p.Gate)
+				}
+			}
+			if p.Gate == "condition" && p.GateConfig["command"] == "" {
+				return fmt.Errorf("workflow %q phase %q: condition gate requires gate_config.command", name, p.Name)
 			}
 		}
 	}

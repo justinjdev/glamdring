@@ -180,10 +180,12 @@ func (m AgentMessage) Validate() error {
 
 // Phase defines a workflow stage with tool access and model configuration.
 type Phase struct {
-	Name     string   `json:"name"`
-	Tools    []string `json:"tools"`
-	Model    string   `json:"model,omitempty"`
-	Fallback string   `json:"fallback,omitempty"`
+	Name       string            `json:"name"`
+	Tools      []string          `json:"tools"`
+	Model      string            `json:"model,omitempty"`
+	Fallback   string            `json:"fallback,omitempty"`
+	Gate       string            `json:"gate,omitempty"`
+	GateConfig map[string]string `json:"gate_config,omitempty"`
 }
 
 // TeamConfig holds the configuration for a team.
@@ -194,4 +196,5 @@ type TeamConfig struct {
 	Phases      []Phase           `json:"phases,omitempty"`
 	Members     []Member          `json:"members,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
+	Leader      string            `json:"leader,omitempty"`
 }

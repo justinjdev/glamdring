@@ -94,6 +94,7 @@ type TeamAgentInfo struct {
 	TeamName  string
 	AgentName string
 	Phase     string
+	Gate      string
 	Members   []string
 	Tools     []string
 }
@@ -107,6 +108,16 @@ func BuildTeamAgentPrompt(info TeamAgentInfo) string {
 	fmt.Fprintf(&b, "- Agent name: %s\n", info.AgentName)
 	if info.Phase != "" {
 		fmt.Fprintf(&b, "- Current phase: %s\n", info.Phase)
+	}
+	if info.Gate != "" {
+		switch info.Gate {
+		case "leader":
+			b.WriteString("- Phase gate: leader (requires lead approval to advance)\n")
+		case "condition":
+			b.WriteString("- Phase gate: condition (requires command to pass before advancing)\n")
+		default:
+			fmt.Fprintf(&b, "- Phase gate: %s\n", info.Gate)
+		}
 	}
 	if len(info.Members) > 0 {
 		fmt.Fprintf(&b, "- Team members: %s\n", strings.Join(info.Members, ", "))
