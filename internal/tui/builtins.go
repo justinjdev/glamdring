@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justin/glamdring/pkg/agent"
 	"github.com/justin/glamdring/pkg/index"
@@ -33,6 +34,7 @@ var builtinCommands = map[string]BuiltinHandler{
 	"yolo":     cmdYolo,
 	"mcp":      cmdMCP,
 	"export":   cmdExport,
+	"copy":     cmdCopy,
 }
 
 // builtinDescriptions provides short help text for each built-in command.
@@ -49,6 +51,7 @@ var builtinDescriptions = map[string]string{
 	"yolo":     "Toggle auto-approve (optionally scope: /yolo bash,write)",
 	"mcp":      "Manage MCP servers and tools",
 	"export":   "Export conversation (--html for HTML format)",
+	"copy":     "Copy last response to clipboard",
 }
 
 // BuiltinNames returns a sorted list of built-in command names.
@@ -523,7 +526,34 @@ func cmdExport(m *Model, args string) tea.Cmd {
 	return nil
 }
 
-const compactPrompt = `Summarize our conversation so far into a compact context block. Be aggressive about compression — discard noise, keep only what matters for continuing work.
+// cmdCopy copies the last assistant response to the system clipboard.
+func cmdCopy(m *Model, args string) tea.Cmd {
+	// Walk blocks backward to find the last text block (assistant response).
+	var text string
+	for i := len(m.output.blocks) - 1; i >= 0; i-- {
+		b := m.output.blocks[i]
+		if b.kind == blockText && strings.TrimSpace(b.content) != "" {
+			text = strings.TrimSpace(b.content)
+			break
+		}
+	}
+
+	if text == "" {
+		m.output.AppendError("No response to copy.")
+		return nil
+	}
+
+	if err := clipboard.WriteAll(text); err != nil {
+		m.output.AppendError(fmt.Sprintf("Clipboard error: %s", err))
+		return nil
+	}
+
+	lines := strings.Count(text, "\n") + 1
+	m.output.AppendSystem(fmt.Sprintf("Copied %d lines to clipboard.", lines))
+	return nil
+}
+
+const compactPrompt =`Summarize our conversation so far into a compact context block. Be aggressive about compression — discard noise, keep only what matters for continuing work.
 
 Output in this exact format:
 

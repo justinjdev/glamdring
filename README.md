@@ -16,6 +16,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Hooks** — shell commands triggered by agent lifecycle events (SessionStart on launch, SessionEnd on exit, ContextThreshold on context usage crossing)
 - **Checkpoint resume** — detects `tmp/checkpoint.md` from `/compact` and offers to load previous session context
 - **Conversation export** — `/export` saves conversation as markdown, `/export --html` for self-contained HTML with syntax highlighting
+- **Clipboard** — `/copy` copies last response to system clipboard; paste via Cmd+V (terminal) or Ctrl+V
 - **Input history** — Up/Down arrow to cycle previous prompts, Ctrl+R for reverse search
 - **Slash commands** — custom prompts from `.claude/commands/` with tab completion
 - **Custom agents** — define specialized subagents in `.claude/agents/`

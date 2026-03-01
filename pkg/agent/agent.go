@@ -140,6 +140,11 @@ func processTurn(ctx context.Context, events <-chan api.StreamEvent, out chan<- 
 				}
 				emit(ctx, out, Message{Type: MessageThinkingDelta, Text: ev.Delta.Thinking})
 
+			case "signature_delta":
+				if ev.Index < len(blocks) {
+					blocks[ev.Index].block.Signature += ev.Delta.Signature
+				}
+
 			case "input_json_delta":
 				if ev.Index < len(blocks) {
 					blocks[ev.Index].inputBuf.WriteString(ev.Delta.PartialJSON)

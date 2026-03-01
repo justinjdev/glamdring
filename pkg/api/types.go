@@ -117,6 +117,9 @@ type Delta struct {
 	// thinking_delta
 	Thinking string `json:"thinking,omitempty"`
 
+	// signature_delta
+	Signature string `json:"signature,omitempty"`
+
 	// input_json_delta
 	PartialJSON string `json:"partial_json,omitempty"`
 
