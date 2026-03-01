@@ -61,7 +61,10 @@ func (SendMessageTool) Schema() json.RawMessage {
 			},
 		},
 	}
-	b, _ := json.Marshal(schema)
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: failed to marshal schema: %v", err))
+	}
 	return json.RawMessage(b)
 }
 
@@ -146,8 +149,11 @@ func (s SendMessageTool) Execute(_ context.Context, input json.RawMessage) (tool
 
 	mgr.Checkins.Reset(s.AgentName)
 
-	out, _ := json.Marshal(map[string]string{
+	out, err := json.Marshal(map[string]string{
 		"message": fmt.Sprintf("%s message sent", in.Type),
 	})
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal result: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }

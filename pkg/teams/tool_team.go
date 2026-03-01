@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/justin/glamdring/pkg/tools"
 )
@@ -62,9 +63,15 @@ func (TeamCreateTool) Schema() json.RawMessage {
 			},
 		},
 	}
-	b, _ := json.Marshal(schema)
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: failed to marshal schema: %v", err))
+	}
 	return json.RawMessage(b)
 }
+
+// validTeamName matches alphanumeric characters, hyphens, and underscores.
+var validTeamName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 func (t TeamCreateTool) Execute(_ context.Context, input json.RawMessage) (tools.Result, error) {
 	var in teamCreateInput
@@ -73,6 +80,9 @@ func (t TeamCreateTool) Execute(_ context.Context, input json.RawMessage) (tools
 	}
 	if in.TeamName == "" {
 		return tools.Result{Output: "team_name is required", IsError: true}, nil
+	}
+	if !validTeamName.MatchString(in.TeamName) {
+		return tools.Result{Output: "team_name must contain only alphanumeric characters, hyphens, and underscores", IsError: true}, nil
 	}
 
 	phases, err := ResolveWorkflow(in.Workflow, nil)
@@ -102,10 +112,13 @@ func (t TeamCreateTool) Execute(_ context.Context, input json.RawMessage) (tools
 		return tools.Result{Output: fmt.Sprintf("failed to create team: %s", err), IsError: true}, nil
 	}
 
-	out, _ := json.Marshal(map[string]string{
+	out, err := json.Marshal(map[string]string{
 		"team_name": in.TeamName,
 		"message":   fmt.Sprintf("team %q created", in.TeamName),
 	})
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal result: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }
 
@@ -135,7 +148,10 @@ func (TeamDeleteTool) Schema() json.RawMessage {
 			},
 		},
 	}
-	b, _ := json.Marshal(schema)
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: failed to marshal schema: %v", err))
+	}
 	return json.RawMessage(b)
 }
 
@@ -152,9 +168,12 @@ func (t TeamDeleteTool) Execute(_ context.Context, input json.RawMessage) (tools
 		return tools.Result{Output: fmt.Sprintf("failed to delete team: %s", err), IsError: true}, nil
 	}
 
-	out, _ := json.Marshal(map[string]string{
+	out, err := json.Marshal(map[string]string{
 		"team_name": in.TeamName,
 		"message":   fmt.Sprintf("team %q deleted", in.TeamName),
 	})
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal result: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }

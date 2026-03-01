@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -14,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justin/glamdring/pkg/agent"
+	"github.com/justin/glamdring/pkg/api"
 	"github.com/justin/glamdring/pkg/commands"
 	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/hooks"
@@ -422,7 +424,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleSubmit processes user input submission.
 func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
-	if msg.Text == "" {
+	if msg.Text == "" && len(msg.Images) == 0 {
 		return m, nil
 	}
 
@@ -445,8 +447,27 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	m.input.history.Add(msg.Text)
-	m.output.AppendUserMessage(msg.Text)
+	if msg.Text != "" {
+		m.input.history.Add(msg.Text)
+	}
+	if len(msg.Images) > 0 {
+		var parts []string
+		for i, img := range msg.Images {
+			if img.Width > 0 && img.Height > 0 {
+				parts = append(parts, fmt.Sprintf("[Image %d: %dx%d]", i+1, img.Width, img.Height))
+			} else {
+				parts = append(parts, fmt.Sprintf("[Image %d]", i+1))
+			}
+		}
+		imageLabel := strings.Join(parts, " ")
+		if msg.Text != "" {
+			m.output.AppendUserMessage(imageLabel + "\n" + msg.Text)
+		} else {
+			m.output.AppendUserMessage(imageLabel)
+		}
+	} else {
+		m.output.AppendUserMessage(msg.Text)
+	}
 	m.input.Reset()
 	m.input.Blur()
 
@@ -479,7 +500,13 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	if m.session == nil {
 		m.session = agent.NewSession(m.agentCfg)
 	}
-	ch := m.session.Turn(turnCtx, prompt)
+	var ch <-chan agent.Message
+	if len(msg.Images) > 0 {
+		blocks := buildContentBlocks(prompt, msg.Images)
+		ch = m.session.TurnWithBlocks(turnCtx, blocks)
+	} else {
+		ch = m.session.Turn(turnCtx, prompt)
+	}
 	return m, tea.Batch(
 		func() tea.Msg { return agentStartedMsg{ch: ch} },
 		m.spinner.Tick,
@@ -877,4 +904,31 @@ func summarizeToolInput(toolName string, input map[string]any) string {
 		return s
 	}
 	return "(no input)"
+}
+
+// buildContentBlocks constructs a []api.ContentBlock from text and images
+// for sending to the Claude vision API.
+func buildContentBlocks(text string, images []PendingImage) []api.ContentBlock {
+	var blocks []api.ContentBlock
+
+	// Images first, then text -- matches Claude Code's ordering.
+	for _, img := range images {
+		blocks = append(blocks, api.ContentBlock{
+			Type: "image",
+			Source: &api.ImageSource{
+				Type:      "base64",
+				MediaType: "image/png",
+				Data:      base64.StdEncoding.EncodeToString(img.Data),
+			},
+		})
+	}
+
+	if text != "" {
+		blocks = append(blocks, api.ContentBlock{
+			Type: "text",
+			Text: text,
+		})
+	}
+
+	return blocks
 }

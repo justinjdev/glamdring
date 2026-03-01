@@ -75,6 +75,16 @@ type ContentBlock struct {
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   string `json:"content,omitempty"`
 	IsError   bool   `json:"is_error,omitempty"`
+
+	// type: "image"
+	Source *ImageSource `json:"source,omitempty"`
+}
+
+// ImageSource represents the source data for an image content block.
+type ImageSource struct {
+	Type      string `json:"type"`       // "base64"
+	MediaType string `json:"media_type"` // "image/png"
+	Data      string `json:"data"`       // base64-encoded image data
 }
 
 // Usage tracks token consumption.
@@ -116,6 +126,9 @@ type Delta struct {
 
 	// thinking_delta
 	Thinking string `json:"thinking,omitempty"`
+
+	// signature_delta
+	Signature string `json:"signature,omitempty"`
 
 	// input_json_delta
 	PartialJSON string `json:"partial_json,omitempty"`
@@ -166,7 +179,7 @@ type sseError struct {
 	} `json:"error"`
 }
 
-// APIError represents a non-retryable error from the Claude API.
+// APIError represents a structured error response from the Claude API.
 type APIError struct {
 	StatusCode int
 	Type       string

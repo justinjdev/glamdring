@@ -237,6 +237,62 @@ func TestUsageCacheFieldsOmittedWhenZero(t *testing.T) {
 	}
 }
 
+func TestContentBlockImageSerialization(t *testing.T) {
+	block := ContentBlock{
+		Type: "image",
+		Source: &ImageSource{
+			Type:      "base64",
+			MediaType: "image/png",
+			Data:      "iVBORw0KGgo=",
+		},
+	}
+
+	data, err := json.Marshal(block)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if decoded["type"] != "image" {
+		t.Errorf("type = %v, want %q", decoded["type"], "image")
+	}
+	source, ok := decoded["source"].(map[string]any)
+	if !ok {
+		t.Fatalf("source is %T, want map", decoded["source"])
+	}
+	if source["type"] != "base64" {
+		t.Errorf("source.type = %v, want %q", source["type"], "base64")
+	}
+	if source["media_type"] != "image/png" {
+		t.Errorf("source.media_type = %v, want %q", source["media_type"], "image/png")
+	}
+	if source["data"] != "iVBORw0KGgo=" {
+		t.Errorf("source.data = %v, want %q", source["data"], "iVBORw0KGgo=")
+	}
+}
+
+func TestContentBlockImageOmitsSourceWhenNil(t *testing.T) {
+	block := ContentBlock{Type: "text", Text: "hello"}
+
+	data, err := json.Marshal(block)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if _, exists := decoded["source"]; exists {
+		t.Error("source should be omitted when nil")
+	}
+}
+
 func TestAPIErrorFormat(t *testing.T) {
 	err := &APIError{
 		StatusCode: 429,

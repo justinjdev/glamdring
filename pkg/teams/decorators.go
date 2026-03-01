@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/justin/glamdring/pkg/config"
@@ -62,6 +63,9 @@ func (s *ScopedTool) checkPath(input json.RawMessage) string {
 		return ""
 	}
 
+	// Normalize to prevent traversal bypasses (e.g. "src/../../secret").
+	parsed.FilePath = filepath.Clean(parsed.FilePath)
+
 	// Check deny patterns first: if any match, block.
 	for _, pattern := range s.denyPatterns {
 		if config.MatchGlobPattern(pattern, parsed.FilePath) {
@@ -94,7 +98,8 @@ type ScopedBash struct {
 
 // NewScopedBash creates a ScopedBash that restricts commands to those matching
 // any of the given command prefixes. If allowCommands is empty, all commands
-// are allowed.
+// are allowed. Prefixes should include a trailing space to avoid partial matches
+// (e.g. "go " not "go") unless exact-prefix semantics are intended.
 func NewScopedBash(inner tools.Tool, allowCommands []string) *ScopedBash {
 	return &ScopedBash{
 		inner:         inner,
@@ -124,6 +129,9 @@ func (s *ScopedBash) ExecuteStreaming(ctx context.Context, input json.RawMessage
 	return s.inner.Execute(ctx, input)
 }
 
+// shellMetachars are characters that can chain or inject additional commands.
+var shellMetachars = []string{";", "&&", "||", "|", "`", "$(", "\n"}
+
 func (s *ScopedBash) checkCommand(input json.RawMessage) string {
 	if len(s.allowCommands) == 0 {
 		return ""
@@ -135,6 +143,15 @@ func (s *ScopedBash) checkCommand(input json.RawMessage) string {
 		return fmt.Sprintf("invalid input: %s", err)
 	}
 	cmd := strings.TrimSpace(parsed.Command)
+
+	// Reject commands containing shell metacharacters that could chain
+	// arbitrary commands after an allowed prefix.
+	for _, meta := range shellMetachars {
+		if strings.Contains(cmd, meta) {
+			return fmt.Sprintf("command contains disallowed shell metacharacter %q", meta)
+		}
+	}
+
 	for _, prefix := range s.allowCommands {
 		if strings.HasPrefix(cmd, prefix) {
 			return ""
@@ -190,14 +207,8 @@ func (d *FileLockDecorator) checkFileLock(input json.RawMessage) string {
 		return fmt.Sprintf("invalid input: %s", err)
 	}
 	if parsed.FilePath != "" {
-		owner, locked := d.locks.Check(parsed.FilePath)
-		if locked && owner != d.agent {
-			return fmt.Sprintf("file %q is locked by agent %q", parsed.FilePath, owner)
-		}
-		if !locked {
-			if err := d.locks.Acquire(parsed.FilePath, d.agent); err != nil {
-				return fmt.Sprintf("failed to acquire lock on %q: %s", parsed.FilePath, err)
-			}
+		if err := d.locks.Acquire(parsed.FilePath, d.agent); err != nil {
+			return fmt.Sprintf("file %q is locked: %s", parsed.FilePath, err)
 		}
 	}
 	return ""
@@ -227,25 +238,25 @@ func (d *CheckinGateDecorator) Description() string      { return d.inner.Descri
 func (d *CheckinGateDecorator) Schema() json.RawMessage  { return d.inner.Schema() }
 
 func (d *CheckinGateDecorator) Execute(ctx context.Context, input json.RawMessage) (tools.Result, error) {
-	count := d.checkins.Increment(d.agent)
-	if count > d.threshold {
+	if d.checkins.Count(d.agent) >= d.threshold {
 		return tools.Result{
 			Output:  fmt.Sprintf("agent has exceeded %d tool calls without checking in; use TaskUpdate or SendMessage to report progress", d.threshold),
 			IsError: true,
 		}, nil
 	}
+	d.checkins.Increment(d.agent)
 	return d.inner.Execute(ctx, input)
 }
 
 // ExecuteStreaming implements tools.StreamingTool if the inner tool supports it.
 func (d *CheckinGateDecorator) ExecuteStreaming(ctx context.Context, input json.RawMessage, onOutput func(string)) (tools.Result, error) {
-	count := d.checkins.Increment(d.agent)
-	if count > d.threshold {
+	if d.checkins.Count(d.agent) >= d.threshold {
 		return tools.Result{
 			Output:  fmt.Sprintf("agent has exceeded %d tool calls without checking in; use TaskUpdate or SendMessage to report progress", d.threshold),
 			IsError: true,
 		}, nil
 	}
+	d.checkins.Increment(d.agent)
 	if st, ok := d.inner.(tools.StreamingTool); ok {
 		return st.ExecuteStreaming(ctx, input, onOutput)
 	}

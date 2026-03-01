@@ -15,14 +15,13 @@ type AdvancePhaseTool struct {
 }
 
 type advancePhaseInput struct {
-	TeamName  string `json:"team_name"`
-	PhaseName string `json:"phase_name"`
+	TeamName string `json:"team_name"`
 }
 
 func (AdvancePhaseTool) Name() string { return "AdvancePhase" }
 
 func (AdvancePhaseTool) Description() string {
-	return "Advance to the next workflow phase or jump to a specific phase by name."
+	return "Advance to the next workflow phase."
 }
 
 func (AdvancePhaseTool) Schema() json.RawMessage {
@@ -34,13 +33,12 @@ func (AdvancePhaseTool) Schema() json.RawMessage {
 				"type":        "string",
 				"description": "Name of the team",
 			},
-			"phase_name": map[string]any{
-				"type":        "string",
-				"description": "Specific phase to advance to (if omitted, advances to next phase)",
-			},
 		},
 	}
-	b, _ := json.Marshal(schema)
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: failed to marshal schema: %v", err))
+	}
 	return json.RawMessage(b)
 }
 
@@ -55,23 +53,18 @@ func (a AdvancePhaseTool) Execute(_ context.Context, input json.RawMessage) (too
 		return *errResult, nil
 	}
 
-	var phase *Phase
-	var err error
-
-	if in.PhaseName != "" {
-		phase, err = mgr.Phases.AdvanceTo(a.AgentName, in.PhaseName)
-	} else {
-		phase, err = mgr.Phases.Advance(a.AgentName)
-	}
-
+	phase, err := mgr.Phases.Advance(a.AgentName)
 	if err != nil {
 		return tools.Result{Output: fmt.Sprintf("failed to advance phase: %s", err), IsError: true}, nil
 	}
 
-	out, _ := json.Marshal(map[string]any{
+	out, err := json.Marshal(map[string]any{
 		"phase_name": phase.Name,
 		"tools":      phase.Tools,
 		"model":      phase.Model,
 	})
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal phase result: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }

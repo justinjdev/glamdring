@@ -2,6 +2,12 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
+func init() {
+	// Prevent lipgloss from querying the terminal for background color.
+	// Without this, the OSC response can leak into the textarea as text.
+	lipgloss.SetHasDarkBackground(true)
+}
+
 // Styles holds all Lip Gloss styles for the TUI.
 type Styles struct {
 	// Input area

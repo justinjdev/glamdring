@@ -16,6 +16,8 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Hooks** — shell commands triggered by agent lifecycle events (SessionStart on launch, SessionEnd on exit, ContextThreshold on context usage crossing)
 - **Checkpoint resume** — detects `tmp/checkpoint.md` from `/compact` and offers to load previous session context
 - **Conversation export** — `/export` saves conversation as markdown, `/export --html` for self-contained HTML with syntax highlighting
+- **Image paste** — `Ctrl+V` pastes clipboard images (screenshots, copied images) for Claude's vision API; multiple images per message supported
+- **Clipboard** — `/copy` copies last response to system clipboard
 - **Input history** — Up/Down arrow to cycle previous prompts, Ctrl+R for reverse search
 - **Slash commands** — custom prompts from `.claude/commands/` with tab completion
 - **Custom agents** — define specialized subagents in `.claude/agents/`
@@ -81,6 +83,7 @@ glamdring
 | `e` | Expand/collapse last tool result (while agent is running) |
 | `y` / `n` / `a` | Permission: yes / no / always |
 | `y` / `n` | Checkpoint prompt: load / skip |
+| `Ctrl+v` | Paste image from clipboard (or text if no image) |
 | `Tab` | Complete slash command |
 | `Shift+Tab` | Toggle YOLO mode (auto-approve all tools) |
 | `Ctrl+c` | Interrupt agent turn (double-press to quit) |

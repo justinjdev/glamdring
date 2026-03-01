@@ -10,6 +10,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/justin/glamdring/pkg/api"
 	"github.com/justin/glamdring/pkg/auth"
 	"github.com/justin/glamdring/pkg/tools"
 )
@@ -423,6 +424,57 @@ func TestTruncateToolResult(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSessionTurnWithBlocksAppendsToHistory(t *testing.T) {
+	srv := newMockServer(buildSSEResponse("I can see the image!", "end_turn"))
+	defer srv.Close()
+
+	s := newTestSession(srv.URL)
+	blocks := []api.ContentBlock{
+		{Type: "image", Source: &api.ImageSource{
+			Type:      "base64",
+			MediaType: "image/png",
+			Data:      "iVBORw0KGgo=",
+		}},
+		{Type: "text", Text: "What is in this image?"},
+	}
+	msgs := drainMessages(s.TurnWithBlocks(context.Background(), blocks))
+
+	var gotText, gotDone bool
+	for _, m := range msgs {
+		if m.Type == MessageTextDelta && m.Text == "I can see the image!" {
+			gotText = true
+		}
+		if m.Type == MessageDone {
+			gotDone = true
+		}
+	}
+	if !gotText {
+		t.Error("expected text delta")
+	}
+	if !gotDone {
+		t.Error("expected done message")
+	}
+
+	// History should have user + assistant.
+	if len(s.Messages()) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(s.Messages()))
+	}
+	if s.Messages()[0].Role != "user" {
+		t.Errorf("first message role = %q, want 'user'", s.Messages()[0].Role)
+	}
+	// Content should be []ContentBlock, not a string.
+	contentBlocks, ok := s.Messages()[0].Content.([]api.ContentBlock)
+	if !ok {
+		t.Fatalf("expected Content to be []ContentBlock, got %T", s.Messages()[0].Content)
+	}
+	if len(contentBlocks) != 2 {
+		t.Fatalf("expected 2 content blocks, got %d", len(contentBlocks))
+	}
+	if contentBlocks[0].Type != "image" {
+		t.Errorf("first block type = %q, want 'image'", contentBlocks[0].Type)
 	}
 }
 

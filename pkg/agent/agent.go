@@ -140,6 +140,11 @@ func processTurn(ctx context.Context, events <-chan api.StreamEvent, out chan<- 
 				}
 				emit(ctx, out, Message{Type: MessageThinkingDelta, Text: ev.Delta.Thinking})
 
+			case "signature_delta":
+				if ev.Index < len(blocks) {
+					blocks[ev.Index].block.Signature += ev.Delta.Signature
+				}
+
 			case "input_json_delta":
 				if ev.Index < len(blocks) {
 					blocks[ev.Index].inputBuf.WriteString(ev.Delta.PartialJSON)
@@ -397,15 +402,21 @@ func executeTools(
 			}
 		}
 
-		// Check for priority inter-agent messages between tool executions.
+		// Drain all pending priority inter-agent messages between tool executions.
 		if priorityCh != nil {
-			select {
-			case msg, ok := <-priorityCh:
-				if ok {
+		drain:
+			for {
+				select {
+				case msg, ok := <-priorityCh:
+					if !ok {
+						priorityCh = nil
+						break drain
+					}
 					text := formatPriorityMessage(msg)
 					results[len(results)-1].Content += "\n\n" + text
+				default:
+					break drain
 				}
-			default:
 			}
 		}
 	}

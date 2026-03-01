@@ -283,7 +283,7 @@ func TestIntegration_ToolsEndToEnd(t *testing.T) {
 	}
 
 	// Update task via tool.
-	taskUpdate := TaskUpdateTool{Registry: registry}
+	taskUpdate := TaskUpdateTool{Registry: registry, AgentName: "worker-1"}
 	input, _ = json.Marshal(map[string]any{
 		"team_name": "e2e-team",
 		"task_id":   taskID,

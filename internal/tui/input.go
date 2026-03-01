@@ -1,14 +1,25 @@
 package tui
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
+// PendingImage holds a clipboard image staged for submission.
+type PendingImage struct {
+	Data   []byte // raw PNG bytes
+	Width  int    // image width in pixels
+	Height int    // image height in pixels
+}
+
 // SubmitMsg is emitted when the user presses Enter to submit input.
 type SubmitMsg struct {
-	Text string
+	Text   string
+	Images []PendingImage
 }
 
 // InputModel wraps a bubbles textarea for multiline user input.
@@ -23,6 +34,9 @@ type InputModel struct {
 
 	// history tracks input history for Up/Down navigation.
 	history History
+
+	// pendingImages holds images staged via Ctrl+V for the next submission.
+	pendingImages []PendingImage
 
 	// searching is true when Ctrl+R reverse search is active.
 	searching bool
@@ -96,15 +110,39 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 			return m.handleSearchKey(msg)
 		}
 
+		// Handle Ctrl+V: check clipboard for image first, then text.
+		if msg.Type == tea.KeyCtrlV {
+			if imgData, ok := ReadClipboardImage(); ok {
+				w, h := pngDimensions(imgData)
+				if w > 0 && h > 0 {
+					m.pendingImages = append(m.pendingImages, PendingImage{
+						Data:   imgData,
+						Width:  w,
+						Height: h,
+					})
+					return m, nil
+				}
+				// Not a valid PNG; fall through to text paste.
+			}
+			// No image -- fall through to paste text.
+			if text, ok := ReadClipboardText(); ok {
+				m.textarea.InsertString(text)
+				return m, nil
+			}
+			return m, nil
+		}
+
 		switch msg.Type {
 		case tea.KeyEnter:
 			value := m.textarea.Value()
-			if value == "" {
+			if value == "" && len(m.pendingImages) == 0 {
 				return m, nil
 			}
 			m.history.ResetCursor()
+			images := m.pendingImages
+			m.pendingImages = nil
 			return m, func() tea.Msg {
-				return SubmitMsg{Text: value}
+				return SubmitMsg{Text: value, Images: images}
 			}
 
 		case tea.KeyUp:
@@ -213,8 +251,23 @@ func (m InputModel) View() string {
 	if m.searching {
 		return m.renderSearch()
 	}
-	border := m.styles.InputBorder.Width(m.width - 2) // account for border
-	return border.Render(m.textarea.View())
+	border := m.styles.InputBorder.Width(m.width - 2)
+	var content string
+	if len(m.pendingImages) > 0 {
+		var indicators []string
+		for i, img := range m.pendingImages {
+			if img.Width > 0 && img.Height > 0 {
+				indicators = append(indicators, fmt.Sprintf("[Image %d: %dx%d]", i+1, img.Width, img.Height))
+			} else {
+				indicators = append(indicators, fmt.Sprintf("[Image %d]", i+1))
+			}
+		}
+		imageBar := lipgloss.NewStyle().Foreground(colorAmber).Render(strings.Join(indicators, " "))
+		content = imageBar + "\n" + m.textarea.View()
+	} else {
+		content = m.textarea.View()
+	}
+	return border.Render(content)
 }
 
 // renderSearch renders the Ctrl+R reverse search prompt.
@@ -250,9 +303,10 @@ func (m InputModel) Value() string {
 	return m.textarea.Value()
 }
 
-// Reset clears the input text.
+// Reset clears the input text and any staged images.
 func (m *InputModel) Reset() {
 	m.textarea.Reset()
+	m.pendingImages = nil
 }
 
 // Focus gives focus to the input.
@@ -289,4 +343,25 @@ func (m InputModel) CmdName() string {
 // SetAvailableCommands sets the list of slash command names for tab completion.
 func (m *InputModel) SetAvailableCommands(names []string) {
 	m.slashCmd.SetCommands(names)
+}
+
+// pngDimensions extracts width and height from a PNG file's IHDR chunk.
+// Returns 0, 0 if the data is not a valid PNG.
+func pngDimensions(data []byte) (int, int) {
+	// PNG header: 8-byte signature, then IHDR chunk.
+	// IHDR starts at byte 16: 4 bytes width, 4 bytes height (big-endian).
+	if len(data) < 24 {
+		return 0, 0
+	}
+	// Check PNG signature.
+	if data[0] != 0x89 || data[1] != 'P' || data[2] != 'N' || data[3] != 'G' {
+		return 0, 0
+	}
+	// Verify IHDR chunk type.
+	if data[12] != 'I' || data[13] != 'H' || data[14] != 'D' || data[15] != 'R' {
+		return 0, 0
+	}
+	w := int(data[16])<<24 | int(data[17])<<16 | int(data[18])<<8 | int(data[19])
+	h := int(data[20])<<24 | int(data[21])<<16 | int(data[22])<<8 | int(data[23])
+	return w, h
 }

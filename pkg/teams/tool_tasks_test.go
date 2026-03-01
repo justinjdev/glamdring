@@ -144,7 +144,7 @@ func TestTaskGetTool_NotFound(t *testing.T) {
 func TestTaskUpdateTool_UpdatesStatus(t *testing.T) {
 	reg := setupTaskTestTeam(t)
 	createTool := TaskCreateTool{Registry: reg}
-	updateTool := TaskUpdateTool{Registry: reg}
+	updateTool := TaskUpdateTool{Registry: reg, AgentName: "alice"}
 
 	createInput, _ := json.Marshal(map[string]string{"team_name": "proj", "subject": "update me"})
 	createResult, _ := createTool.Execute(context.Background(), createInput)
@@ -179,7 +179,7 @@ func TestTaskUpdateTool_UpdatesStatus(t *testing.T) {
 func TestTaskUpdateTool_CASOwnership(t *testing.T) {
 	reg := setupTaskTestTeam(t)
 	createTool := TaskCreateTool{Registry: reg}
-	updateTool := TaskUpdateTool{Registry: reg}
+	updateTool := TaskUpdateTool{Registry: reg, AgentName: "alice"}
 
 	createInput, _ := json.Marshal(map[string]string{"team_name": "proj", "subject": "cas test", "owner": "alice"})
 	createResult, _ := createTool.Execute(context.Background(), createInput)
@@ -227,7 +227,7 @@ func TestTaskUpdateTool_CASOwnership(t *testing.T) {
 func TestTaskUpdateTool_ResetsCheckin(t *testing.T) {
 	reg := setupTaskTestTeam(t)
 	createTool := TaskCreateTool{Registry: reg}
-	updateTool := TaskUpdateTool{Registry: reg}
+	updateTool := TaskUpdateTool{Registry: reg, AgentName: "alice"}
 
 	mgr := reg.Get("proj")
 	mgr.Checkins.Increment("alice")
@@ -242,10 +242,9 @@ func TestTaskUpdateTool_ResetsCheckin(t *testing.T) {
 	json.Unmarshal([]byte(createResult.Output), &created)
 
 	updateInput, _ := json.Marshal(map[string]any{
-		"team_name":  "proj",
-		"task_id":    created["task_id"],
-		"status":     "in_progress",
-		"agent_name": "alice",
+		"team_name": "proj",
+		"task_id":   created["task_id"],
+		"status":    "in_progress",
 	})
 	result, _ := updateTool.Execute(context.Background(), updateInput)
 	if result.IsError {

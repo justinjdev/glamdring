@@ -61,6 +61,11 @@ func exportMarkdown(msgs []api.RequestMessage) string {
 				b.WriteString("```\n")
 				b.WriteString(block.Content)
 				b.WriteString("\n```\n\n")
+
+			case "image":
+				if block.Source != nil {
+					b.WriteString(fmt.Sprintf("[Image: %s]\n\n", block.Source.MediaType))
+				}
 			}
 		}
 	}
@@ -116,6 +121,11 @@ func exportHTML(msgs []api.RequestMessage) string {
 					cls = "tool-error"
 				}
 				body.WriteString(fmt.Sprintf(`<div class="%s"><pre>%s</pre></div>`, cls, html.EscapeString(block.Content)))
+
+			case "image":
+				if block.Source != nil {
+					body.WriteString(fmt.Sprintf(`<div class="image-ref">[Image: %s]</div>`, html.EscapeString(block.Source.MediaType)))
+				}
 			}
 		}
 

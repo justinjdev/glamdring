@@ -19,8 +19,16 @@ func NewInMemoryMemberRegistry() *InMemoryMemberRegistry {
 	}
 }
 
-// Add registers a new member. Returns an error if the name is already taken.
+// Add registers a new member. Returns an error if the name is already taken
+// or if required fields are missing.
 func (r *InMemoryMemberRegistry) Add(member Member) error {
+	if member.Name == "" {
+		return fmt.Errorf("member name must not be empty")
+	}
+	if !member.Status.Valid() {
+		return fmt.Errorf("invalid member status %q", member.Status)
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -57,8 +65,13 @@ func (r *InMemoryMemberRegistry) Get(name string) (*Member, error) {
 	return &copy, nil
 }
 
-// SetStatus updates a member's status. Returns an error if not found.
+// SetStatus updates a member's status. Returns an error if not found or if
+// the status is invalid.
 func (r *InMemoryMemberRegistry) SetStatus(name string, status MemberStatus) error {
+	if !status.Valid() {
+		return fmt.Errorf("invalid member status %q", status)
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

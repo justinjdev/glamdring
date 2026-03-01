@@ -49,7 +49,10 @@ func (TaskCreateTool) Schema() json.RawMessage {
 			},
 		},
 	}
-	b, _ := json.Marshal(schema)
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: failed to marshal schema: %v", err))
+	}
 	return json.RawMessage(b)
 }
 
@@ -80,10 +83,13 @@ func (t TaskCreateTool) Execute(_ context.Context, input json.RawMessage) (tools
 		return tools.Result{Output: fmt.Sprintf("failed to create task: %s", err), IsError: true}, nil
 	}
 
-	out, _ := json.Marshal(map[string]string{
+	out, err := json.Marshal(map[string]string{
 		"task_id": created.ID,
 		"subject": created.Subject,
 	})
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal result: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }
 
@@ -113,7 +119,10 @@ func (TaskListTool) Schema() json.RawMessage {
 			},
 		},
 	}
-	b, _ := json.Marshal(schema)
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: failed to marshal schema: %v", err))
+	}
 	return json.RawMessage(b)
 }
 
@@ -129,7 +138,10 @@ func (t TaskListTool) Execute(_ context.Context, input json.RawMessage) (tools.R
 	}
 
 	summaries := mgr.Tasks.List()
-	out, _ := json.Marshal(summaries)
+	out, err := json.Marshal(summaries)
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal task list: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }
 
@@ -164,7 +176,10 @@ func (TaskGetTool) Schema() json.RawMessage {
 			},
 		},
 	}
-	b, _ := json.Marshal(schema)
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: failed to marshal schema: %v", err))
+	}
 	return json.RawMessage(b)
 }
 
@@ -188,13 +203,17 @@ func (t TaskGetTool) Execute(_ context.Context, input json.RawMessage) (tools.Re
 		return tools.Result{Output: fmt.Sprintf("failed to get task: %s", err), IsError: true}, nil
 	}
 
-	out, _ := json.Marshal(task)
+	out, err := json.Marshal(task)
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal task: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }
 
 // TaskUpdateTool updates an existing task's fields.
 type TaskUpdateTool struct {
-	Registry *ManagerRegistry
+	Registry  *ManagerRegistry
+	AgentName string // trusted identity for checkin reset
 }
 
 type taskUpdateInput struct {
@@ -205,7 +224,6 @@ type taskUpdateInput struct {
 	Description   string   `json:"description"`
 	Owner         string   `json:"owner"`
 	ExpectedOwner string   `json:"expected_owner"`
-	AgentName     string   `json:"agent_name"`
 	AddBlocks     []string `json:"add_blocks"`
 	AddBlockedBy  []string `json:"add_blocked_by"`
 }
@@ -249,10 +267,6 @@ func (TaskUpdateTool) Schema() json.RawMessage {
 				"type":        "string",
 				"description": "Expected current owner for compare-and-swap",
 			},
-			"agent_name": map[string]any{
-				"type":        "string",
-				"description": "Name of the calling agent (used for checkin reset)",
-			},
 			"add_blocks": map[string]any{
 				"type":        "array",
 				"description": "Task IDs that this task blocks",
@@ -265,7 +279,10 @@ func (TaskUpdateTool) Schema() json.RawMessage {
 			},
 		},
 	}
-	b, _ := json.Marshal(schema)
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: failed to marshal schema: %v", err))
+	}
 	return json.RawMessage(b)
 }
 
@@ -317,10 +334,13 @@ func (t TaskUpdateTool) Execute(_ context.Context, input json.RawMessage) (tools
 		return tools.Result{Output: fmt.Sprintf("failed to update task: %s", err), IsError: true}, nil
 	}
 
-	if in.AgentName != "" {
-		mgr.Checkins.Reset(in.AgentName)
+	if t.AgentName != "" {
+		mgr.Checkins.Reset(t.AgentName)
 	}
 
-	out, _ := json.Marshal(updated)
+	out, err := json.Marshal(updated)
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to marshal result: %s", err), IsError: true}, nil
+	}
 	return tools.Result{Output: string(out)}, nil
 }

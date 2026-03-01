@@ -139,6 +139,9 @@ func loadProjectSettings(cwd string) (Settings, bool) {
 func loadSettingsFile(path string) (Settings, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("warning: could not read settings file %s: %v", path, err)
+		}
 		return Settings{}, false
 	}
 

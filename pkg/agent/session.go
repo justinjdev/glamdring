@@ -89,6 +89,22 @@ func (s *Session) Turn(ctx context.Context, prompt string) <-chan Message {
 	return out
 }
 
+// TurnWithBlocks sends structured content blocks (text + images) as a user message.
+// Use this instead of Turn when the message includes non-text content.
+func (s *Session) TurnWithBlocks(ctx context.Context, blocks []api.ContentBlock) <-chan Message {
+	s.messages = append(s.messages, api.RequestMessage{
+		Role:    "user",
+		Content: blocks,
+	})
+
+	out := make(chan Message, 64)
+	go func() {
+		defer close(out)
+		s.runTurn(ctx, out)
+	}()
+	return out
+}
+
 // Messages returns the current conversation history.
 func (s *Session) Messages() []api.RequestMessage {
 	return s.messages
@@ -270,23 +286,31 @@ func (s *Session) drainRegularMessages() {
 		return
 	}
 	var msgs []string
+drain:
 	for {
 		select {
 		case msg, ok := <-s.regularCh:
 			if !ok {
 				s.regularCh = nil
-				goto done
+				break drain
 			}
 			if text := formatTeamMessage(msg); text != "" {
 				msgs = append(msgs, text)
 			}
 		default:
-			goto done
+			break drain
 		}
 	}
-done:
 	if len(msgs) > 0 {
 		combined := strings.Join(msgs, "\n\n")
+		// If the last message is already a user message, merge to avoid
+		// consecutive user-role messages (which violate the API contract).
+		if n := len(s.messages); n > 0 && s.messages[n-1].Role == "user" {
+			if existing, ok := s.messages[n-1].Content.(string); ok {
+				s.messages[n-1].Content = existing + "\n\n" + combined
+				return
+			}
+		}
 		s.messages = append(s.messages, api.RequestMessage{
 			Role:    "user",
 			Content: combined,

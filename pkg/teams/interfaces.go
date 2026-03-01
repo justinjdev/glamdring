@@ -18,7 +18,6 @@ type TaskStorage interface {
 	Update(id string, update TaskUpdate) (*Task, error)
 	List() []TaskSummary
 	Delete(id string) error
-	NextID() string
 }
 
 // MessageTransport handles inter-agent message delivery.

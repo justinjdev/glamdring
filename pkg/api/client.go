@@ -53,7 +53,7 @@ func (c *Client) SetEndpoint(url string) {
 	c.endpoint = url
 }
 
-// supportsThinking returns true if the model supports adaptive thinking.
+// supportsThinking returns true if the model supports extended thinking.
 func (c *Client) supportsThinking() bool {
 	m := strings.ToLower(c.model)
 	return strings.Contains(m, "opus-4") || strings.Contains(m, "sonnet-4")

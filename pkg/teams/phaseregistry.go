@@ -61,7 +61,10 @@ func (pr *PhaseRegistry) Schemas() []json.RawMessage {
 				"description":  t.Description(),
 				"input_schema": json.RawMessage(t.Schema()),
 			}
-			b, _ := json.Marshal(schema)
+			b, err := json.Marshal(schema)
+			if err != nil {
+				panic(fmt.Sprintf("BUG: failed to marshal tool schema for %q: %v", t.Name(), err))
+			}
 			out = append(out, b)
 		}
 	}
