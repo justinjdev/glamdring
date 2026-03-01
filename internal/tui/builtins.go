@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justin/glamdring/pkg/agent"
 	"github.com/justin/glamdring/pkg/index"
@@ -528,7 +527,6 @@ func cmdExport(m *Model, args string) tea.Cmd {
 
 // cmdCopy copies the last assistant response to the system clipboard.
 func cmdCopy(m *Model, args string) tea.Cmd {
-	// Walk blocks backward to find the last text block (assistant response).
 	var text string
 	for i := len(m.output.blocks) - 1; i >= 0; i-- {
 		b := m.output.blocks[i]
@@ -543,10 +541,7 @@ func cmdCopy(m *Model, args string) tea.Cmd {
 		return nil
 	}
 
-	if err := clipboard.WriteAll(text); err != nil {
-		m.output.AppendError(fmt.Sprintf("Clipboard error: %s", err))
-		return nil
-	}
+	WriteClipboardText(text)
 
 	lines := strings.Count(text, "\n") + 1
 	m.output.AppendSystem(fmt.Sprintf("Copied %d lines to clipboard.", lines))
