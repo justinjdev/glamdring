@@ -176,7 +176,9 @@ func TestFileTaskStorage_CompletionClearsBlockedBy(t *testing.T) {
 	t3, _ := s.Create(Task{Subject: "task 3", Status: TaskStatusPending, BlockedBy: []string{t1.ID, "other"}})
 
 	inProgress := TaskStatusInProgress
-	s.Update(t1.ID, TaskUpdate{Status: &inProgress})
+	if _, err := s.Update(t1.ID, TaskUpdate{Status: &inProgress}); err != nil {
+		t.Fatalf("transition to in_progress: %v", err)
+	}
 	completed := TaskStatusCompleted
 	_, err := s.Update(t1.ID, TaskUpdate{Status: &completed})
 	if err != nil {
@@ -303,9 +305,13 @@ func TestFileTaskStorage_RejectClaimOnBlockedTask(t *testing.T) {
 
 	// After unblocking (completing t1), claiming should succeed.
 	inProgress := TaskStatusInProgress
-	s.Update(t1.ID, TaskUpdate{Status: &inProgress})
+	if _, err = s.Update(t1.ID, TaskUpdate{Status: &inProgress}); err != nil {
+		t.Fatalf("transition to in_progress: %v", err)
+	}
 	completed := TaskStatusCompleted
-	s.Update(t1.ID, TaskUpdate{Status: &completed})
+	if _, err = s.Update(t1.ID, TaskUpdate{Status: &completed}); err != nil {
+		t.Fatalf("transition to completed: %v", err)
+	}
 
 	_, err = s.Update(t2.ID, TaskUpdate{Owner: &owner})
 	if err != nil {

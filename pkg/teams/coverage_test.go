@@ -385,11 +385,12 @@ func TestFileTaskStorage_CompletionClearsBlockedBy_WithNonJSONFiles(t *testing.T
 	os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hello"), 0644)
 
 	inProgress := TaskStatusInProgress
-	s.Update(t1.ID, TaskUpdate{Status: &inProgress})
+	if _, err := s.Update(t1.ID, TaskUpdate{Status: &inProgress}); err != nil {
+		t.Fatalf("transition to in_progress: %v", err)
+	}
 	completed := TaskStatusCompleted
-	_, err := s.Update(t1.ID, TaskUpdate{Status: &completed})
-	if err != nil {
-		t.Fatalf("Update: %v", err)
+	if _, err := s.Update(t1.ID, TaskUpdate{Status: &completed}); err != nil {
+		t.Fatalf("transition to completed: %v", err)
 	}
 }
 
@@ -1685,7 +1686,9 @@ func TestFileTaskStorage_UpdateCompletionClearBlockedByWithCorruptFile(t *testin
 	os.WriteFile(filepath.Join(dir, "99.json"), []byte("not json"), 0644)
 
 	inProgress := TaskStatusInProgress
-	s.Update(t1.ID, TaskUpdate{Status: &inProgress})
+	if _, err := s.Update(t1.ID, TaskUpdate{Status: &inProgress}); err != nil {
+		t.Fatalf("transition to in_progress: %v", err)
+	}
 	completed := TaskStatusCompleted
 	// This should succeed but log a warning about the corrupt file.
 	_, err := s.Update(t1.ID, TaskUpdate{Status: &completed})

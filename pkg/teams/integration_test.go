@@ -80,7 +80,7 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		}
 	}
 
-	// Update task1: assign owner and complete it.
+	// Update task1: assign owner, start, and complete it.
 	owner := "agent-1"
 	_, err = mgr.Tasks.Update(task1.ID, TaskUpdate{Owner: &owner})
 	if err != nil {
