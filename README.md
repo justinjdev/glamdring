@@ -26,22 +26,28 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 
 ## Install
 
+```sh
+curl -fsSL https://raw.githubusercontent.com/justinjdev/glamdring/main/install.sh | sh
 ```
-go install github.com/justin/glamdring/cmd/glamdring@latest
+
+Pin a specific version:
+
+```sh
+GLAMDRING_VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/justinjdev/glamdring/main/install.sh | sh
+```
+
+Override the install directory (default: `~/.local/bin`):
+
+```sh
+GLAMDRING_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/justinjdev/glamdring/main/install.sh | sudo sh
 ```
 
 Or build from source:
 
-```
-git clone <repo-url>
+```sh
+git clone https://github.com/justinjdev/glamdring.git
 cd glamdring
-go build -o glamdring ./cmd/glamdring
-```
-
-To inject a version at build time:
-
-```
-go build -ldflags "-X main.version=v1.0.0" -o glamdring ./cmd/glamdring
+go build -ldflags "-X main.version=$(git describe --tags)" -o glamdring ./cmd/glamdring
 ```
 
 ## Usage
