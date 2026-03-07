@@ -731,6 +731,7 @@ func (m Model) handleCheckpointKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.input.Focus()
 	case "n", "N":
 		m.checkpointContent = ""
+		m.output.Clear()
 		m.state = StateInput
 		return m, m.input.Focus()
 	}

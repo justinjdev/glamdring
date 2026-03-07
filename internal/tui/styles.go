@@ -92,30 +92,35 @@ type ThemePalette struct {
 }
 
 var builtinThemes = map[string]ThemePalette{
+	// glamdring: Cool steel-blue -- the elven blade glows icy blue in darkness.
 	"glamdring": {
-		Name: "glamdring", Bg: "#1a1a1f", Fg: "#b0b8c4", FgDim: "#5a6270", FgBright: "#e0e4ea",
-		Primary: "#7daea3", Secondary: "#a0c4d0", Success: "#7dba6e", Error: "#d46a6a",
-		Info: "#7daea3", Subtle: "#9080a8", Surface0: "#202028", Surface1: "#2a2a34", Surface2: "#363640",
+		Name: "glamdring", Bg: "#0e1118", Fg: "#8898b0", FgDim: "#4a5568", FgBright: "#c8d6e5",
+		Primary: "#5b9bd5", Secondary: "#7eb8da", Success: "#56b886", Error: "#e06c75",
+		Info: "#5b9bd5", Subtle: "#8673b0", Surface0: "#161b26", Surface1: "#1e2536", Surface2: "#283044",
 	},
+	// rivendell: Silver and starlight -- ethereal elven architecture under stars.
 	"rivendell": {
-		Name: "rivendell", Bg: "#171b22", Fg: "#a8b5c2", FgDim: "#4e5a68", FgBright: "#d8dce4",
-		Primary: "#6ec4a7", Secondary: "#8ba8c4", Success: "#6eb88a", Error: "#c87070",
-		Info: "#7a9cb8", Subtle: "#8878a0", Surface0: "#1e2430", Surface1: "#262e3a", Surface2: "#303a46",
+		Name: "rivendell", Bg: "#0c1014", Fg: "#94a8be", FgDim: "#445566", FgBright: "#d4dde8",
+		Primary: "#a4b8d0", Secondary: "#7c9ab8", Success: "#6dbd8e", Error: "#cc6666",
+		Info: "#8caabe", Subtle: "#9488c0", Surface0: "#121822", Surface1: "#1a2230", Surface2: "#242e40",
 	},
+	// mithril: Bright cyan-silver -- the shimmering dwarf-metal, impossibly light.
 	"mithril": {
-		Name: "mithril", Bg: "#141820", Fg: "#b4bcc8", FgDim: "#4c5666", FgBright: "#e2e6ec",
-		Primary: "#56d4e0", Secondary: "#7e9ab8", Success: "#5cc4a0", Error: "#e06060",
-		Info: "#6eaac4", Subtle: "#7880a8", Surface0: "#1a2028", Surface1: "#222a34", Surface2: "#2c3640",
+		Name: "mithril", Bg: "#080c12", Fg: "#a0b0c0", FgDim: "#4a5a6a", FgBright: "#dce4ee",
+		Primary: "#40e0d0", Secondary: "#60c0d0", Success: "#44d4a0", Error: "#f06060",
+		Info: "#50c8e0", Subtle: "#6880c0", Surface0: "#0e1420", Surface1: "#162030", Surface2: "#202e40",
 	},
+	// lothlorien: Golden-amber -- mallorn trees with golden leaves, lantern light.
 	"lothlorien": {
-		Name: "lothlorien", Bg: "#151820", Fg: "#b0b8a8", FgDim: "#566050", FgBright: "#dce0d4",
-		Primary: "#c9b458", Secondary: "#a8965c", Success: "#8eb86e", Error: "#d47060",
-		Info: "#8ea8b8", Subtle: "#8890a0", Surface0: "#1c2028", Surface1: "#242a32", Surface2: "#2e363e",
+		Name: "lothlorien", Bg: "#141008", Fg: "#c4b890", FgDim: "#706848", FgBright: "#e8dcc0",
+		Primary: "#dab040", Secondary: "#c09840", Success: "#8eb854", Error: "#d06848",
+		Info: "#b8a060", Subtle: "#a08860", Surface0: "#1c1810", Surface1: "#28221a", Surface2: "#342e22",
 	},
+	// shire: Warm russet-earth -- hobbit holes, hearth fires, autumn leaves.
 	"shire": {
-		Name: "shire", Bg: "#1a1612", Fg: "#d4be98", FgDim: "#7c6f64", FgBright: "#ebdbb2",
-		Primary: "#e78a4e", Secondary: "#d8a657", Success: "#a9b665", Error: "#ea6962",
-		Info: "#7daea3", Subtle: "#d3869b", Surface0: "#282420", Surface1: "#32302f", Surface2: "#3c3836",
+		Name: "shire", Bg: "#1a1210", Fg: "#d4be98", FgDim: "#7c6f5c", FgBright: "#ecdcc0",
+		Primary: "#e07838", Secondary: "#d89840", Success: "#88b44c", Error: "#e05040",
+		Info: "#c08848", Subtle: "#c87090", Surface0: "#261e18", Surface1: "#342a22", Surface2: "#44382e",
 	},
 }
 
