@@ -1447,13 +1447,17 @@ func TestInitMCPStatus_WithManager(t *testing.T) {
 }
 
 func TestCurrentGitBranch_ValidRepo(t *testing.T) {
-	// The test directory itself is in a git repo.
-	branch := currentGitBranch("/Users/justin/git/glamdring")
-	if branch == "unknown" {
-		t.Error("expected a real branch name in the glamdring repo")
+	// Use the working directory of the test process, which is within the repo.
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if branch == "" {
-		t.Error("expected non-empty branch name")
+	branch := currentGitBranch(wd)
+	// In CI (detached HEAD), git rev-parse --abbrev-ref HEAD returns "HEAD".
+	// Locally it returns the branch name. Either is valid; only "unknown"
+	// (our error sentinel) or empty indicates a problem.
+	if branch == "unknown" || branch == "" {
+		t.Errorf("expected a branch name or HEAD, got %q", branch)
 	}
 }
 
