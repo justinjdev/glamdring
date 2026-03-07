@@ -178,6 +178,19 @@ func (m *Model) SetSettings(s config.Settings) {
 	m.settings = s
 }
 
+// SetTheme applies a theme palette to the model, rebuilding all styles.
+func (m *Model) SetTheme(p ThemePalette, highContrast bool) {
+	if highContrast {
+		p = HighContrastTransform(p)
+	}
+	m.palette = p
+	m.styles = DefaultStyles(p)
+	m.input = NewInputModel(m.styles, p)
+	m.output.styles = m.styles
+	m.statusbar.styles = m.styles
+	m.spinner.Style = lipgloss.NewStyle().Foreground(p.Primary)
+}
+
 // SetMCPManager stores the MCP manager for /mcp command and status bar updates.
 func (m *Model) SetMCPManager(mgr *mcp.Manager) {
 	m.mcpMgr = mgr

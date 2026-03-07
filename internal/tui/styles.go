@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/justin/glamdring/pkg/config"
 )
 
 func init() {
@@ -133,6 +134,25 @@ func ThemeNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// PaletteFromUserConfig converts a UserThemeConfig to a ThemePalette.
+func PaletteFromUserConfig(name string, c config.UserThemeConfig) ThemePalette {
+	return ThemePalette{
+		Name: name, Bg: lipgloss.Color(c.Bg), Fg: lipgloss.Color(c.Fg),
+		FgDim: lipgloss.Color(c.FgDim), FgBright: lipgloss.Color(c.FgBright),
+		Primary: lipgloss.Color(c.Primary), Secondary: lipgloss.Color(c.Secondary),
+		Success: lipgloss.Color(c.Success), Error: lipgloss.Color(c.Error),
+		Info: lipgloss.Color(c.Info), Subtle: lipgloss.Color(c.Subtle),
+		Surface0: lipgloss.Color(c.Surface0), Surface1: lipgloss.Color(c.Surface1),
+		Surface2: lipgloss.Color(c.Surface2),
+	}
+}
+
+// HighContrastTransform boosts contrast on a palette for accessibility.
+func HighContrastTransform(p ThemePalette) ThemePalette {
+	// TODO: implement in Task 5
+	return p
 }
 
 // DefaultStyles creates theme styles from the given palette.
