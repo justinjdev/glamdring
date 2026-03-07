@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -690,8 +691,8 @@ func TestIntegration_PasteImageThenSubmit(t *testing.T) {
 
 func TestIntegration_LongResponseWithNewlines(t *testing.T) {
 	var longText strings.Builder
-	for i := 0; i < 50; i++ {
-		longText.WriteString(fmt.Sprintf("Line %d of output\\n", i))
+	for i := range 50 {
+		fmt.Fprintf(&longText, "Line %d of output\\n", i)
 	}
 
 	th := NewTestHarness(t, []string{
@@ -707,5 +708,448 @@ func TestIntegration_LongResponseWithNewlines(t *testing.T) {
 	// Should have text content.
 	if th.BlocksOfKind(blockText) == 0 {
 		t.Error("expected text blocks in output")
+	}
+}
+
+// --- Checkpoint tests ---
+
+func TestIntegration_CheckpointAccept(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("ok", "end_turn"),
+	})
+
+	// Simulate a checkpoint being found at startup.
+	th.SendMsg(checkpointFoundMsg{content: "Previous session context here"})
+
+	if th.State() != StateCheckpoint {
+		t.Fatalf("expected StateCheckpoint, got %d", th.State())
+	}
+
+	// View should show the checkpoint prompt.
+	th.RequireViewContains("Load checkpoint")
+
+	// Press 'y' to accept.
+	th.SendKey("y")
+
+	if th.State() != StateInput {
+		t.Errorf("expected StateInput after accepting, got %d", th.State())
+	}
+
+	// System prompt should be augmented with checkpoint content.
+	if !strings.Contains(th.Model.agentCfg.SystemPrompt, "Previous session context here") {
+		t.Error("expected checkpoint content in system prompt")
+	}
+}
+
+func TestIntegration_CheckpointReject(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("ok", "end_turn"),
+	})
+
+	th.SendMsg(checkpointFoundMsg{content: "Old context"})
+	if th.State() != StateCheckpoint {
+		t.Fatalf("expected StateCheckpoint, got %d", th.State())
+	}
+
+	// Press 'n' to reject.
+	th.SendKey("n")
+
+	if th.State() != StateInput {
+		t.Errorf("expected StateInput after rejecting, got %d", th.State())
+	}
+
+	// System prompt should NOT contain checkpoint content.
+	if strings.Contains(th.Model.agentCfg.SystemPrompt, "Old context") {
+		t.Error("expected checkpoint content to NOT be in system prompt")
+	}
+}
+
+func TestIntegration_CheckpointEscapeDismisses(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("ok", "end_turn"),
+	})
+
+	th.SendMsg(checkpointFoundMsg{content: "context"})
+	th.SendKey("esc")
+
+	if th.State() != StateInput {
+		t.Errorf("expected StateInput after esc, got %d", th.State())
+	}
+}
+
+// --- History navigation tests ---
+
+func TestIntegration_HistoryUpDown(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("first reply", "end_turn"),
+		buildSSEResponse("second reply", "end_turn"),
+		buildSSEResponse("third reply", "end_turn"),
+	})
+
+	// Submit two prompts to build history.
+	th.Submit("alpha prompt")
+	th.Submit("beta prompt")
+
+	// Press up arrow to recall previous command.
+	th.SendKey("up")
+	if th.Model.input.textarea.Value() != "beta prompt" {
+		t.Errorf("expected 'beta prompt' after up, got %q", th.Model.input.textarea.Value())
+	}
+
+	// Press up again for older entry.
+	th.SendKey("up")
+	if th.Model.input.textarea.Value() != "alpha prompt" {
+		t.Errorf("expected 'alpha prompt' after second up, got %q", th.Model.input.textarea.Value())
+	}
+
+	// Press down to go back.
+	th.SendKey("down")
+	if th.Model.input.textarea.Value() != "beta prompt" {
+		t.Errorf("expected 'beta prompt' after down, got %q", th.Model.input.textarea.Value())
+	}
+}
+
+// --- Ctrl+R search tests ---
+
+func TestIntegration_CtrlRSearch(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("r1", "end_turn"),
+		buildSSEResponse("r2", "end_turn"),
+		buildSSEResponse("r3", "end_turn"),
+	})
+
+	// Build history.
+	th.Submit("deploy to production")
+	th.Submit("check logs")
+
+	// Enter Ctrl+R search mode.
+	th.SendKey("ctrl+r")
+	if !th.Model.input.searching {
+		t.Fatal("expected search mode to be active")
+	}
+
+	// Type search query.
+	th.SendKey("d")
+	th.SendKey("e")
+	th.SendKey("p")
+
+	// Accept match with Enter.
+	th.SendKey("enter")
+	if th.Model.input.searching {
+		t.Error("expected search mode to be deactivated after enter")
+	}
+
+	// The textarea should contain the matched history entry.
+	if th.Model.input.textarea.Value() != "deploy to production" {
+		t.Errorf("expected 'deploy to production', got %q", th.Model.input.textarea.Value())
+	}
+}
+
+func TestIntegration_CtrlRSearchCancel(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("r1", "end_turn"),
+	})
+
+	th.Submit("some command")
+
+	th.SendKey("ctrl+r")
+	th.SendKey("s")
+	th.SendKey("esc")
+
+	if th.Model.input.searching {
+		t.Error("expected search mode to be deactivated after escape")
+	}
+	// Textarea should be empty (search cancelled).
+	if th.Model.input.textarea.Value() != "" {
+		t.Errorf("expected empty textarea after search cancel, got %q", th.Model.input.textarea.Value())
+	}
+}
+
+// --- Tab completion tests ---
+
+func TestIntegration_TabCompletion(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("ok", "end_turn"),
+	})
+
+	// Register builtin commands so tab completion has something to match.
+	th.Model.input.SetAvailableCommands(BuiltinNames())
+
+	// Type a partial slash command.
+	for _, ch := range "/hel" {
+		th.SendKey(string(ch))
+	}
+
+	// Tab should complete to /help.
+	th.SendKey("tab")
+
+	val := th.Model.input.textarea.Value()
+	// Tab completion appends a trailing space after the completed command.
+	if val != "/help " {
+		t.Errorf("expected '/help ' after tab completion, got %q", val)
+	}
+}
+
+// --- /compact flow test ---
+
+func TestIntegration_CompactFlow(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("initial response", "end_turn"),
+		buildSSEResponse("## Compacted Context\\nSummary of work done.", "end_turn"),
+	})
+
+	// Set CWD for checkpoint writing.
+	tmpDir := t.TempDir()
+	th.Model.agentCfg.CWD = tmpDir
+
+	// First, get a response so we have context.
+	th.Submit("do some work")
+
+	if !th.OutputContains("initial response") {
+		t.Fatal("expected initial response")
+	}
+
+	// Now run /compact -- this submits the compact prompt to the agent.
+	th.pending = nil
+	th.update(SubmitMsg{Text: "/compact"})
+
+	if !th.Model.compacting {
+		t.Fatal("expected compacting flag to be set")
+	}
+	if th.State() != StateRunning {
+		t.Fatalf("expected StateRunning during compact, got %d", th.State())
+	}
+
+	// Drain the compact turn.
+	th.DrainAgent()
+
+	if th.State() != StateInput {
+		t.Errorf("expected StateInput after compact, got %d", th.State())
+	}
+
+	// Output should have been cleared and show compact confirmation.
+	if !th.OutputContains("Context compacted") {
+		t.Error("expected 'Context compacted' message")
+	}
+
+	// Compacting flag should be cleared.
+	if th.Model.compacting {
+		t.Error("expected compacting to be false after compact completes")
+	}
+}
+
+// --- /export flow test ---
+
+func TestIntegration_ExportFlow(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("Export this response", "end_turn"),
+	})
+
+	// Get a response to export.
+	th.Submit("say something")
+
+	// Export to a temp file.
+	tmpDir := t.TempDir()
+	exportPath := tmpDir + "/test-export.md"
+
+	th.update(SubmitMsg{Text: "/export " + exportPath})
+
+	if !th.OutputContains("exported to") {
+		t.Error("expected export confirmation")
+	}
+
+	// File should exist with content.
+	data, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatalf("failed to read export file: %v", err)
+	}
+	if !strings.Contains(string(data), "Export this response") {
+		t.Errorf("expected response in exported file, got: %s", string(data))
+	}
+}
+
+func TestIntegration_ExportHTML(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("HTML export test", "end_turn"),
+	})
+
+	th.Submit("say something")
+
+	tmpDir := t.TempDir()
+	exportPath := tmpDir + "/test-export.html"
+
+	th.update(SubmitMsg{Text: "/export --html " + exportPath})
+
+	data, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatalf("failed to read export file: %v", err)
+	}
+	if !strings.Contains(string(data), "<!DOCTYPE html>") {
+		t.Error("expected HTML doctype in exported file")
+	}
+	if !strings.Contains(string(data), "HTML export test") {
+		t.Error("expected response content in HTML export")
+	}
+}
+
+// --- Context threshold tests ---
+
+func buildSSEResponseWithTokens(text string, inputTokens int) string {
+	var b strings.Builder
+	b.WriteString("event: message_start\n")
+	fmt.Fprintf(&b, `data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","content":[],"model":"test","stop_reason":null,"usage":{"input_tokens":%d,"output_tokens":0}}}`, inputTokens)
+	b.WriteString("\n\n")
+
+	b.WriteString("event: content_block_start\n")
+	b.WriteString(`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
+	b.WriteString("\n\n")
+
+	b.WriteString("event: content_block_delta\n")
+	fmt.Fprintf(&b, `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":%q}}`, text)
+	b.WriteString("\n\n")
+
+	b.WriteString("event: content_block_stop\n")
+	b.WriteString(`data: {"type":"content_block_stop","index":0}`)
+	b.WriteString("\n\n")
+
+	b.WriteString("event: message_delta\n")
+	b.WriteString(`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":50}}`)
+	b.WriteString("\n\n")
+
+	b.WriteString("event: message_stop\n")
+	b.WriteString(`data: {"type":"message_stop"}`)
+	b.WriteString("\n\n")
+
+	return b.String()
+}
+
+func TestIntegration_ContextThreshold60(t *testing.T) {
+	// 60% of 200,000 = 120,000 tokens
+	th := NewTestHarness(t, []string{
+		buildSSEResponseWithTokens("response", 120_000),
+	})
+
+	th.Submit("fill context")
+
+	if !th.OutputContains("/compact available") {
+		t.Error("expected 60% context threshold warning")
+	}
+}
+
+func TestIntegration_ContextThreshold80(t *testing.T) {
+	// 80% of 200,000 = 160,000 tokens
+	th := NewTestHarness(t, []string{
+		buildSSEResponseWithTokens("response", 160_000),
+	})
+
+	th.Submit("fill context more")
+
+	if !th.OutputContains("consider running /compact") {
+		t.Error("expected 80% context threshold warning")
+	}
+}
+
+// --- Expand/collapse tool results ---
+
+func TestIntegration_ExpandCollapseToolResult(t *testing.T) {
+	// Generate a response with a large tool result that auto-collapses.
+	th := NewTestHarness(t, []string{
+		buildToolUseResponse("Read", "tu_1", `{"file_path":"/tmp/big.txt"}`),
+		buildSSEResponse("Done reading", "end_turn"),
+	})
+
+	// Create a mock tool that returns a large result.
+	var largeOutput strings.Builder
+	for i := range 30 {
+		fmt.Fprintf(&largeOutput, "line %d of output\n", i)
+	}
+	th.Model.agentCfg.Tools = []tools.Tool{&mockTool{
+		name:   "Read",
+		result: tools.Result{Output: largeOutput.String()},
+	}}
+
+	th.Submit("read the file")
+
+	// Find the tool result block.
+	var toolResultIdx int
+	found := false
+	for i, b := range th.Model.output.blocks {
+		if b.kind == blockToolResult {
+			toolResultIdx = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected a tool result block")
+	}
+
+	// Should be auto-collapsed (30 lines > threshold of 20).
+	if !th.Model.output.collapsed[toolResultIdx] {
+		t.Error("expected tool result to be auto-collapsed")
+	}
+
+	// Directly toggle (simulating 'e' key while in running state -- since
+	// the agent is done, we test the toggle method directly).
+	th.Model.output.ToggleLastToolResult()
+
+	if th.Model.output.collapsed[toolResultIdx] {
+		t.Error("expected tool result to be expanded after toggle")
+	}
+}
+
+// --- /model command ---
+
+func TestIntegration_ModelCommand(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("ok", "end_turn"),
+	})
+
+	// /model with no args shows current model.
+	th.update(SubmitMsg{Text: "/model"})
+	if !th.OutputContains("test-model") {
+		t.Error("expected current model name in output")
+	}
+}
+
+// --- /thinking toggle ---
+
+func TestIntegration_ThinkingToggle(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("ok", "end_turn"),
+	})
+
+	if th.Model.showThinking {
+		t.Error("expected thinking to be off by default")
+	}
+
+	th.update(SubmitMsg{Text: "/thinking"})
+	if !th.Model.showThinking {
+		t.Error("expected thinking to be on after toggle")
+	}
+	if !th.OutputContains("enabled") {
+		t.Error("expected 'enabled' message")
+	}
+
+	th.update(SubmitMsg{Text: "/thinking"})
+	if th.Model.showThinking {
+		t.Error("expected thinking to be off after second toggle")
+	}
+}
+
+// --- MCPServerDied message ---
+
+func TestIntegration_MCPServerDied(t *testing.T) {
+	th := NewTestHarness(t, []string{
+		buildSSEResponse("ok", "end_turn"),
+	})
+
+	th.SendMsg(MCPServerDiedMsg{Name: "test-server"})
+
+	if !th.OutputContains("test-server") {
+		t.Error("expected MCP server name in error output")
+	}
+	if !th.OutputContains("died unexpectedly") {
+		t.Error("expected 'died unexpectedly' error message")
 	}
 }
