@@ -506,6 +506,19 @@ func TestSettings_ThemeFields(t *testing.T) {
 	}
 }
 
+func TestDisableUpdateCheck(t *testing.T) {
+	base := DefaultSettings()
+	if base.DisableUpdateCheck {
+		t.Error("expected DisableUpdateCheck to default to false")
+	}
+
+	override := Settings{DisableUpdateCheck: true}
+	mergeSettings(&base, &override)
+	if !base.DisableUpdateCheck {
+		t.Error("expected merge to set DisableUpdateCheck to true")
+	}
+}
+
 func TestLoadSettings_GlamdringOverridesClaude(t *testing.T) {
 	root := t.TempDir()
 	glamDir := filepath.Join(root, ".glamdring")
