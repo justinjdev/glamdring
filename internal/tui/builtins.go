@@ -629,6 +629,10 @@ func cmdTheme(m *Model, args string) tea.Cmd {
 
 // cmdUpdate checks for a newer version and prompts the user to install it.
 func cmdUpdate(m *Model, args string) tea.Cmd {
+	if m.spinning {
+		m.output.AppendSystem("Update check already in progress.")
+		return nil
+	}
 	m.output.AppendSystem("Checking for updates...")
 	m.spinning = true
 	version := m.version
