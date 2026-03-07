@@ -31,15 +31,11 @@ The system SHALL accept workflow definitions as an ordered list of phases, where
 - **THEN** the inline workflow takes precedence over any named preset
 
 ### Requirement: Built-in workflow presets
-The system SHALL provide built-in workflow presets as named compositions of phases. Presets SHALL include: `"rpiv"` (research/plan/implement/verify), `"plan-implement"` (2-phase with leader gate), `"scoped-only"` (no phases, enforcement via scoped tools only), and `"none"` (no enforcement). The default preset when no workflow is specified SHALL be `"rpiv"`.
+The system SHALL provide built-in workflow presets as named compositions of phases. Presets SHALL include: `"rpiv"` (research/plan/implement/verify), `"plan-implement"` (2-phase with leader gate), `"scoped"` (single work phase, enforcement via scoped tools only), and `"none"` (no enforcement). The default preset when no workflow is specified SHALL be `"scoped"` (Layer 2 enforcement without phases). Users who want the full RPIV ceremony opt in explicitly.
 
-#### Scenario: Default workflow (rpiv preset)
+#### Scenario: Default workflow (scoped preset)
 - **WHEN** a team agent is spawned without specifying a workflow
-- **THEN** the agent starts in the "research" phase with the rpiv progression:
-  - research (Read, Glob, Grep, SendMessage, TaskUpdate, AdvancePhase) -> AutoAdvance, model=haiku
-  - plan (Read, Glob, Grep, SendMessage, TaskUpdate, AdvancePhase) -> LeaderApproval, model=sonnet
-  - implement (Read, Glob, Grep, Edit, Write, Bash, SendMessage, TaskUpdate, AdvancePhase) -> AutoAdvance, model=opus
-  - verify (Read, Glob, Grep, Bash, SendMessage, TaskUpdate, AdvancePhase) -> AutoAdvance, model=sonnet
+- **THEN** the agent starts in a single "work" phase with all tools and scoped file enforcement
 
 #### Scenario: No-enforcement preset
 - **WHEN** the lead spawns an agent with workflow "none"

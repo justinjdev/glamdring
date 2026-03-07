@@ -212,6 +212,8 @@ When enabled, the agent gets access to team coordination tools: `TeamCreate`, `T
 | `scoped` | work | Single phase with file scope enforcement |
 | `none` | (no phases) | No workflow enforcement |
 
+When no workflow is specified, the default is `scoped` (file scope enforcement without multi-phase ceremony).
+
 **Custom workflows** can be defined in `config.json` (or `settings.json`):
 
 ```json

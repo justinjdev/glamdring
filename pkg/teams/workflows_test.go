@@ -57,7 +57,7 @@ func TestResolveWorkflow(t *testing.T) {
 		{name: "plan-implement", workflow: "plan-implement", expected: 2},
 		{name: "scoped", workflow: "scoped", expected: 1},
 		{name: "none", workflow: "none", expected: 0},
-		{name: "empty string", workflow: "", expected: 0},
+		{name: "empty string defaults to scoped", workflow: "", expected: 1},
 		{name: "unknown", workflow: "unknown", expectErr: true},
 		{name: "custom overrides", workflow: "rpiv", custom: []Phase{{Name: "custom"}}, expected: 1},
 	}
