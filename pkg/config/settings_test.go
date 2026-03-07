@@ -464,6 +464,48 @@ func TestLoadSettings_GlamdringConfigJSON(t *testing.T) {
 	}
 }
 
+func TestSettings_ThemeFields(t *testing.T) {
+	dir := t.TempDir()
+	claudeDir := filepath.Join(dir, ".claude")
+	os.MkdirAll(claudeDir, 0o755)
+	os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(`{
+		"theme": "rivendell",
+		"high_contrast": true,
+		"themes": {
+			"custom": {
+				"bg": "#111111",
+				"fg": "#eeeeee",
+				"fg_dim": "#888888",
+				"fg_bright": "#ffffff",
+				"primary": "#ff0000",
+				"secondary": "#00ff00",
+				"success": "#00cc00",
+				"error": "#cc0000",
+				"info": "#0000cc",
+				"subtle": "#880088",
+				"surface0": "#222222",
+				"surface1": "#333333",
+				"surface2": "#444444"
+			}
+		}
+	}`), 0o644)
+
+	s := LoadSettings(dir)
+	if s.Theme != "rivendell" {
+		t.Errorf("Theme = %q, want rivendell", s.Theme)
+	}
+	if !s.HighContrast {
+		t.Error("HighContrast = false, want true")
+	}
+	if len(s.Themes) != 1 {
+		t.Fatalf("Themes count = %d, want 1", len(s.Themes))
+	}
+	custom := s.Themes["custom"]
+	if custom.Bg != "#111111" {
+		t.Errorf("custom.Bg = %q, want #111111", custom.Bg)
+	}
+}
+
 func TestLoadSettings_GlamdringOverridesClaude(t *testing.T) {
 	root := t.TempDir()
 	glamDir := filepath.Join(root, ".glamdring")
