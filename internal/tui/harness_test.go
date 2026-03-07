@@ -118,6 +118,10 @@ func NewTestHarness(t *testing.T, responses []string, opts ...HarnessOpt) *TestH
 
 	var call atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(responses) == 0 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		idx := int(call.Load())
 		if idx >= len(responses) {
 			idx = len(responses) - 1
@@ -397,6 +401,8 @@ func parseKeyMsg(key string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyShiftTab}
 	case "ctrl+v":
 		return tea.KeyMsg{Type: tea.KeyCtrlV}
+	case "ctrl+r":
+		return tea.KeyMsg{Type: tea.KeyCtrlR}
 	case "up":
 		return tea.KeyMsg{Type: tea.KeyUp}
 	case "down":
