@@ -275,6 +275,20 @@ func TestTaskUpdateTool_CompletionReleasesLocks(t *testing.T) {
 	// A lock for a different task should not be released.
 	mgr.Locks.AcquireForTask("/project/c.go", "alice", "other-task")
 
+	// Transition to in_progress first.
+	startInput, _ := json.Marshal(map[string]any{
+		"team_name": "proj",
+		"task_id":   taskID,
+		"status":    "in_progress",
+	})
+	startResult, err := updateTool.Execute(context.Background(), startInput)
+	if err != nil {
+		t.Fatalf("Execute (start): %v", err)
+	}
+	if startResult.IsError {
+		t.Fatalf("unexpected error starting task: %s", startResult.Output)
+	}
+
 	// Complete the task.
 	updateInput, _ := json.Marshal(map[string]any{
 		"team_name": "proj",

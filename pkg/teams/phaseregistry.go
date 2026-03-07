@@ -9,6 +9,12 @@ import (
 	"github.com/justin/glamdring/pkg/tools"
 )
 
+// Compile-time interface assertions.
+var (
+	_ tools.ToolProvider      = (*PhaseRegistry)(nil)
+	_ tools.PhaseModelProvider = (*PhaseRegistry)(nil)
+)
+
 // DefaultReadTools are tool names always available for read-only access.
 var DefaultReadTools = []string{"Read", "Glob", "Grep"}
 

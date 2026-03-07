@@ -52,6 +52,25 @@ func (s TaskStatus) Valid() bool {
 	}
 }
 
+// validTransitions defines legal status transitions. A status may only
+// transition to the statuses listed in its value slice.
+var validTransitions = map[TaskStatus][]TaskStatus{
+	TaskStatusPending:    {TaskStatusInProgress, TaskStatusDeleted},
+	TaskStatusInProgress: {TaskStatusPending, TaskStatusCompleted, TaskStatusDeleted},
+	TaskStatusCompleted:  {TaskStatusDeleted},
+	TaskStatusDeleted:    {},
+}
+
+// CanTransitionTo returns true if transitioning from s to target is allowed.
+func (s TaskStatus) CanTransitionTo(target TaskStatus) bool {
+	for _, allowed := range validTransitions[s] {
+		if allowed == target {
+			return true
+		}
+	}
+	return false
+}
+
 // TaskScope defines file path patterns an agent may modify.
 type TaskScope struct {
 	AllowPatterns []string `json:"allow_patterns,omitempty"`

@@ -233,6 +233,8 @@ Each phase controls which tools are available to team agents and optionally over
 
 **File locking:** File locks are scoped to the active task. When a task is completed via `TaskUpdate`, all locks acquired for that task are automatically released. This prevents lock leaks across task boundaries.
 
+**Task status transitions:** Task status changes are validated against allowed transitions. Valid transitions: `pending` to `in_progress` or `deleted`; `in_progress` to `pending`, `completed`, or `deleted`; `completed` to `deleted`; `deleted` is terminal. Attempting an invalid transition (e.g., `pending` directly to `completed`) returns an error.
+
 **Task dependencies:** Agents cannot claim (set owner on) a task that has unresolved `BlockedBy` dependencies. Clear blockers first, then claim.
 
 **Message ordering:** All inter-agent messages carry a monotonic sequence number and timestamp for reliable ordering.
