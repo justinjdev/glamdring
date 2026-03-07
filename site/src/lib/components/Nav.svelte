@@ -2,16 +2,18 @@
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import ThemeToggle from './ThemeToggle.svelte';
+	import Search from './Search.svelte';
 
 	let mobileOpen = $state(false);
 
 	const links = [
 		{ href: `${base}/`, label: 'Home' },
 		{ href: `${base}/getting-started`, label: 'Getting Started' },
-		{ href: `${base}/skills`, label: 'Skills' },
-		{ href: `${base}/agents`, label: 'Agents' },
-		{ href: `${base}/how-it-works`, label: 'How It Works' },
+		{ href: `${base}/features`, label: 'Features' },
 		{ href: `${base}/configuration`, label: 'Configuration' },
+		{ href: `${base}/agent-teams`, label: 'Agent Teams' },
+		{ href: `${base}/mcp-servers`, label: 'MCP Servers' },
+		{ href: `${base}/architecture`, label: 'Architecture' },
 		{ href: `${base}/changelog`, label: 'Changelog' }
 	];
 
@@ -30,8 +32,8 @@
 
 <nav class="nav" aria-label="Main navigation">
 	<div class="nav-inner container">
-		<a href="{base}/" class="nav-logo" aria-label="Fellowship home">
-			<span class="logo-text">Fellowship</span>
+		<a href="{base}/" class="nav-logo" aria-label="glamdring home">
+			<span class="logo-text">glamdring</span>
 		</a>
 
 		<button
@@ -56,6 +58,7 @@
 					{link.label}
 				</a>
 			{/each}
+			<Search />
 			<ThemeToggle />
 		</div>
 	</div>
