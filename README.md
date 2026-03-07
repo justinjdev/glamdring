@@ -2,6 +2,8 @@
 
 A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](https://charm.sh) libraries, replacing Claude Code's Ink-based frontend with a lightweight, responsive alternative.
 
+![glamdring theme](docs/screenshots/theme-glamdring.png)
+
 **Documentation:** [glamdring docs](https://justinjdev.github.io/glamdring/)
 
 ## Features
@@ -122,11 +124,12 @@ Glamdring ships with five LOTR-inspired color themes:
 
 | Theme | Description |
 |---|---|
-| `glamdring` | Ice blue (default) |
-| `rivendell` | Soft teal |
-| `mithril` | Bright cyan |
-| `lothlorien` | Cool gold |
-| `shire` | Warm amber |
+| `glamdring` | Cool steel-blue (default) |
+| `rivendell` | Silver and starlight |
+| `mithril` | Bright cyan-silver |
+| `lothlorien` | Golden-amber |
+| `shire` | Warm russet-earth |
+
 
 Set the theme in `config.json` (or `settings.json`):
 
