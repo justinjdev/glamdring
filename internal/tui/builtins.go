@@ -642,7 +642,7 @@ func cmdUpdate(m *Model, args string) tea.Cmd {
 	}
 }
 
-const compactPrompt =`Summarize our conversation so far into a compact context block. Be aggressive about compression — discard noise, keep only what matters for continuing work.
+const compactPrompt = `Summarize our conversation so far into a compact context block. Be aggressive about compression — discard noise, keep only what matters for continuing work.
 
 Output in this exact format:
 
