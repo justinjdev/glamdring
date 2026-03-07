@@ -52,11 +52,12 @@ func ResolveWorkflow(name string, custom []Phase, registered map[string][]Phase)
 		return WorkflowPlanImplement(), nil
 	case "scoped":
 		return WorkflowScopedOnly(), nil
-	case "", "none":
-		// Default is "none" -- no phase enforcement. This intentionally
-		// diverges from the spec's default of "rpiv" to keep the simpler
-		// experience for teams that don't need workflow phases.
+	case "none":
 		return WorkflowNone(), nil
+	case "":
+		// Default to scoped-only (Layer 2 enforcement without phases).
+		// Users who want the full RPIV ceremony opt in explicitly.
+		return WorkflowScopedOnly(), nil
 	default:
 		return nil, fmt.Errorf("unknown workflow %q", name)
 	}
