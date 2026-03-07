@@ -107,6 +107,9 @@ func (s *FileTaskStorage) Update(id string, update TaskUpdate) (*Task, error) {
 	}
 
 	if update.Status != nil {
+		if !task.Status.CanTransitionTo(*update.Status) {
+			return nil, fmt.Errorf("invalid status transition from %q to %q", task.Status, *update.Status)
+		}
 		task.Status = *update.Status
 	}
 	if update.Subject != nil {

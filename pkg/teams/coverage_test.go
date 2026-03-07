@@ -384,6 +384,8 @@ func TestFileTaskStorage_CompletionClearsBlockedBy_WithNonJSONFiles(t *testing.T
 	// Write a non-JSON file to ensure clearBlockedByLocked skips it.
 	os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hello"), 0644)
 
+	inProgress := TaskStatusInProgress
+	s.Update(t1.ID, TaskUpdate{Status: &inProgress})
 	completed := TaskStatusCompleted
 	_, err := s.Update(t1.ID, TaskUpdate{Status: &completed})
 	if err != nil {
@@ -1682,6 +1684,8 @@ func TestFileTaskStorage_UpdateCompletionClearBlockedByWithCorruptFile(t *testin
 	// Write a corrupt JSON file to test clearBlockedByLocked error handling.
 	os.WriteFile(filepath.Join(dir, "99.json"), []byte("not json"), 0644)
 
+	inProgress := TaskStatusInProgress
+	s.Update(t1.ID, TaskUpdate{Status: &inProgress})
 	completed := TaskStatusCompleted
 	// This should succeed but log a warning about the corrupt file.
 	_, err := s.Update(t1.ID, TaskUpdate{Status: &completed})

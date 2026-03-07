@@ -175,6 +175,8 @@ func TestFileTaskStorage_CompletionClearsBlockedBy(t *testing.T) {
 	t2, _ := s.Create(Task{Subject: "task 2", Status: TaskStatusPending, BlockedBy: []string{t1.ID}})
 	t3, _ := s.Create(Task{Subject: "task 3", Status: TaskStatusPending, BlockedBy: []string{t1.ID, "other"}})
 
+	inProgress := TaskStatusInProgress
+	s.Update(t1.ID, TaskUpdate{Status: &inProgress})
 	completed := TaskStatusCompleted
 	_, err := s.Update(t1.ID, TaskUpdate{Status: &completed})
 	if err != nil {
@@ -300,6 +302,8 @@ func TestFileTaskStorage_RejectClaimOnBlockedTask(t *testing.T) {
 	}
 
 	// After unblocking (completing t1), claiming should succeed.
+	inProgress := TaskStatusInProgress
+	s.Update(t1.ID, TaskUpdate{Status: &inProgress})
 	completed := TaskStatusCompleted
 	s.Update(t1.ID, TaskUpdate{Status: &completed})
 
@@ -321,6 +325,50 @@ func TestFileTaskStorage_AllowClearOwnerOnBlockedTask(t *testing.T) {
 	_, err := s.Update(t2.ID, TaskUpdate{Owner: &empty})
 	if err != nil {
 		t.Fatalf("expected clearing owner on blocked task to succeed: %v", err)
+	}
+}
+
+func TestFileTaskStorage_RejectInvalidStatusTransition(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewFileTaskStorage(dir)
+
+	task, _ := s.Create(Task{Subject: "task", Status: TaskStatusPending})
+
+	// pending -> completed is not allowed (must go through in_progress).
+	completed := TaskStatusCompleted
+	_, err := s.Update(task.ID, TaskUpdate{Status: &completed})
+	if err == nil {
+		t.Fatal("expected error for invalid transition pending -> completed")
+	}
+	if !strings.Contains(err.Error(), "invalid status transition") {
+		t.Errorf("expected invalid status transition error, got: %v", err)
+	}
+
+	// pending -> in_progress is allowed.
+	inProgress := TaskStatusInProgress
+	_, err = s.Update(task.ID, TaskUpdate{Status: &inProgress})
+	if err != nil {
+		t.Fatalf("expected pending -> in_progress to succeed: %v", err)
+	}
+
+	// in_progress -> completed is allowed.
+	_, err = s.Update(task.ID, TaskUpdate{Status: &completed})
+	if err != nil {
+		t.Fatalf("expected in_progress -> completed to succeed: %v", err)
+	}
+
+	// completed -> pending is not allowed.
+	pending := TaskStatusPending
+	_, err = s.Update(task.ID, TaskUpdate{Status: &pending})
+	if err == nil {
+		t.Fatal("expected error for invalid transition completed -> pending")
+	}
+
+	// completed -> deleted is allowed.
+	deleted := TaskStatusDeleted
+	_, err = s.Update(task.ID, TaskUpdate{Status: &deleted})
+	if err != nil {
+		t.Fatalf("expected completed -> deleted to succeed: %v", err)
 	}
 }
 

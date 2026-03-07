@@ -87,6 +87,12 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Fatalf("assign task: %v", err)
 	}
 
+	inProgress := TaskStatusInProgress
+	_, err = mgr.Tasks.Update(task1.ID, TaskUpdate{Status: &inProgress})
+	if err != nil {
+		t.Fatalf("start task: %v", err)
+	}
+
 	completed := TaskStatusCompleted
 	_, err = mgr.Tasks.Update(task1.ID, TaskUpdate{Status: &completed})
 	if err != nil {
