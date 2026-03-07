@@ -60,6 +60,12 @@ go build -o glamdring .`;
 	</div>
 </section>
 
+<section class="hero-screenshot">
+	<div class="container">
+		<img src="{base}/screenshots/theme-glamdring.png" alt="glamdring TUI" class="animate-in" style="animation-delay: 350ms" />
+	</div>
+</section>
+
 <section class="features">
 	<div class="container">
 		<h2 class="section-heading animate-in" style="animation-delay: 400ms">Features</h2>
@@ -152,6 +158,19 @@ go build -o glamdring .`;
 
 	.section-heading {
 		margin-bottom: var(--space-lg);
+	}
+
+	.hero-screenshot {
+		margin-top: var(--space-xl);
+		text-align: center;
+	}
+
+	.hero-screenshot img {
+		max-width: 48rem;
+		width: 100%;
+		border-radius: 8px;
+		border: 1px solid var(--color-border);
+		box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
 	}
 
 	.features {
