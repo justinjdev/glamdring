@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justin/glamdring/pkg/config"
@@ -150,9 +152,40 @@ func PaletteFromUserConfig(name string, c config.UserThemeConfig) ThemePalette {
 }
 
 // HighContrastTransform boosts contrast on a palette for accessibility.
+// Brightens text colors, darkens background, and increases accent saturation.
 func HighContrastTransform(p ThemePalette) ThemePalette {
-	// TODO: implement in Task 5
+	p.Bg = "#0c0c10"
+	p.FgBright = "#f4f4f8"
+	p.Fg = brighten(p.Fg, 25)
+	p.Primary = brighten(p.Primary, 20)
+	p.Success = brighten(p.Success, 20)
+	p.Error = brighten(p.Error, 20)
+	p.Info = brighten(p.Info, 20)
+	p.Secondary = brighten(p.Secondary, 15)
+	p.Surface0 = "#161620"
+	p.Surface1 = "#222230"
+	p.Surface2 = "#303042"
 	return p
+}
+
+// brighten takes a hex color and increases its brightness by the given percentage.
+func brighten(c lipgloss.Color, pct int) lipgloss.Color {
+	hex := string(c)
+	if len(hex) != 7 || hex[0] != '#' {
+		return c
+	}
+	r, _ := strconv.ParseInt(hex[1:3], 16, 32)
+	g, _ := strconv.ParseInt(hex[3:5], 16, 32)
+	b, _ := strconv.ParseInt(hex[5:7], 16, 32)
+
+	boost := func(v int64) int64 {
+		v = v + v*int64(pct)/100
+		if v > 255 {
+			v = 255
+		}
+		return v
+	}
+	return lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", boost(r), boost(g), boost(b)))
 }
 
 // DefaultStyles creates theme styles from the given palette.

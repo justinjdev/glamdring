@@ -29,6 +29,28 @@ func TestThemeRegistry_UnknownFallsBack(t *testing.T) {
 	}
 }
 
+func TestHighContrastTransform(t *testing.T) {
+	base, _ := LookupTheme("glamdring")
+	hc := HighContrastTransform(base)
+
+	if hc.Name != "glamdring" {
+		t.Errorf("Name changed to %q", hc.Name)
+	}
+	if hc.FgBright == base.FgBright {
+		t.Error("FgBright unchanged after HC transform")
+	}
+	if hc.Bg == base.Bg {
+		t.Error("Bg unchanged after HC transform")
+	}
+}
+
+func TestBrighten(t *testing.T) {
+	result := brighten("#804020", 50)
+	if result != "#c06030" {
+		t.Errorf("brighten(#804020, 50) = %q, want #c06030", string(result))
+	}
+}
+
 func TestThemeNames(t *testing.T) {
 	names := ThemeNames()
 	if len(names) != 5 {
