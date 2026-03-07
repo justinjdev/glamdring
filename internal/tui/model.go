@@ -316,7 +316,11 @@ func (m Model) checkUpdateCmd() tea.Cmd {
 	version := m.version
 	return func() tea.Msg {
 		rel, err := update.CheckLatest(version)
-		if err != nil || rel == nil {
+		if err != nil {
+			log.Printf("update check failed: %v", err)
+			return nil
+		}
+		if rel == nil {
 			return nil
 		}
 		return updateAvailableMsg{version: rel.Version}
@@ -391,6 +395,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case updateAvailableMsg:
 		m.output.AppendSystem(fmt.Sprintf("Update available: %s -- run /update to install", msg.version))
+		return m, nil
+
+	case updateCheckDoneMsg:
+		m.spinning = false
+		if msg.err != nil {
+			m.output.AppendError(fmt.Sprintf("Update check failed: %s", msg.err))
+			m.state = StateInput
+			return m, m.input.Focus()
+		}
+		if msg.rel == nil {
+			m.output.AppendSystem(fmt.Sprintf("glamdring %s is up to date.", m.version))
+			m.state = StateInput
+			return m, m.input.Focus()
+		}
+		m.pendingUpdate = msg.rel
+		m.state = StateUpdate
+		m.output.AppendSystem(fmt.Sprintf("Update glamdring %s -> %s?", m.version, msg.rel.Version))
 		return m, nil
 
 	case updateDoneMsg:
@@ -536,7 +557,7 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 		if handler, ok := DispatchBuiltin(cmdName); ok {
 			m.input.Reset()
 			cmd := handler(&m, args)
-			if m.state != StateRunning {
+			if m.state != StateRunning && m.state != StateUpdate {
 				// Normal built-in — stay in input mode.
 				m.state = StateInput
 				return m, tea.Batch(cmd, m.input.Focus())
@@ -646,6 +667,12 @@ type indexRebuildDoneMsg struct {
 // updateAvailableMsg signals that a newer version is available.
 type updateAvailableMsg struct {
 	version string
+}
+
+// updateCheckDoneMsg signals that a manual /update check completed.
+type updateCheckDoneMsg struct {
+	rel *update.Release
+	err error
 }
 
 // updateDoneMsg signals that a download attempt completed.

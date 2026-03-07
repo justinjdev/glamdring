@@ -630,21 +630,12 @@ func cmdTheme(m *Model, args string) tea.Cmd {
 // cmdUpdate checks for a newer version and prompts the user to install it.
 func cmdUpdate(m *Model, args string) tea.Cmd {
 	m.output.AppendSystem("Checking for updates...")
-
-	rel, err := update.CheckLatest(m.version)
-	if err != nil {
-		m.output.AppendError(fmt.Sprintf("Update check failed: %s", err))
-		return nil
+	m.spinning = true
+	version := m.version
+	return func() tea.Msg {
+		rel, err := update.CheckLatest(version)
+		return updateCheckDoneMsg{rel: rel, err: err}
 	}
-	if rel == nil {
-		m.output.AppendSystem(fmt.Sprintf("glamdring %s is up to date.", m.version))
-		return nil
-	}
-
-	m.pendingUpdate = rel
-	m.state = StateUpdate
-	m.output.AppendSystem(fmt.Sprintf("Update glamdring %s -> %s?", m.version, rel.Version))
-	return nil
 }
 
 const compactPrompt =`Summarize our conversation so far into a compact context block. Be aggressive about compression — discard noise, keep only what matters for continuing work.
