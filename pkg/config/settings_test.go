@@ -412,15 +412,15 @@ func TestValidateWorkflows_ConditionGateMissingCommand(t *testing.T) {
 	}
 }
 
-func TestValidateWorkflows_UnknownGateTypeWarns(t *testing.T) {
+func TestValidateWorkflows_UnknownGateTypeErrors(t *testing.T) {
 	wf := map[string]WorkflowConfig{
 		"custom": {Phases: []PhaseConfig{
 			{Name: "step", Tools: []string{"Read"}, Gate: "magic"},
 		}},
 	}
 	err := validateWorkflows(wf)
-	if err != nil {
-		t.Errorf("expected no error for unknown gate type (just a warning), got: %v", err)
+	if err == nil {
+		t.Error("expected error for unknown gate type")
 	}
 }
 

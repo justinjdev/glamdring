@@ -178,13 +178,33 @@ func (m AgentMessage) Validate() error {
 	return nil
 }
 
+// GateType controls how phase transitions are enforced.
+type GateType string
+
+const (
+	GateAuto      GateType = "auto"
+	GateLeader    GateType = "leader"
+	GateCondition GateType = "condition"
+)
+
+// Valid returns true if the gate type is one of the known gate types.
+// Empty string is valid and treated as GateAuto.
+func (g GateType) Valid() bool {
+	switch g {
+	case "", GateAuto, GateLeader, GateCondition:
+		return true
+	default:
+		return false
+	}
+}
+
 // Phase defines a workflow stage with tool access and model configuration.
 type Phase struct {
 	Name       string            `json:"name"`
 	Tools      []string          `json:"tools"`
 	Model      string            `json:"model,omitempty"`
 	Fallback   string            `json:"fallback,omitempty"`
-	Gate       string            `json:"gate,omitempty"`
+	Gate       GateType          `json:"gate,omitempty"`
 	GateConfig map[string]string `json:"gate_config,omitempty"`
 }
 

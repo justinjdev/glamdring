@@ -54,7 +54,8 @@ func (AdvancePhaseTool) Schema() json.RawMessage {
 }
 
 // resolveLeader determines who should approve a leader gate.
-// Priority: phase GateConfig["leader"] > TeamConfig.Leader > FirstMember().
+// Priority: phase GateConfig["leader"] > TeamConfig.Leader > alphabetically
+// first registered member.
 func resolveLeader(phase *Phase, mgr *TeamManager) (string, error) {
 	if phase.GateConfig != nil {
 		if leader := phase.GateConfig["leader"]; leader != "" {
@@ -64,10 +65,20 @@ func resolveLeader(phase *Phase, mgr *TeamManager) (string, error) {
 	if mgr.Config.Leader != "" {
 		return mgr.Config.Leader, nil
 	}
-	if name, ok := mgr.Members.FirstMember(); ok {
+	if name, ok := firstMember(mgr.Members); ok {
 		return name, nil
 	}
 	return "", fmt.Errorf("no leader configured for approval gate")
+}
+
+// firstMember returns the name of the alphabetically first member, or false
+// if the registry is empty.
+func firstMember(reg MemberRegistry) (string, bool) {
+	members := reg.List()
+	if len(members) == 0 {
+		return "", false
+	}
+	return members[0].Name, true
 }
 
 // maxConditionOutput is the maximum output captured from a condition command.
@@ -88,27 +99,32 @@ func (a AdvancePhaseTool) Execute(ctx context.Context, input json.RawMessage) (t
 		return *errResult, nil
 	}
 
-	prevPhase, _, _ := mgr.Phases.Current(a.AgentName)
+	prevPhase, _, err := mgr.Phases.Current(a.AgentName)
+	if err != nil {
+		return tools.Result{Output: fmt.Sprintf("failed to get current phase: %s", err), IsError: true}, nil
+	}
 
 	// Determine gate type for the current phase.
-	gate := ""
+	var gate GateType
 	if prevPhase != nil {
 		gate = prevPhase.Gate
 	}
 
 	switch gate {
-	case "", "auto":
+	case "", GateAuto:
 		return a.executeAutoGate(mgr, prevPhase, in.Summary)
 
-	case "leader":
+	case GateLeader:
 		return a.executeLeaderGate(ctx, mgr, prevPhase, in.Summary)
 
-	case "condition":
+	case GateCondition:
 		return a.executeConditionGate(ctx, mgr, prevPhase, in.Summary)
 
 	default:
-		log.Printf("warning: unknown gate type %q, treating as auto", gate)
-		return a.executeAutoGate(mgr, prevPhase, in.Summary)
+		return tools.Result{
+			Output:  fmt.Sprintf("unknown gate type %q; valid types: auto, leader, condition", gate),
+			IsError: true,
+		}, nil
 	}
 }
 
@@ -141,8 +157,9 @@ func (a AdvancePhaseTool) executeLeaderGate(ctx context.Context, mgr *TeamManage
 		return tools.Result{Output: "leader gate requires priority channel for approval flow", IsError: true}, nil
 	}
 
-	// Block waiting for approval response.
-	var buffered []any
+	// Block waiting for approval response. Non-matching messages are buffered
+	// and re-sent to the agent after the gate resolves.
+	var buffered []AgentMessage
 	for {
 		select {
 		case raw, ok := <-a.PriorityCh:
@@ -150,30 +167,34 @@ func (a AdvancePhaseTool) executeLeaderGate(ctx context.Context, mgr *TeamManage
 				return tools.Result{Output: "priority channel closed while waiting for approval", IsError: true}, nil
 			}
 
+			am, isAgentMsg := raw.(AgentMessage)
+			if !isAgentMsg {
+				log.Printf("warning: non-AgentMessage on priority channel (type=%T), discarding", raw)
+				continue
+			}
+
 			// Check for force shutdown.
-			if isForceShutdownMsg(raw) {
+			if am.Kind == MessageKindShutdownRequest && am.Force {
 				if a.CancelFunc != nil {
 					a.CancelFunc()
 				}
 				return tools.Result{Output: "force shutdown received while waiting for approval", IsError: true}, nil
 			}
 
-			// Try to parse as approval response.
-			resp, ok := parseApprovalResponse(raw, requestID)
-			if !ok {
-				buffered = append(buffered, raw)
-				continue
+			// Check for matching approval response.
+			if am.Kind == MessageKindApprovalResponse && am.RequestID == requestID {
+				if am.Approve != nil && *am.Approve {
+					log.Printf("phase advance [leader]: agent=%s approved by=%s", a.AgentName, leader)
+					return a.advanceAndReturn(mgr, prevPhase, buffered)
+				}
+				content := "approval rejected"
+				if am.Content != "" {
+					content = am.Content
+				}
+				return tools.Result{Output: fmt.Sprintf("phase advance rejected by %s: %s", leader, content), IsError: true}, nil
 			}
 
-			if resp.Approve != nil && *resp.Approve {
-				log.Printf("phase advance [leader]: agent=%s approved by=%s", a.AgentName, leader)
-				return a.advanceAndReturn(mgr, prevPhase, buffered)
-			}
-			content := "approval rejected"
-			if resp.Content != "" {
-				content = resp.Content
-			}
-			return tools.Result{Output: fmt.Sprintf("phase advance rejected by %s: %s", leader, content), IsError: true}, nil
+			buffered = append(buffered, am)
 
 		case <-ctx.Done():
 			return tools.Result{Output: "context cancelled while waiting for approval", IsError: true}, nil
@@ -182,6 +203,9 @@ func (a AdvancePhaseTool) executeLeaderGate(ctx context.Context, mgr *TeamManage
 }
 
 func (a AdvancePhaseTool) executeConditionGate(ctx context.Context, mgr *TeamManager, prevPhase *Phase, _ string) (tools.Result, error) {
+	if prevPhase == nil {
+		return tools.Result{Output: "condition gate: no current phase", IsError: true}, nil
+	}
 	command := ""
 	if prevPhase.GateConfig != nil {
 		command = prevPhase.GateConfig["command"]
@@ -214,7 +238,14 @@ func (a AdvancePhaseTool) executeConditionGate(ctx context.Context, mgr *TeamMan
 	return a.advanceAndReturn(mgr, prevPhase, nil)
 }
 
-func (a AdvancePhaseTool) advanceAndReturn(mgr *TeamManager, prevPhase *Phase, buffered []any) (tools.Result, error) {
+func (a AdvancePhaseTool) advanceAndReturn(mgr *TeamManager, prevPhase *Phase, buffered []AgentMessage) (tools.Result, error) {
+	// Re-send buffered messages so the agent does not lose them.
+	for _, msg := range buffered {
+		if err := mgr.Messages.Send(msg); err != nil {
+			log.Printf("warning: failed to re-send buffered message from %s: %v", msg.From, err)
+		}
+	}
+
 	phase, err := mgr.Phases.Advance(a.AgentName)
 	if err != nil {
 		return tools.Result{Output: fmt.Sprintf("failed to advance phase: %s", err), IsError: true}, nil
@@ -237,37 +268,4 @@ func (a AdvancePhaseTool) advanceAndReturn(mgr *TeamManager, prevPhase *Phase, b
 		return tools.Result{Output: fmt.Sprintf("failed to marshal phase result: %s", err), IsError: true}, nil
 	}
 	return tools.Result{Output: string(out)}, nil
-}
-
-// isForceShutdownMsg checks if a priority message is a force shutdown request.
-func isForceShutdownMsg(msg any) bool {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return false
-	}
-	var parsed struct {
-		Kind  string `json:"kind"`
-		Force bool   `json:"force"`
-	}
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return false
-	}
-	return parsed.Kind == "shutdown_request" && parsed.Force
-}
-
-// parseApprovalResponse checks if a priority message is an approval response
-// matching the given request ID. Returns the parsed message and true if matched.
-func parseApprovalResponse(msg any, requestID string) (AgentMessage, bool) {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return AgentMessage{}, false
-	}
-	var parsed AgentMessage
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return AgentMessage{}, false
-	}
-	if parsed.Kind == MessageKindApprovalResponse && parsed.RequestID == requestID {
-		return parsed, true
-	}
-	return AgentMessage{}, false
 }

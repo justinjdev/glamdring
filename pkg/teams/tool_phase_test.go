@@ -3,6 +3,7 @@ package teams
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,6 +183,32 @@ func TestAdvancePhaseTool_AutoGateWithSummary(t *testing.T) {
 	}
 }
 
+func TestAdvancePhaseTool_UnknownGateTypeErrors(t *testing.T) {
+	reg := NewManagerRegistry()
+	dir := t.TempDir()
+	cfg := TeamConfig{
+		Name: "bad-gate-team",
+		Phases: []Phase{
+			{Name: "work", Tools: []string{"Read"}, Gate: GateType("bogus")},
+			{Name: "next", Tools: []string{"Write"}},
+		},
+	}
+	mgr, _ := reg.Create(cfg, dir)
+	mgr.Phases.SetPhases("worker", cfg.Phases)
+
+	tool := AdvancePhaseTool{Registry: reg, AgentName: "worker"}
+	result, err := tool.Execute(context.Background(), makeInput("bad-gate-team", "done"))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected error for unknown gate type")
+	}
+	if !strings.Contains(result.Output, "unknown gate type") {
+		t.Errorf("expected 'unknown gate type' in output, got: %s", result.Output)
+	}
+}
+
 // --- Leader gate tests ---
 
 func setupLeaderGateTeam(t *testing.T) (*ManagerRegistry, *TeamManager, <-chan AgentMessage) {
@@ -192,7 +219,7 @@ func setupLeaderGateTeam(t *testing.T) (*ManagerRegistry, *TeamManager, <-chan A
 		Name:   "leader-team",
 		Leader: "lead",
 		Phases: []Phase{
-			{Name: "plan", Tools: []string{"Read"}, Model: "sonnet", Gate: "leader"},
+			{Name: "plan", Tools: []string{"Read"}, Model: "sonnet", Gate: GateLeader},
 			{Name: "implement", Tools: []string{"Write"}, Model: "opus"},
 		},
 	}
@@ -203,7 +230,6 @@ func setupLeaderGateTeam(t *testing.T) (*ManagerRegistry, *TeamManager, <-chan A
 	mgr.Phases.SetPhases("worker", cfg.Phases)
 
 	// Subscribe to lead's messages to capture the approval request.
-	// Approval requests are priority messages.
 	_, leadPriority, err := mgr.Messages.Subscribe("lead", 32)
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
@@ -222,7 +248,6 @@ func TestAdvancePhaseTool_LeaderGateApproved(t *testing.T) {
 		PriorityCh: priorityCh,
 	}
 
-	// Run advance in background.
 	type result struct {
 		res tools.Result
 		err error
@@ -233,13 +258,11 @@ func TestAdvancePhaseTool_LeaderGateApproved(t *testing.T) {
 		done <- result{r, e}
 	}()
 
-	// Wait for approval request to arrive at leader.
 	select {
 	case msg := <-leadCh:
 		if msg.Kind != MessageKindApprovalRequest {
 			t.Fatalf("expected approval_request, got %v", msg.Kind)
 		}
-		// Send approval response back via priority channel.
 		approved := true
 		priorityCh <- AgentMessage{
 			Kind:      MessageKindApprovalResponse,
@@ -252,7 +275,6 @@ func TestAdvancePhaseTool_LeaderGateApproved(t *testing.T) {
 		t.Fatal("timed out waiting for approval request")
 	}
 
-	// Wait for result.
 	select {
 	case r := <-done:
 		if r.err != nil {
@@ -344,7 +366,6 @@ func TestAdvancePhaseTool_LeaderGateContextCancelled(t *testing.T) {
 		done <- result{r, e}
 	}()
 
-	// Wait briefly then cancel.
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 
@@ -383,7 +404,6 @@ func TestAdvancePhaseTool_LeaderGateForceShutdown(t *testing.T) {
 		done <- result{r, e}
 	}()
 
-	// Send force shutdown.
 	time.Sleep(50 * time.Millisecond)
 	priorityCh <- AgentMessage{
 		Kind:  MessageKindShutdownRequest,
@@ -414,7 +434,7 @@ func TestAdvancePhaseTool_LeaderGateNoLeader(t *testing.T) {
 	cfg := TeamConfig{
 		Name: "no-leader-team",
 		Phases: []Phase{
-			{Name: "plan", Tools: []string{"Read"}, Gate: "leader"},
+			{Name: "plan", Tools: []string{"Read"}, Gate: GateLeader},
 			{Name: "work", Tools: []string{"Write"}},
 		},
 	}
@@ -435,6 +455,230 @@ func TestAdvancePhaseTool_LeaderGateNoLeader(t *testing.T) {
 	}
 }
 
+func TestAdvancePhaseTool_LeaderGateConfigOverride(t *testing.T) {
+	reg := NewManagerRegistry()
+	dir := t.TempDir()
+	cfg := TeamConfig{
+		Name:   "override-team",
+		Leader: "team-lead",
+		Phases: []Phase{
+			{Name: "plan", Tools: []string{"Read"}, Gate: GateLeader, GateConfig: map[string]string{"leader": "phase-lead"}},
+			{Name: "work", Tools: []string{"Write"}},
+		},
+	}
+	mgr, _ := reg.Create(cfg, dir)
+	mgr.Phases.SetPhases("worker", cfg.Phases)
+
+	// Subscribe to phase-lead (the override) to verify routing.
+	_, phasePriority, err := mgr.Messages.Subscribe("phase-lead", 32)
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	priorityCh := make(chan any, 8)
+	tool := AdvancePhaseTool{
+		Registry:   reg,
+		AgentName:  "worker",
+		PriorityCh: priorityCh,
+	}
+
+	type result struct {
+		res tools.Result
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		r, e := tool.Execute(context.Background(), makeInput("override-team", "plan done"))
+		done <- result{r, e}
+	}()
+
+	// The approval request should go to phase-lead, not team-lead.
+	select {
+	case msg := <-phasePriority:
+		if msg.Kind != MessageKindApprovalRequest {
+			t.Fatalf("expected approval_request, got %v", msg.Kind)
+		}
+		approved := true
+		priorityCh <- AgentMessage{
+			Kind:      MessageKindApprovalResponse,
+			From:      "phase-lead",
+			To:        "worker",
+			RequestID: msg.RequestID,
+			Approve:   &approved,
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for approval request at phase-lead")
+	}
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("Execute: %v", r.err)
+		}
+		if r.res.IsError {
+			t.Fatalf("unexpected error: %s", r.res.Output)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for result")
+	}
+}
+
+func TestAdvancePhaseTool_LeaderGateFirstMemberFallback(t *testing.T) {
+	reg := NewManagerRegistry()
+	dir := t.TempDir()
+	cfg := TeamConfig{
+		Name: "fallback-team",
+		// No Leader field set.
+		Phases: []Phase{
+			{Name: "plan", Tools: []string{"Read"}, Gate: GateLeader},
+			{Name: "work", Tools: []string{"Write"}},
+		},
+	}
+	mgr, _ := reg.Create(cfg, dir)
+	mgr.Phases.SetPhases("worker", cfg.Phases)
+
+	// Register members so firstMember returns "alice" (alphabetically first).
+	mgr.Members.Add(Member{Name: "charlie", Status: MemberStatusActive})
+	mgr.Members.Add(Member{Name: "alice", Status: MemberStatusActive})
+	mgr.Members.Add(Member{Name: "worker", Status: MemberStatusActive})
+
+	// Subscribe to alice's messages.
+	_, alicePriority, err := mgr.Messages.Subscribe("alice", 32)
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	priorityCh := make(chan any, 8)
+	tool := AdvancePhaseTool{
+		Registry:   reg,
+		AgentName:  "worker",
+		PriorityCh: priorityCh,
+	}
+
+	type result struct {
+		res tools.Result
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		r, e := tool.Execute(context.Background(), makeInput("fallback-team", "plan done"))
+		done <- result{r, e}
+	}()
+
+	// The approval request should go to alice (alphabetically first).
+	select {
+	case msg := <-alicePriority:
+		if msg.Kind != MessageKindApprovalRequest {
+			t.Fatalf("expected approval_request, got %v", msg.Kind)
+		}
+		approved := true
+		priorityCh <- AgentMessage{
+			Kind:      MessageKindApprovalResponse,
+			From:      "alice",
+			To:        "worker",
+			RequestID: msg.RequestID,
+			Approve:   &approved,
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for approval request at alice")
+	}
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("Execute: %v", r.err)
+		}
+		if r.res.IsError {
+			t.Fatalf("unexpected error: %s", r.res.Output)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for result")
+	}
+}
+
+func TestAdvancePhaseTool_LeaderGateBufferedMessages(t *testing.T) {
+	reg, mgr, leadCh := setupLeaderGateTeam(t)
+
+	// Subscribe worker to capture re-sent messages (DMs go to regular channel).
+	workerRegular, _, err := mgr.Messages.Subscribe("worker", 32)
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	priorityCh := make(chan any, 8)
+	tool := AdvancePhaseTool{
+		Registry:   reg,
+		AgentName:  "worker",
+		PriorityCh: priorityCh,
+	}
+
+	type result struct {
+		res tools.Result
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		r, e := tool.Execute(context.Background(), makeInput("leader-team", "plan complete"))
+		done <- result{r, e}
+	}()
+
+	// Wait for approval request at lead.
+	var requestID string
+	select {
+	case msg := <-leadCh:
+		requestID = msg.RequestID
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for approval request")
+	}
+
+	// Send two unrelated DMs before the approval.
+	priorityCh <- AgentMessage{Kind: MessageKindDM, From: "other", To: "worker", Content: "hello"}
+	priorityCh <- AgentMessage{Kind: MessageKindDM, From: "other2", To: "worker", Content: "hi"}
+
+	// Now send the approval.
+	approved := true
+	priorityCh <- AgentMessage{
+		Kind:      MessageKindApprovalResponse,
+		From:      "lead",
+		To:        "worker",
+		RequestID: requestID,
+		Approve:   &approved,
+	}
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("Execute: %v", r.err)
+		}
+		if r.res.IsError {
+			t.Fatalf("unexpected error: %s", r.res.Output)
+		}
+		var out map[string]any
+		json.Unmarshal([]byte(r.res.Output), &out)
+		buffered, _ := out["buffered_messages"].(float64)
+		if buffered != 2 {
+			t.Errorf("expected 2 buffered messages, got %v", buffered)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for result")
+	}
+
+	// Verify buffered messages were re-sent to the worker (DMs go to regular channel).
+	received := 0
+	timeout := time.After(1 * time.Second)
+	for received < 2 {
+		select {
+		case msg := <-workerRegular:
+			if msg.Kind != MessageKindDM {
+				t.Errorf("expected DM, got %v", msg.Kind)
+			}
+			received++
+		case <-timeout:
+			t.Fatalf("expected 2 re-sent messages, got %d", received)
+		}
+	}
+}
+
 // --- Condition gate tests ---
 
 func TestAdvancePhaseTool_ConditionGatePasses(t *testing.T) {
@@ -443,7 +687,7 @@ func TestAdvancePhaseTool_ConditionGatePasses(t *testing.T) {
 	cfg := TeamConfig{
 		Name: "cond-team",
 		Phases: []Phase{
-			{Name: "check", Tools: []string{"Read"}, Gate: "condition", GateConfig: map[string]string{"command": "true"}},
+			{Name: "check", Tools: []string{"Read"}, Gate: GateCondition, GateConfig: map[string]string{"command": "true"}},
 			{Name: "work", Tools: []string{"Write"}},
 		},
 	}
@@ -472,7 +716,7 @@ func TestAdvancePhaseTool_ConditionGateFails(t *testing.T) {
 	cfg := TeamConfig{
 		Name: "cond-fail-team",
 		Phases: []Phase{
-			{Name: "check", Tools: []string{"Read"}, Gate: "condition", GateConfig: map[string]string{"command": "exit 1"}},
+			{Name: "check", Tools: []string{"Read"}, Gate: GateCondition, GateConfig: map[string]string{"command": "exit 1"}},
 			{Name: "work", Tools: []string{"Write"}},
 		},
 	}
@@ -495,7 +739,7 @@ func TestAdvancePhaseTool_ConditionGateOutput(t *testing.T) {
 	cfg := TeamConfig{
 		Name: "cond-output-team",
 		Phases: []Phase{
-			{Name: "check", Tools: []string{"Read"}, Gate: "condition", GateConfig: map[string]string{"command": "echo 'tests failed'; exit 1"}},
+			{Name: "check", Tools: []string{"Read"}, Gate: GateCondition, GateConfig: map[string]string{"command": "echo 'tests failed'; exit 1"}},
 			{Name: "work", Tools: []string{"Write"}},
 		},
 	}
@@ -518,7 +762,7 @@ func TestAdvancePhaseTool_ConditionGateContextCancel(t *testing.T) {
 	cfg := TeamConfig{
 		Name: "cond-cancel-team",
 		Phases: []Phase{
-			{Name: "check", Tools: []string{"Read"}, Gate: "condition", GateConfig: map[string]string{"command": "sleep 60"}},
+			{Name: "check", Tools: []string{"Read"}, Gate: GateCondition, GateConfig: map[string]string{"command": "sleep 60"}},
 			{Name: "work", Tools: []string{"Write"}},
 		},
 	}
@@ -541,7 +785,7 @@ func TestAdvancePhaseTool_ConditionGateMissingCommand(t *testing.T) {
 	cfg := TeamConfig{
 		Name: "cond-nocmd-team",
 		Phases: []Phase{
-			{Name: "check", Tools: []string{"Read"}, Gate: "condition"},
+			{Name: "check", Tools: []string{"Read"}, Gate: GateCondition},
 			{Name: "work", Tools: []string{"Write"}},
 		},
 	}
@@ -552,5 +796,26 @@ func TestAdvancePhaseTool_ConditionGateMissingCommand(t *testing.T) {
 	result, _ := tool.Execute(context.Background(), makeInput("cond-nocmd-team", "checking"))
 	if !result.IsError {
 		t.Fatal("expected error for missing command")
+	}
+}
+
+// --- GateType tests ---
+
+func TestGateType_Valid(t *testing.T) {
+	tests := []struct {
+		gate  GateType
+		valid bool
+	}{
+		{"", true},
+		{GateAuto, true},
+		{GateLeader, true},
+		{GateCondition, true},
+		{"bogus", false},
+		{"leadr", false},
+	}
+	for _, tc := range tests {
+		if got := tc.gate.Valid(); got != tc.valid {
+			t.Errorf("GateType(%q).Valid() = %v, want %v", tc.gate, got, tc.valid)
+		}
 	}
 }

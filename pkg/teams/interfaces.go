@@ -9,7 +9,6 @@ type MemberRegistry interface {
 	List() []Member
 	Count() int
 	ActiveCount() int
-	FirstMember() (string, bool)
 }
 
 // TaskStorage manages task persistence and querying.

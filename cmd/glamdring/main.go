@@ -342,7 +342,7 @@ func phaseConfigToPhases(configs []config.PhaseConfig) []teams.Phase {
 			Tools:      c.Tools,
 			Model:      c.Model,
 			Fallback:   c.Fallback,
-			Gate:       c.Gate,
+			Gate:       teams.GateType(c.Gate),
 			GateConfig: c.GateConfig,
 		}
 	}
@@ -439,10 +439,9 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 		agentRegistry.Register(teams.TaskUpdateTool{Registry: registry, AgentName: params.AgentName})
 		agentRegistry.Register(teams.SendMessageTool{Registry: registry, AgentName: params.AgentName})
 
-		// Create a child context for the agent so AdvancePhaseTool can cancel
-		// on force shutdown.
-		agentCtx, agentCancel := context.WithCancel(ctx)
-		_ = agentCtx // Context is used by the caller; cancel is wired to the tool.
+		// agentCancel is wired to AdvancePhaseTool and the cleanup closure so
+		// force shutdown and agent teardown both release the child context.
+		_, agentCancel := context.WithCancel(ctx)
 
 		agentRegistry.Register(teams.AdvancePhaseTool{
 			Registry:   registry,
@@ -477,7 +476,7 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 		if len(phases) > 0 {
 			if phase, _, err := mgr.Phases.Current(params.AgentName); err == nil {
 				phaseName = phase.Name
-				gateType = phase.Gate
+				gateType = string(phase.Gate)
 			}
 		}
 		teamPrompt := config.BuildTeamAgentPrompt(config.TeamAgentInfo{

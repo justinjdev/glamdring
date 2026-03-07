@@ -263,7 +263,7 @@ func validateWorkflows(workflows map[string]WorkflowConfig) error {
 				case "auto", "leader", "condition":
 					// valid
 				default:
-					log.Printf("warning: workflow %q phase %q has unknown gate type %q", name, p.Name, p.Gate)
+					return fmt.Errorf("workflow %q phase %q has unknown gate type %q; valid types: auto, leader, condition", name, p.Name, p.Gate)
 				}
 			}
 			if p.Gate == "condition" && p.GateConfig["command"] == "" {
