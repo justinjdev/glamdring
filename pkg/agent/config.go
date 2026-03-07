@@ -55,6 +55,10 @@ type Config struct {
 	// When set, operations outside the scope are denied before normal
 	// permission evaluation.
 	TeamScope *config.TeamScope
+
+	// Endpoint overrides the API endpoint URL. Intended for testing with
+	// httptest servers.
+	Endpoint string
 }
 
 // DefaultModel is the default Claude model to use.
