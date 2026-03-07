@@ -27,6 +27,7 @@ type SubmitMsg struct {
 type InputModel struct {
 	textarea textarea.Model
 	styles   Styles
+	palette  ThemePalette
 	width    int
 
 	// slashCmd tracks tab-completion state for slash commands.
@@ -52,7 +53,7 @@ type InputModel struct {
 const maxInputHeight = 8
 
 // NewInputModel creates a configured input component.
-func NewInputModel(styles Styles) InputModel {
+func NewInputModel(styles Styles, palette ThemePalette) InputModel {
 	ta := textarea.New()
 	ta.Placeholder = "ask glamdring something..."
 	ta.CharLimit = 0 // no limit
@@ -63,24 +64,24 @@ func NewInputModel(styles Styles) InputModel {
 	ta.FocusedStyle.Base = lipgloss.NewStyle()
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().
-		Foreground(colorFgDim).
+		Foreground(palette.FgDim).
 		Italic(true)
 	ta.FocusedStyle.Text = lipgloss.NewStyle().
-		Foreground(colorFgBright)
+		Foreground(palette.FgBright)
 	ta.FocusedStyle.Prompt = lipgloss.NewStyle().
-		Foreground(colorAmber).
+		Foreground(palette.Primary).
 		Bold(true)
 	ta.Prompt = "\u276f "
 
 	ta.BlurredStyle.Base = lipgloss.NewStyle()
 	ta.BlurredStyle.CursorLine = lipgloss.NewStyle()
 	ta.BlurredStyle.Placeholder = lipgloss.NewStyle().
-		Foreground(colorFgDim).
+		Foreground(palette.FgDim).
 		Italic(true)
 	ta.BlurredStyle.Text = lipgloss.NewStyle().
-		Foreground(colorFg)
+		Foreground(palette.Fg)
 	ta.BlurredStyle.Prompt = lipgloss.NewStyle().
-		Foreground(colorFgDim)
+		Foreground(palette.FgDim)
 	ta.Prompt = "\u276f "
 
 	// Swap Enter and Alt+Enter: Enter submits, Alt+Enter inserts newline.
@@ -93,8 +94,31 @@ func NewInputModel(styles Styles) InputModel {
 	return InputModel{
 		textarea: ta,
 		styles:   styles,
+		palette:  palette,
 		slashCmd: NewSlashCommandState(),
 	}
+}
+
+// SetTheme updates the input styling without destroying state (history,
+// tab completion, pending images, current text).
+func (m *InputModel) SetTheme(styles Styles, palette ThemePalette) {
+	m.styles = styles
+	m.palette = palette
+	m.textarea.FocusedStyle.Placeholder = lipgloss.NewStyle().
+		Foreground(palette.FgDim).
+		Italic(true)
+	m.textarea.FocusedStyle.Text = lipgloss.NewStyle().
+		Foreground(palette.FgBright)
+	m.textarea.FocusedStyle.Prompt = lipgloss.NewStyle().
+		Foreground(palette.Primary).
+		Bold(true)
+	m.textarea.BlurredStyle.Placeholder = lipgloss.NewStyle().
+		Foreground(palette.FgDim).
+		Italic(true)
+	m.textarea.BlurredStyle.Text = lipgloss.NewStyle().
+		Foreground(palette.Fg)
+	m.textarea.BlurredStyle.Prompt = lipgloss.NewStyle().
+		Foreground(palette.FgDim)
 }
 
 // Init returns the initial command for the input component.
@@ -265,7 +289,7 @@ func (m InputModel) View() string {
 				indicators = append(indicators, fmt.Sprintf("[Image %d]", i+1))
 			}
 		}
-		imageBar := lipgloss.NewStyle().Foreground(colorAmber).Render(strings.Join(indicators, " "))
+		imageBar := lipgloss.NewStyle().Foreground(m.palette.Primary).Render(strings.Join(indicators, " "))
 		content = imageBar + "\n" + m.textarea.View()
 	} else {
 		content = m.textarea.View()

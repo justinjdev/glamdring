@@ -25,6 +25,7 @@ Thumbs.db
 
 # Ephemeral
 tmp/
+.worktrees/
 
 # Environment
 .env

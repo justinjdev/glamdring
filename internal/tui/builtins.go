@@ -34,6 +34,7 @@ var builtinCommands = map[string]BuiltinHandler{
 	"mcp":      cmdMCP,
 	"export":   cmdExport,
 	"copy":     cmdCopy,
+	"theme":    cmdTheme,
 }
 
 // builtinDescriptions provides short help text for each built-in command.
@@ -51,6 +52,7 @@ var builtinDescriptions = map[string]string{
 	"mcp":      "Manage MCP servers and tools",
 	"export":   "Export conversation (--html for HTML format)",
 	"copy":     "Copy last response to clipboard",
+	"theme":    "Show or switch theme",
 }
 
 // BuiltinNames returns a sorted list of built-in command names.
@@ -545,6 +547,80 @@ func cmdCopy(m *Model, args string) tea.Cmd {
 
 	lines := strings.Count(text, "\n") + 1
 	m.output.AppendSystem(fmt.Sprintf("Copied %d lines to clipboard.", lines))
+	return nil
+}
+
+// cmdTheme lists available themes or switches to a named theme at runtime.
+func cmdTheme(m *Model, args string) tea.Cmd {
+	args = strings.TrimSpace(args)
+
+	if args == "" {
+		// List all available themes.
+		var b strings.Builder
+		b.WriteString("Available themes:\n")
+
+		builtins := ThemeNames()
+		b.WriteString("  Built-in:\n")
+		for _, name := range builtins {
+			marker := "  "
+			if name == m.palette.Name {
+				marker = "* "
+			}
+			b.WriteString(fmt.Sprintf("    %s%s\n", marker, name))
+		}
+
+		if len(m.settings.Themes) > 0 {
+			userNames := make([]string, 0, len(m.settings.Themes))
+			for name := range m.settings.Themes {
+				userNames = append(userNames, name)
+			}
+			sort.Strings(userNames)
+			b.WriteString("  User-defined:\n")
+			for _, name := range userNames {
+				marker := "  "
+				if name == m.palette.Name {
+					marker = "* "
+				}
+				b.WriteString(fmt.Sprintf("    %s%s\n", marker, name))
+			}
+		}
+
+		m.output.AppendSystem(strings.TrimRight(b.String(), "\n"))
+		return nil
+	}
+
+	// Switch to a named theme.
+	var palette ThemePalette
+	var found bool
+
+	// Check user-defined themes first.
+	if m.settings.Themes != nil {
+		if ucfg, ok := m.settings.Themes[args]; ok {
+			palette = PaletteFromUserConfig(args, ucfg)
+			found = true
+		}
+	}
+
+	// Fall back to built-in themes.
+	if !found {
+		palette, found = LookupTheme(args)
+	}
+
+	if !found {
+		all := ThemeNames()
+		if len(m.settings.Themes) > 0 {
+			for name := range m.settings.Themes {
+				all = append(all, name)
+			}
+			sort.Strings(all)
+		}
+		m.output.AppendError(fmt.Sprintf("Unknown theme %q. Available: %s", args, strings.Join(all, ", ")))
+		return nil
+	}
+
+	m.SetTheme(palette, m.settings.HighContrast)
+	m.layoutComponents()
+	m.output.AppendSystem(fmt.Sprintf("Theme changed to: %s", args))
 	return nil
 }
 

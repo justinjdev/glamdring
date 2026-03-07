@@ -2,6 +2,8 @@
 
 A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](https://charm.sh) libraries, replacing Claude Code's Ink-based frontend with a lightweight, responsive alternative.
 
+![glamdring theme](docs/screenshots/theme-glamdring.png)
+
 **Documentation:** [glamdring docs](https://justinjdev.github.io/glamdring/)
 
 ## Features
@@ -24,6 +26,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Slash commands** — custom prompts from `.glamdring/commands/` with tab completion
 - **Custom agents** — define specialized subagents in `.glamdring/agents/`
 - **Subagents** — parallel task spawning via the Task tool
+- **Themes** — five LOTR-inspired color themes (glamdring, rivendell, mithril, lothlorien, shire) with `/theme` runtime switching, high contrast mode, and user-defined custom themes
 - **Agent teams** (experimental) — coordinated multi-agent workflows with phase-gated tool access, inter-agent messaging, per-task file locking with automatic release, task dependencies with blocked-claim prevention, message ordering (timestamps + sequence numbers), force shutdown, team observability, context compaction archiving, and built-in workflow presets (RPIV, plan-implement, scoped) plus custom workflows from settings. Enable with `--experimental-teams` flag or `"experimental": {"teams": true}` in settings.
 
 ## Install
@@ -114,6 +117,62 @@ Glamdring uses `.glamdring/` as its primary config directory, with `.claude/` as
 Instructions files are additive -- both `GLAMDRING.md` and `CLAUDE.md` are loaded if present. All other config types use the first file found (no merging across namespaces).
 
 - **Indexer** — `indexer` object in config.json/settings.json
+
+### Themes
+
+Glamdring ships with five LOTR-inspired color themes:
+
+| Theme | Description |
+|---|---|
+| `glamdring` | Cool steel-blue (default) |
+| `rivendell` | Silver and starlight |
+| `mithril` | Bright cyan-silver |
+| `lothlorien` | Golden-amber |
+| `shire` | Warm russet-earth |
+
+
+Set the theme in `config.json` (or `settings.json`):
+
+```json
+{
+  "theme": "rivendell",
+  "high_contrast": false
+}
+```
+
+**Runtime switching** via `/theme`:
+
+| Command | Description |
+|---|---|
+| `/theme` | List available themes with current marked |
+| `/theme <name>` | Switch theme immediately |
+
+**High contrast:** Set `"high_contrast": true` to boost text brightness and accent saturation for accessibility. Works with any theme.
+
+**Custom themes:** Define custom themes in your config. User-defined themes take precedence over built-ins when names conflict.
+
+```json
+{
+  "theme": "my-custom",
+  "themes": {
+    "my-custom": {
+      "bg": "#1a1a1f",
+      "fg": "#b0b8c4",
+      "fg_dim": "#5a6270",
+      "fg_bright": "#e0e4ea",
+      "primary": "#ff6600",
+      "secondary": "#cc9900",
+      "success": "#00cc66",
+      "error": "#cc3333",
+      "info": "#3399cc",
+      "subtle": "#9966cc",
+      "surface0": "#202028",
+      "surface1": "#2a2a34",
+      "surface2": "#363640"
+    }
+  }
+}
+```
 
 ### MCP Server Configuration
 

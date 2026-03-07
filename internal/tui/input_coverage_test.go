@@ -7,41 +7,41 @@ import (
 )
 
 func TestInputModel_Value(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	if m.Value() != "" {
 		t.Errorf("expected empty value, got %q", m.Value())
 	}
 }
 
 func TestInputModel_IsSlashCmd(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	if m.IsSlashCmd() {
 		t.Error("expected IsSlashCmd() false on empty input")
 	}
 }
 
 func TestInputModel_CmdName(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	if m.CmdName() != "" {
 		t.Errorf("expected empty CmdName, got %q", m.CmdName())
 	}
 }
 
 func TestInputModel_Blur(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.Blur()
 	// Should not panic. No visible assertion needed.
 }
 
 func TestInputModel_SearchActive(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	if m.SearchActive() {
 		t.Error("expected SearchActive() false initially")
 	}
 }
 
 func TestInputModel_Init(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	cmd := m.Init()
 	// Init returns textarea.Blink, should be non-nil.
 	if cmd == nil {
@@ -50,7 +50,7 @@ func TestInputModel_Init(t *testing.T) {
 }
 
 func TestInputModel_View(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetWidth(80)
 	view := m.View()
 	if view == "" {
@@ -59,7 +59,7 @@ func TestInputModel_View(t *testing.T) {
 }
 
 func TestInputModel_View_WithPendingImages(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetWidth(80)
 	m.pendingImages = []PendingImage{
 		{Data: []byte{1}, Width: 100, Height: 200},
@@ -71,7 +71,7 @@ func TestInputModel_View_WithPendingImages(t *testing.T) {
 }
 
 func TestInputModel_View_WithPendingImageNoDimensions(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetWidth(80)
 	m.pendingImages = []PendingImage{
 		{Data: []byte{1}, Width: 0, Height: 0},
@@ -85,7 +85,7 @@ func TestInputModel_View_WithPendingImageNoDimensions(t *testing.T) {
 // --- Update key handling ---
 
 func TestInputModel_Update_EnterEmpty(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	_ = result
 	// Empty input should not produce a SubmitMsg.
@@ -95,7 +95,7 @@ func TestInputModel_Update_EnterEmpty(t *testing.T) {
 }
 
 func TestInputModel_Update_EnterWithText(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.textarea.SetValue("hello")
 
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -112,7 +112,7 @@ func TestInputModel_Update_EnterWithText(t *testing.T) {
 }
 
 func TestInputModel_Update_EnterWithImages(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.pendingImages = []PendingImage{{Data: []byte{1}}}
 
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -132,7 +132,7 @@ func TestInputModel_Update_EnterWithImages(t *testing.T) {
 }
 
 func TestInputModel_Update_UpKey_EmptyHistory(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	_ = result
 	// With empty history, up should not produce a cmd.
@@ -142,7 +142,7 @@ func TestInputModel_Update_UpKey_EmptyHistory(t *testing.T) {
 }
 
 func TestInputModel_Update_UpKey_WithHistory(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.history.Add("previous command")
 
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -153,7 +153,7 @@ func TestInputModel_Update_UpKey_WithHistory(t *testing.T) {
 }
 
 func TestInputModel_Update_DownKey_NotNavigating(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	_ = result
 	if cmd != nil {
@@ -162,7 +162,7 @@ func TestInputModel_Update_DownKey_NotNavigating(t *testing.T) {
 }
 
 func TestInputModel_Update_DownKey_RestoresDraft(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.history.Add("entry1")
 	m.history.Add("entry2")
 
@@ -179,7 +179,7 @@ func TestInputModel_Update_DownKey_RestoresDraft(t *testing.T) {
 }
 
 func TestInputModel_Update_TabComplete(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetAvailableCommands([]string{"help", "quit"})
 	m.textarea.SetValue("/he")
 
@@ -190,7 +190,7 @@ func TestInputModel_Update_TabComplete(t *testing.T) {
 }
 
 func TestInputModel_Update_TabComplete_NoMatch(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetAvailableCommands([]string{"help"})
 	m.textarea.SetValue("/xyz")
 
@@ -201,7 +201,7 @@ func TestInputModel_Update_TabComplete_NoMatch(t *testing.T) {
 }
 
 func TestInputModel_Update_TabComplete_NotSlashCmd(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetAvailableCommands([]string{"help"})
 	m.textarea.SetValue("regular text")
 
@@ -213,7 +213,7 @@ func TestInputModel_Update_TabComplete_NotSlashCmd(t *testing.T) {
 // --- Ctrl+R search ---
 
 func TestInputModel_Update_CtrlR_EntersSearch(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
 
 	if !result.searching {
@@ -222,7 +222,7 @@ func TestInputModel_Update_CtrlR_EntersSearch(t *testing.T) {
 }
 
 func TestInputModel_SearchKey_TypeCharacter(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.history.Add("go test ./...")
 	m.history.Add("git status")
 	m.searching = true
@@ -237,7 +237,7 @@ func TestInputModel_SearchKey_TypeCharacter(t *testing.T) {
 }
 
 func TestInputModel_SearchKey_Backspace(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.history.Add("go test ./...")
 	m.searching = true
 	m.searchQuery = "go"
@@ -249,7 +249,7 @@ func TestInputModel_SearchKey_Backspace(t *testing.T) {
 }
 
 func TestInputModel_SearchKey_BackspaceEmpty(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.searching = true
 	m.searchQuery = ""
 
@@ -260,7 +260,7 @@ func TestInputModel_SearchKey_BackspaceEmpty(t *testing.T) {
 }
 
 func TestInputModel_SearchKey_EnterAccepts(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.history.Add("go test ./...")
 	m.searching = true
 	m.searchQuery = "go"
@@ -277,7 +277,7 @@ func TestInputModel_SearchKey_EnterAccepts(t *testing.T) {
 }
 
 func TestInputModel_SearchKey_EnterNoResults(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.searching = true
 	m.searchQuery = "xyz"
 	m.searchResults = nil
@@ -289,7 +289,7 @@ func TestInputModel_SearchKey_EnterNoResults(t *testing.T) {
 }
 
 func TestInputModel_SearchKey_EscCancels(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.searching = true
 	m.searchQuery = "test"
 
@@ -303,7 +303,7 @@ func TestInputModel_SearchKey_EscCancels(t *testing.T) {
 }
 
 func TestInputModel_SearchKey_CtrlCCancels(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.searching = true
 
 	result, _ := m.handleSearchKey(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -313,7 +313,7 @@ func TestInputModel_SearchKey_CtrlCCancels(t *testing.T) {
 }
 
 func TestInputModel_SearchKey_CtrlRCycles(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.history.Add("go test 1")
 	m.history.Add("go test 2")
 	m.searching = true
@@ -334,7 +334,7 @@ func TestInputModel_SearchKey_CtrlRCycles(t *testing.T) {
 }
 
 func TestInputModel_SearchKey_UnhandledKey(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.searching = true
 
 	result, _ := m.handleSearchKey(tea.KeyMsg{Type: tea.KeyF1})
@@ -345,7 +345,7 @@ func TestInputModel_SearchKey_UnhandledKey(t *testing.T) {
 }
 
 func TestInputModel_Update_SearchModeRedirects(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.searching = true
 
 	// Any key during search should go to handleSearchKey.
@@ -358,7 +358,7 @@ func TestInputModel_Update_SearchModeRedirects(t *testing.T) {
 // --- renderSearch ---
 
 func TestInputModel_RenderSearch_NoMatch(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetWidth(80)
 	m.searching = true
 	m.searchQuery = "xyz"
@@ -371,7 +371,7 @@ func TestInputModel_RenderSearch_NoMatch(t *testing.T) {
 }
 
 func TestInputModel_RenderSearch_WithMatch(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetWidth(80)
 	m.searching = true
 	m.searchQuery = "test"
@@ -385,7 +385,7 @@ func TestInputModel_RenderSearch_WithMatch(t *testing.T) {
 }
 
 func TestInputModel_RenderSearch_LongMatch(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetWidth(80)
 	m.searching = true
 	m.searchQuery = "x"
@@ -403,7 +403,7 @@ func TestInputModel_RenderSearch_LongMatch(t *testing.T) {
 }
 
 func TestInputModel_RenderSearch_EmptyQuery(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetWidth(80)
 	m.searching = true
 	m.searchQuery = ""
@@ -415,7 +415,7 @@ func TestInputModel_RenderSearch_EmptyQuery(t *testing.T) {
 }
 
 func TestInputModel_View_SearchActive(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.SetWidth(80)
 	m.searching = true
 
@@ -446,7 +446,7 @@ func TestPngDimensions_BadIHDR(t *testing.T) {
 // --- Ctrl+V paste ---
 
 func TestInputModel_Update_CtrlV_NoClipboard(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	// Ctrl+V without clipboard init should not panic.
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
 	_ = result

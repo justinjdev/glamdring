@@ -17,6 +17,26 @@ type Settings struct {
 	Indexer      IndexerConfig                `json:"indexer,omitempty"`
 	Experimental ExperimentalConfig           `json:"experimental,omitempty"`
 	Workflows    map[string]WorkflowConfig    `json:"workflows,omitempty"`
+	Theme        string                       `json:"theme,omitempty"`
+	HighContrast bool                         `json:"high_contrast,omitempty"`
+	Themes       map[string]UserThemeConfig   `json:"themes,omitempty"`
+}
+
+// UserThemeConfig holds user-defined theme colors from settings.json.
+type UserThemeConfig struct {
+	Bg        string `json:"bg"`
+	Fg        string `json:"fg"`
+	FgDim     string `json:"fg_dim"`
+	FgBright  string `json:"fg_bright"`
+	Primary   string `json:"primary"`
+	Secondary string `json:"secondary"`
+	Success   string `json:"success"`
+	Error     string `json:"error"`
+	Info      string `json:"info"`
+	Subtle    string `json:"subtle"`
+	Surface0  string `json:"surface0"`
+	Surface1  string `json:"surface1"`
+	Surface2  string `json:"surface2"`
 }
 
 // ExperimentalConfig holds flags for experimental features.
@@ -224,6 +244,20 @@ func mergeSettings(base, override *Settings) {
 		}
 		for k, v := range override.Workflows {
 			base.Workflows[k] = v
+		}
+	}
+	if override.Theme != "" {
+		base.Theme = override.Theme
+	}
+	if override.HighContrast {
+		base.HighContrast = true
+	}
+	if override.Themes != nil {
+		if base.Themes == nil {
+			base.Themes = make(map[string]UserThemeConfig)
+		}
+		for k, v := range override.Themes {
+			base.Themes[k] = v
 		}
 	}
 }

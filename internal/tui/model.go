@@ -44,6 +44,7 @@ type Model struct {
 	output    OutputModel
 	statusbar StatusBar
 	styles    Styles
+	palette   ThemePalette
 	state     State
 
 	// permission holds the current permission request when in StatePermission.
@@ -115,10 +116,11 @@ type Model struct {
 
 // New creates the root TUI model without agent wiring.
 func New() Model {
-	styles := DefaultStyles()
+	palette := builtinThemes["glamdring"]
+	styles := DefaultStyles(palette)
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(colorAmber)
+	s.Style = lipgloss.NewStyle().Foreground(palette.Primary)
 
 	// Pre-fetch terminal size so the first render isn't narrow.
 	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
@@ -130,10 +132,11 @@ func New() Model {
 	}
 
 	m := Model{
-		input:     NewInputModel(styles),
+		input:     NewInputModel(styles, palette),
 		output:    NewOutputModel(styles, w, h),
 		statusbar: NewStatusBar(styles),
 		styles:    styles,
+		palette:   palette,
 		state:     StateInput,
 		spinner:   s,
 		width:     w,
@@ -173,6 +176,30 @@ func (m *Model) SetIndexerConfig(cfg config.IndexerConfig) {
 // SetSettings stores the resolved settings for /config display.
 func (m *Model) SetSettings(s config.Settings) {
 	m.settings = s
+}
+
+// SetTheme applies a theme palette to the model, rebuilding all styles.
+func (m *Model) SetTheme(p ThemePalette, highContrast bool) {
+	if highContrast {
+		p = HighContrastTransform(p)
+	}
+	m.palette = p
+	m.styles = DefaultStyles(p)
+	m.input.SetTheme(m.styles, p)
+	m.output.styles = m.styles
+	m.statusbar.styles = m.styles
+	m.spinner.Style = lipgloss.NewStyle().Foreground(p.Primary)
+}
+
+// PopulateDemoContent fills the output viewport with representative sample
+// content for theme screenshots. Call after SetTheme if a non-default theme
+// is desired.
+func (m *Model) PopulateDemoContent() {
+	m.output.AppendUserMessage("How do I switch themes in glamdring?")
+	m.output.AppendText("Use `/theme <name>` to switch at runtime. Five built-in themes ship with glamdring.\n\nEach theme defines **Primary**, **Secondary**, **Success**, and **Error** accent colors that are applied across the entire interface.\n\n```go\npalette, ok := tui.LookupTheme(\"mithril\")\n```\n")
+	m.output.AppendToolCall("Read", "internal/tui/styles.go")
+	m.output.AppendToolResult("type ThemePalette struct {\n    Name     string\n    Bg       lipgloss.Color\n    Primary  lipgloss.Color\n    // ... 11 more color slots\n}", false)
+	m.output.AppendText("The `ThemePalette` struct defines all color slots. You can also create custom themes in your settings file.")
 }
 
 // SetMCPManager stores the MCP manager for /mcp command and status bar updates.
@@ -715,6 +742,7 @@ func (m Model) handleCheckpointKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.input.Focus()
 	case "n", "N":
 		m.checkpointContent = ""
+		m.output.Clear()
 		m.state = StateInput
 		return m, m.input.Focus()
 	}

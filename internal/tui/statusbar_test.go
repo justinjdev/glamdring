@@ -73,7 +73,7 @@ func TestFormatTokens(t *testing.T) {
 }
 
 func TestStatusBarYoloIndicator(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 	sb.SetWidth(120)
 
@@ -99,7 +99,7 @@ func TestStatusBarYoloIndicator(t *testing.T) {
 }
 
 func TestStatusBarUpdate_UsesCostForModel(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 
 	sb.Update("claude-sonnet-4-6", 1_000_000, 1_000_000, 5)
@@ -112,7 +112,7 @@ func TestStatusBarUpdate_UsesCostForModel(t *testing.T) {
 // --- MCP status bar tests ---
 
 func TestStatusBarMCP_Hidden(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 	sb.SetWidth(120)
 	// mcpTotal=0 by default, should not show "mcp:" in output.
@@ -123,7 +123,7 @@ func TestStatusBarMCP_Hidden(t *testing.T) {
 }
 
 func TestStatusBarMCP_AllAlive(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 	sb.SetWidth(120)
 	sb.UpdateMCP(3, 3)
@@ -139,7 +139,7 @@ func TestStatusBarMCP_AllAlive(t *testing.T) {
 }
 
 func TestStatusBarMCP_SomeDead(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 	sb.SetWidth(120)
 	sb.UpdateMCP(3, 2)
@@ -156,7 +156,7 @@ func TestStatusBarMCP_SomeDead(t *testing.T) {
 // --- Context window usage tests ---
 
 func TestStatusBarContextPercent_Basic(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 
 	sb.UpdateContext(100_000, "claude-opus-4-6")
@@ -166,7 +166,7 @@ func TestStatusBarContextPercent_Basic(t *testing.T) {
 }
 
 func TestStatusBarContextPercent_Thresholds(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 	sb.SetWidth(120)
 
@@ -190,7 +190,7 @@ func TestStatusBarContextPercent_Thresholds(t *testing.T) {
 }
 
 func TestStatusBarContextPercent_RendersInView(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 	sb.SetWidth(120)
 
@@ -212,7 +212,7 @@ func TestStatusBarContextPercent_RendersInView(t *testing.T) {
 }
 
 func TestStatusBarContextPercent_UnknownModel(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 
 	// Unknown model uses default 200k limit.
@@ -223,7 +223,7 @@ func TestStatusBarContextPercent_UnknownModel(t *testing.T) {
 }
 
 func TestStatusBarContextPercent_CapAt100(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 
 	sb.UpdateContext(300_000, "claude-opus-4-6")
@@ -233,7 +233,7 @@ func TestStatusBarContextPercent_CapAt100(t *testing.T) {
 }
 
 func TestStatusBarView_ContextCaution(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 	sb.SetWidth(120)
 
@@ -246,7 +246,7 @@ func TestStatusBarView_ContextCaution(t *testing.T) {
 }
 
 func TestStatusBarView_ContextDanger(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 	sb.SetWidth(120)
 
@@ -259,7 +259,7 @@ func TestStatusBarView_ContextDanger(t *testing.T) {
 }
 
 func TestStatusBarView_ContextNormal(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 	sb.SetWidth(120)
 
@@ -272,7 +272,7 @@ func TestStatusBarView_ContextNormal(t *testing.T) {
 }
 
 func TestStatusBarUpdateContext_ZeroLimit(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 
 	// With a model whose limit is 0 (shouldn't happen, but test the guard).
@@ -285,7 +285,7 @@ func TestStatusBarUpdateContext_ZeroLimit(t *testing.T) {
 }
 
 func TestStatusBarReset_PreservesMCP(t *testing.T) {
-	styles := DefaultStyles()
+	styles := DefaultStyles(builtinThemes["glamdring"])
 	sb := NewStatusBar(styles)
 	sb.UpdateMCP(3, 2)
 	sb.Update("claude-opus-4-6", 1000, 500, 5)

@@ -57,7 +57,15 @@ func main() {
 	model := flag.String("model", "", "Claude model to use (overrides settings)")
 	yolo := flag.Bool("yolo", false, "auto-approve all tool permissions")
 	experimentalTeams := flag.Bool("experimental-teams", false, "enable experimental agent teams support")
+	demo := flag.Bool("demo", false, "launch with demo content for theme screenshots")
+	demoTheme := flag.String("demo-theme", "glamdring", "theme to use with --demo")
 	flag.Parse()
+
+	// Demo mode: launch TUI with sample content, no auth or agent needed.
+	if *demo {
+		runDemo(*demoTheme)
+		return
+	}
 
 	creds, err := auth.Resolve()
 	if err != nil {
@@ -214,6 +222,28 @@ func main() {
 
 	m := tui.NewWithAgent(ctx, cfg)
 	m.SetSettings(settings)
+
+	// Apply theme from settings.
+	{
+		themeName := settings.Theme
+		if themeName == "" {
+			themeName = "glamdring"
+		}
+		palette, found := tui.LookupTheme(themeName)
+		if settings.Themes != nil {
+			if userTheme, ok := settings.Themes[themeName]; ok {
+				palette = tui.PaletteFromUserConfig(themeName, userTheme)
+				found = true
+			}
+		}
+		if !found && settings.Theme != "" {
+			log.Printf("warning: unknown theme %q, falling back to glamdring", settings.Theme)
+		}
+		if settings.Theme != "" || settings.HighContrast {
+			m.SetTheme(palette, settings.HighContrast)
+		}
+	}
+
 	m.SetCommandRegistry(cmdRegistry)
 	m.SetIndexerConfig(settings.Indexer)
 	m.SetMCPManager(mcpMgr)
@@ -243,6 +273,23 @@ func main() {
 	// Fire SessionEnd hook on clean exit.
 	// Use Background context since the signal context may already be cancelled.
 	hookRunner.Run(context.Background(), hooks.SessionEnd, "", nil)
+}
+
+// runDemo launches the TUI in demo mode with pre-populated content.
+// Used for VHS theme screenshot capture.
+func runDemo(themeName string) {
+	m := tui.New()
+	palette, ok := tui.LookupTheme(themeName)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "warning: unknown theme %q, using glamdring\n", themeName)
+	}
+	m.SetTheme(palette, false)
+	m.PopulateDemoContent()
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 // makeSubagentRunner returns a SubagentRunner that wraps agent.Run. It

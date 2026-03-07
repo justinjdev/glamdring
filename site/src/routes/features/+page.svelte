@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import CopyButton from '$lib/components/CopyButton.svelte';
 </script>
 
@@ -118,26 +119,49 @@
 				<tbody>
 					<tr>
 						<td><code>glamdring</code></td>
-						<td>Ice blue (default)</td>
+						<td>Cool steel-blue (default)</td>
 					</tr>
 					<tr>
 						<td><code>rivendell</code></td>
-						<td>Soft teal</td>
+						<td>Silver and starlight</td>
 					</tr>
 					<tr>
 						<td><code>mithril</code></td>
-						<td>Bright cyan</td>
+						<td>Bright cyan-silver</td>
 					</tr>
 					<tr>
 						<td><code>lothlorien</code></td>
-						<td>Cool gold</td>
+						<td>Golden-amber</td>
 					</tr>
 					<tr>
 						<td><code>shire</code></td>
-						<td>Warm amber</td>
+						<td>Warm russet-earth</td>
 					</tr>
 				</tbody>
 			</table>
+		</div>
+
+		<div class="theme-gallery">
+			<figure>
+				<img src="{base}/screenshots/theme-glamdring.png" alt="glamdring theme" />
+				<figcaption>glamdring (default)</figcaption>
+			</figure>
+			<figure>
+				<img src="{base}/screenshots/theme-rivendell.png" alt="rivendell theme" />
+				<figcaption>rivendell</figcaption>
+			</figure>
+			<figure>
+				<img src="{base}/screenshots/theme-mithril.png" alt="mithril theme" />
+				<figcaption>mithril</figcaption>
+			</figure>
+			<figure>
+				<img src="{base}/screenshots/theme-lothlorien.png" alt="lothlorien theme" />
+				<figcaption>lothlorien</figcaption>
+			</figure>
+			<figure>
+				<img src="{base}/screenshots/theme-shire.png" alt="shire theme" />
+				<figcaption>shire</figcaption>
+			</figure>
 		</div>
 
 		<p>Switch themes at runtime with <code>/theme</code>. Running <code>/theme</code> alone lists all available themes. <code>/theme &lt;name&gt;</code> switches immediately.</p>
@@ -272,5 +296,29 @@
 
 	tr:hover {
 		background-color: var(--color-surface);
+	}
+
+	.theme-gallery {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: var(--space-md);
+		margin-bottom: var(--space-lg);
+	}
+
+	.theme-gallery figure {
+		margin: 0;
+	}
+
+	.theme-gallery img {
+		width: 100%;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+	}
+
+	.theme-gallery figcaption {
+		margin-top: var(--space-xs, 0.25rem);
+		font-size: 0.85rem;
+		color: var(--color-text-muted);
+		text-align: center;
 	}
 </style>
