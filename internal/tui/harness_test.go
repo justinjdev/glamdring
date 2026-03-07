@@ -395,6 +395,8 @@ func parseKeyMsg(key string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyTab}
 	case "shift+tab":
 		return tea.KeyMsg{Type: tea.KeyShiftTab}
+	case "ctrl+v":
+		return tea.KeyMsg{Type: tea.KeyCtrlV}
 	case "up":
 		return tea.KeyMsg{Type: tea.KeyUp}
 	case "down":
