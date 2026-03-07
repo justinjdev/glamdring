@@ -87,8 +87,8 @@ func main() {
 		settings.Model = *model
 	}
 
-	// Discover CLAUDE.md files.
-	claudeMDProject, claudeMDUser, _ := config.FindClaudeMD(workDir)
+	// Discover instruction files (GLAMDRING.md / CLAUDE.md).
+	claudeMDProject, claudeMDUser, _ := config.FindInstructions(workDir)
 
 	// Discover custom agent definitions.
 	agentDefs := agents.NewRegistry(agents.Discover(workDir))

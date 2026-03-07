@@ -105,16 +105,20 @@ func LoadSettings(cwd string) Settings {
 	return s
 }
 
-// loadUserSettings reads ~/.claude/settings.json.
+// loadUserSettings reads config from the user-level config directory.
+// Checks ~/.config/glamdring/config.json first, then ~/.claude/settings.json.
 func loadUserSettings() (Settings, bool) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return Settings{}, false
+	if path := ResolveUserFile(primaryConfigFile); path != "" {
+		return loadSettingsFile(path)
 	}
-	return loadSettingsFile(filepath.Join(home, ".claude", "settings.json"))
+	if path := ResolveUserFile(fallbackConfigFile); path != "" {
+		return loadSettingsFile(path)
+	}
+	return Settings{}, false
 }
 
-// loadProjectSettings walks up from cwd to find .claude/settings.json.
+// loadProjectSettings walks up from cwd to find config.json or settings.json.
+// Checks .glamdring/config.json then .claude/settings.json at each level.
 func loadProjectSettings(cwd string) (Settings, bool) {
 	dir, err := filepath.Abs(cwd)
 	if err != nil {
@@ -122,9 +126,15 @@ func loadProjectSettings(cwd string) (Settings, bool) {
 	}
 
 	for {
-		candidate := filepath.Join(dir, ".claude", "settings.json")
-		if s, ok := loadSettingsFile(candidate); ok {
-			return s, true
+		if path := Resolve(dir, primaryConfigFile); path != "" {
+			if s, ok := loadSettingsFile(path); ok {
+				return s, true
+			}
+		}
+		if path := Resolve(dir, fallbackConfigFile); path != "" {
+			if s, ok := loadSettingsFile(path); ok {
+				return s, true
+			}
 		}
 
 		parent := filepath.Dir(dir)

@@ -117,6 +117,56 @@ func TestLoadHooks_NoDuplicateFromSameDir(t *testing.T) {
 	}
 }
 
+func TestLoadHooks_GlamdringConfigJSON(t *testing.T) {
+	root := t.TempDir()
+	glamDir := filepath.Join(root, ".glamdring")
+	if err := os.Mkdir(glamDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	configJSON := `{"hooks": [{"event": "SessionStart", "command": "echo glamdring"}]}`
+	if err := os.WriteFile(filepath.Join(glamDir, "config.json"), []byte(configJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	hooks := LoadHooks(root)
+	if len(hooks) != 1 {
+		t.Fatalf("expected 1 hook, got %d", len(hooks))
+	}
+	if hooks[0].Command != "echo glamdring" {
+		t.Errorf("hook command: got %q, want 'echo glamdring'", hooks[0].Command)
+	}
+}
+
+func TestLoadHooks_GlamdringOverridesClaude(t *testing.T) {
+	root := t.TempDir()
+	glamDir := filepath.Join(root, ".glamdring")
+	claudeDir := filepath.Join(root, ".claude")
+	if err := os.Mkdir(glamDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	glamJSON := `{"hooks": [{"event": "SessionStart", "command": "echo glamdring"}]}`
+	claudeJSON := `{"hooks": [{"event": "SessionStart", "command": "echo claude"}]}`
+	if err := os.WriteFile(filepath.Join(glamDir, "config.json"), []byte(glamJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(claudeJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	hooks := LoadHooks(root)
+	if len(hooks) != 1 {
+		t.Fatalf("expected 1 hook (.glamdring/ should win), got %d", len(hooks))
+	}
+	if hooks[0].Command != "echo glamdring" {
+		t.Errorf("hook command: got %q, want 'echo glamdring'", hooks[0].Command)
+	}
+}
+
 func TestLoadHooks_NoHooksKey(t *testing.T) {
 	root := t.TempDir()
 	claudeDir := filepath.Join(root, ".claude")

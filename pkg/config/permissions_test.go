@@ -347,3 +347,47 @@ func TestLoadPermissions_InvalidJSON(t *testing.T) {
 		t.Error("expected nil config for invalid JSON")
 	}
 }
+
+func TestLoadPermissions_GlamdringDir(t *testing.T) {
+	dir := t.TempDir()
+	glamDir := filepath.Join(dir, ".glamdring")
+	os.MkdirAll(glamDir, 0o755)
+
+	data := `{"allow":[{"tool":"Read"}],"deny":[]}`
+	os.WriteFile(filepath.Join(glamDir, "permissions.json"), []byte(data), 0o644)
+
+	pc, err := LoadPermissions(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pc == nil {
+		t.Fatal("expected non-nil PermissionConfig")
+	}
+	if len(pc.Allow) != 1 || pc.Allow[0].Tool != "Read" {
+		t.Errorf("unexpected allow rules: %+v", pc.Allow)
+	}
+}
+
+func TestLoadPermissions_GlamdringOverridesClaude(t *testing.T) {
+	dir := t.TempDir()
+	glamDir := filepath.Join(dir, ".glamdring")
+	claudeDir := filepath.Join(dir, ".claude")
+	os.MkdirAll(glamDir, 0o755)
+	os.MkdirAll(claudeDir, 0o755)
+
+	os.WriteFile(filepath.Join(glamDir, "permissions.json"),
+		[]byte(`{"allow":[{"tool":"Read"}],"deny":[]}`), 0o644)
+	os.WriteFile(filepath.Join(claudeDir, "permissions.json"),
+		[]byte(`{"allow":[{"tool":"Write"}],"deny":[]}`), 0o644)
+
+	pc, err := LoadPermissions(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pc == nil {
+		t.Fatal("expected non-nil PermissionConfig")
+	}
+	if len(pc.Allow) != 1 || pc.Allow[0].Tool != "Read" {
+		t.Errorf("expected Read from .glamdring/, got: %+v", pc.Allow)
+	}
+}

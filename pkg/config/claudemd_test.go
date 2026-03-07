@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-func TestFindClaudeMD_ProjectLevel(t *testing.T) {
-	// Create a temp directory tree: root/.claude/CLAUDE.md, root/sub/deep/
+func TestFindInstructions_ProjectLevel_Claude(t *testing.T) {
 	root := t.TempDir()
 	claudeDir := filepath.Join(root, ".claude")
 	if err := os.Mkdir(claudeDir, 0o755); err != nil {
@@ -24,33 +23,82 @@ func TestFindClaudeMD_ProjectLevel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	proj, user, err := FindClaudeMD(deep)
+	proj, _, err := FindInstructions(deep)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !strings.Contains(proj, content) {
-		t.Errorf("project CLAUDE.md: expected to contain %q, got %q", content, proj)
+		t.Errorf("expected to contain %q, got %q", content, proj)
 	}
-	// User-level may or may not exist on the test machine; just ensure no error.
-	_ = user
 }
 
-func TestFindClaudeMD_NoneFound(t *testing.T) {
-	// Use a temp directory with no .claude/ at all.
-	dir := t.TempDir()
+func TestFindInstructions_ProjectLevel_Glamdring(t *testing.T) {
+	root := t.TempDir()
+	glamDir := filepath.Join(root, ".glamdring")
+	if err := os.Mkdir(glamDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# Glamdring Instructions"
+	if err := os.WriteFile(filepath.Join(glamDir, "GLAMDRING.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	proj, _, err := FindClaudeMD(dir)
+	proj, _, err := FindInstructions(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(proj, content) {
+		t.Errorf("expected to contain %q, got %q", content, proj)
+	}
+}
+
+func TestFindInstructions_MixedNamespaces(t *testing.T) {
+	root := t.TempDir()
+	glamDir := filepath.Join(root, ".glamdring")
+	claudeDir := filepath.Join(root, ".claude")
+	if err := os.Mkdir(glamDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(glamDir, "GLAMDRING.md"), []byte("glamdring content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte("claude content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	proj, _, err := FindInstructions(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(proj, "glamdring content") {
+		t.Errorf("expected 'glamdring content', got %q", proj)
+	}
+	if !strings.Contains(proj, "claude content") {
+		t.Errorf("expected 'claude content', got %q", proj)
+	}
+	// Glamdring should appear before Claude.
+	glamIdx := strings.Index(proj, "glamdring content")
+	claudeIdx := strings.Index(proj, "claude content")
+	if glamIdx > claudeIdx {
+		t.Errorf("glamdring content should appear before claude content")
+	}
+}
+
+func TestFindInstructions_NoneFound(t *testing.T) {
+	dir := t.TempDir()
+	proj, _, err := FindInstructions(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if proj != "" {
-		t.Errorf("expected empty project CLAUDE.md, got %q", proj)
+		t.Errorf("expected empty project instructions, got %q", proj)
 	}
 }
 
-func TestFindClaudeMD_CollectsAll(t *testing.T) {
-	// Create two levels: outer/.claude/CLAUDE.md and outer/inner/.claude/CLAUDE.md
-	// Both should be collected, inner first.
+func TestFindInstructions_CollectsAll(t *testing.T) {
 	outer := t.TempDir()
 	inner := filepath.Join(outer, "inner")
 
@@ -70,26 +118,40 @@ func TestFindClaudeMD_CollectsAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	proj, _, err := FindClaudeMD(inner)
+	proj, _, err := FindInstructions(inner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(proj, "inner") {
-		t.Errorf("expected project CLAUDE.md to contain 'inner', got %q", proj)
+		t.Errorf("expected 'inner', got %q", proj)
 	}
 	if !strings.Contains(proj, "outer") {
-		t.Errorf("expected project CLAUDE.md to contain 'outer', got %q", proj)
+		t.Errorf("expected 'outer', got %q", proj)
 	}
 }
 
-func TestFindClaudeMD_BareCLAUDEMD(t *testing.T) {
+func TestFindInstructions_BareGlamdringMD(t *testing.T) {
 	root := t.TempDir()
-	// Place a bare CLAUDE.md (not inside .claude/).
+	if err := os.WriteFile(filepath.Join(root, "GLAMDRING.md"), []byte("bare glamdring"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	proj, _, err := FindInstructions(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(proj, "bare glamdring") {
+		t.Errorf("expected bare GLAMDRING.md content, got %q", proj)
+	}
+}
+
+func TestFindInstructions_BareCLAUDEMD(t *testing.T) {
+	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("bare content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	proj, _, err := FindClaudeMD(root)
+	proj, _, err := FindInstructions(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,60 +160,34 @@ func TestFindClaudeMD_BareCLAUDEMD(t *testing.T) {
 	}
 }
 
-func TestFindClaudeMD_LocalMD(t *testing.T) {
+func TestFindInstructions_LocalMD(t *testing.T) {
 	root := t.TempDir()
-	claudeDir := filepath.Join(root, ".claude")
-	if err := os.Mkdir(claudeDir, 0o755); err != nil {
+	glamDir := filepath.Join(root, ".glamdring")
+	if err := os.Mkdir(glamDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte("project"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(glamDir, "GLAMDRING.md"), []byte("project"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.local.md"), []byte("local overrides"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(glamDir, "GLAMDRING.local.md"), []byte("local overrides"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	proj, _, err := FindClaudeMD(root)
+	proj, _, err := FindInstructions(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(proj, "project") {
-		t.Errorf("expected 'project' in result, got %q", proj)
+		t.Errorf("expected 'project', got %q", proj)
 	}
 	if !strings.Contains(proj, "local overrides") {
-		t.Errorf("expected 'local overrides' in result, got %q", proj)
+		t.Errorf("expected 'local overrides', got %q", proj)
 	}
 }
 
-func TestFindClaudeMD_BothBareAndNested(t *testing.T) {
+func TestFindProjectRoot_Glamdring(t *testing.T) {
 	root := t.TempDir()
-	claudeDir := filepath.Join(root, ".claude")
-	if err := os.Mkdir(claudeDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("bare"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(claudeDir, "CLAUDE.md"), []byte("nested"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	proj, _, err := FindClaudeMD(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(proj, "bare") {
-		t.Errorf("expected 'bare' in result, got %q", proj)
-	}
-	if !strings.Contains(proj, "nested") {
-		t.Errorf("expected 'nested' in result, got %q", proj)
-	}
-}
-
-func TestFindProjectRoot(t *testing.T) {
-	root := t.TempDir()
-	claudeDir := filepath.Join(root, ".claude")
-	if err := os.Mkdir(claudeDir, 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(root, ".glamdring"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -161,6 +197,39 @@ func TestFindProjectRoot(t *testing.T) {
 	}
 
 	got := FindProjectRoot(deep)
+	if got != root {
+		t.Errorf("FindProjectRoot: got %q, want %q", got, root)
+	}
+}
+
+func TestFindProjectRoot_Claude(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	deep := filepath.Join(root, "a", "b", "c")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := FindProjectRoot(deep)
+	if got != root {
+		t.Errorf("FindProjectRoot: got %q, want %q", got, root)
+	}
+}
+
+func TestFindProjectRoot_GlamdringPreferred(t *testing.T) {
+	root := t.TempDir()
+	// Both exist at the same level; .glamdring/ should be found first.
+	if err := os.Mkdir(filepath.Join(root, ".glamdring"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := FindProjectRoot(root)
 	if got != root {
 		t.Errorf("FindProjectRoot: got %q, want %q", got, root)
 	}

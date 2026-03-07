@@ -10,17 +10,17 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Per-model cost tracking** — accurate pricing for Opus, Sonnet, and Haiku
 - **Context window display** — live `ctx: N%` in status bar with color thresholds (gold at 60%, red at 80%) and inline `/compact` suggestions
 - **Built-in tools** — Read (2000-line default limit, line truncation), Write (read-before-write safety), Edit (permission-preserving, no-op rejection), Bash (timeout detection, 1MB output limit, background execution, real-time output streaming), Glob (noise directory filtering, result limits), Grep (full ripgrep-style flags, binary detection, type filters) + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
-- **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides, yolo mode, and configurable path/command-scoped permission presets via `.claude/permissions.json`
+- **Permission system** — three-tier model (always-allow, prompt, block) with session-level overrides, yolo mode, and configurable path/command-scoped permission presets via `.glamdring/permissions.json`
 - **MCP support** — connect external tool servers via stdio transport, with health monitoring, `/mcp` management command, per-tool enable/disable, and environment variable passthrough
-- **CLAUDE.md** — discovers and loads project/user instructions automatically (bare `CLAUDE.md`, `.claude/CLAUDE.md`, and `.claude/CLAUDE.local.md` at every directory level)
+- **Instructions** — discovers and loads `GLAMDRING.md` / `.glamdring/GLAMDRING.md` (primary) and `CLAUDE.md` / `.claude/CLAUDE.md` (fallback) at every directory level
 - **Hooks** — shell commands triggered by agent lifecycle events (SessionStart on launch, SessionEnd on exit, ContextThreshold on context usage crossing)
 - **Checkpoint resume** — detects `tmp/checkpoint.md` from `/compact` and offers to load previous session context
 - **Conversation export** — `/export` saves conversation as markdown, `/export --html` for self-contained HTML with syntax highlighting
 - **Image paste** — `Ctrl+V` pastes clipboard images (screenshots, copied images) for Claude's vision API; multiple images per message supported
 - **Clipboard** — `/copy` copies last response to system clipboard
 - **Input history** — Up/Down arrow to cycle previous prompts, Ctrl+R for reverse search
-- **Slash commands** — custom prompts from `.claude/commands/` with tab completion
-- **Custom agents** — define specialized subagents in `.claude/agents/`
+- **Slash commands** — custom prompts from `.glamdring/commands/` with tab completion
+- **Custom agents** — define specialized subagents in `.glamdring/agents/`
 - **Subagents** — parallel task spawning via the Task tool
 - **Agent teams** (experimental) — coordinated multi-agent workflows with phase-gated tool access, inter-agent messaging, per-task file locking with automatic release, task dependencies with blocked-claim prevention, message ordering (timestamps + sequence numbers), force shutdown, team observability, context compaction archiving, and built-in workflow presets (RPIV, plan-implement, scoped) plus custom workflows from settings. Enable with `--experimental-teams` flag or `"experimental": {"teams": true}` in settings.
 
@@ -91,18 +91,25 @@ glamdring
 
 ## Configuration
 
-Glamdring reads the same configuration as Claude Code:
+Glamdring uses `.glamdring/` as its primary config directory, with `.claude/` as a fallback for backward compatibility. When both exist, `.glamdring/` takes priority.
 
-- **CLAUDE.md** — `~/.claude/CLAUDE.md` (user), `CLAUDE.md` and `.claude/CLAUDE.md` (project, all levels concatenated), `.claude/CLAUDE.local.md` (local overrides, gitignored)
-- **Settings** — `~/.claude/settings.json` and `.claude/settings.json` (`max_turns` supports `0` for explicitly unlimited)
-- **Commands** — `.claude/commands/*.md`
-- **Agents** — `.claude/agents/*.md` or `.claude/agents/*.yaml`
-- **Hooks** — `hooks` array in `settings.json`
-- **Indexer** — `indexer` object in `settings.json`
+| Purpose | Primary | Fallback |
+|---|---|---|
+| **Instructions** | `GLAMDRING.md`, `.glamdring/GLAMDRING.md`, `.glamdring/GLAMDRING.local.md` | `CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/CLAUDE.local.md` |
+| **Settings** | `.glamdring/config.json` | `.claude/settings.json` |
+| **Permissions** | `.glamdring/permissions.json` | `.claude/permissions.json` |
+| **Commands** | `.glamdring/commands/*.md` | `.claude/commands/*.md` |
+| **Agents** | `.glamdring/agents/*.md` or `*.yaml` | `.claude/agents/*.md` or `*.yaml` |
+| **Hooks** | `hooks` array in `.glamdring/config.json` | `hooks` array in `.claude/settings.json` |
+| **User config** | `~/.config/glamdring/` | `~/.claude/` |
+
+Instructions files are additive -- both `GLAMDRING.md` and `CLAUDE.md` are loaded if present. All other config types use the first file found (no merging across namespaces).
+
+- **Indexer** — `indexer` object in config.json/settings.json
 
 ### MCP Server Configuration
 
-Configure MCP servers in `settings.json`:
+Configure MCP servers in `config.json` (or `settings.json`):
 
 ```json
 {
@@ -144,7 +151,7 @@ The status bar shows `mcp: N` when servers are connected, or `mcp: N/M` if some 
 
 ### Permission Presets
 
-Configure path-scoped and command-scoped permission rules in `.claude/permissions.json`:
+Configure path-scoped and command-scoped permission rules in `.glamdring/permissions.json` (or `.claude/permissions.json`):
 
 ```json
 {
@@ -164,7 +171,7 @@ Deny rules are checked first and block outright (no prompt). Allow rules skip th
 
 ### Indexer Configuration
 
-The shire code indexer is auto-detected by default. Configure via `settings.json`:
+The shire code indexer is auto-detected by default. Configure via `config.json` (or `settings.json`):
 
 ```json
 {
@@ -205,7 +212,7 @@ When enabled, the agent gets access to team coordination tools: `TeamCreate`, `T
 | `scoped` | work | Single phase with file scope enforcement |
 | `none` | (no phases) | No workflow enforcement |
 
-**Custom workflows** can be defined in `settings.json`:
+**Custom workflows** can be defined in `config.json` (or `settings.json`):
 
 ```json
 {
@@ -244,7 +251,7 @@ pkg/
   teams/       Agent teams coordination (members, tasks, messaging, phases, decorators)
   index/       Shire index Go bindings (read-only SQLite queries)
   mcp/         MCP client (stdio JSON-RPC)
-  config/      CLAUDE.md discovery, system prompt, settings
+  config/      Instructions discovery, system prompt, settings, path resolution
   hooks/       Event hook system
   commands/    Slash command discovery + expansion
   agents/      Custom agent definitions
