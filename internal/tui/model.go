@@ -185,7 +185,7 @@ func (m *Model) SetTheme(p ThemePalette, highContrast bool) {
 	}
 	m.palette = p
 	m.styles = DefaultStyles(p)
-	m.input = NewInputModel(m.styles, p)
+	m.input.SetTheme(m.styles, p)
 	m.output.styles = m.styles
 	m.statusbar.styles = m.styles
 	m.spinner.Style = lipgloss.NewStyle().Foreground(p.Primary)

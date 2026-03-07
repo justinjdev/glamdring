@@ -216,14 +216,20 @@ func main() {
 	m.SetSettings(settings)
 
 	// Apply theme from settings.
-	if settings.Theme != "" {
-		palette, _ := tui.LookupTheme(settings.Theme)
+	{
+		themeName := settings.Theme
+		if themeName == "" {
+			themeName = "glamdring"
+		}
+		palette, _ := tui.LookupTheme(themeName)
 		if settings.Themes != nil {
-			if userTheme, ok := settings.Themes[settings.Theme]; ok {
-				palette = tui.PaletteFromUserConfig(settings.Theme, userTheme)
+			if userTheme, ok := settings.Themes[themeName]; ok {
+				palette = tui.PaletteFromUserConfig(themeName, userTheme)
 			}
 		}
-		m.SetTheme(palette, settings.HighContrast)
+		if settings.Theme != "" || settings.HighContrast {
+			m.SetTheme(palette, settings.HighContrast)
+		}
 	}
 
 	m.SetCommandRegistry(cmdRegistry)

@@ -99,6 +99,28 @@ func NewInputModel(styles Styles, palette ThemePalette) InputModel {
 	}
 }
 
+// SetTheme updates the input styling without destroying state (history,
+// tab completion, pending images, current text).
+func (m *InputModel) SetTheme(styles Styles, palette ThemePalette) {
+	m.styles = styles
+	m.palette = palette
+	m.textarea.FocusedStyle.Placeholder = lipgloss.NewStyle().
+		Foreground(palette.FgDim).
+		Italic(true)
+	m.textarea.FocusedStyle.Text = lipgloss.NewStyle().
+		Foreground(palette.FgBright)
+	m.textarea.FocusedStyle.Prompt = lipgloss.NewStyle().
+		Foreground(palette.Primary).
+		Bold(true)
+	m.textarea.BlurredStyle.Placeholder = lipgloss.NewStyle().
+		Foreground(palette.FgDim).
+		Italic(true)
+	m.textarea.BlurredStyle.Text = lipgloss.NewStyle().
+		Foreground(palette.Fg)
+	m.textarea.BlurredStyle.Prompt = lipgloss.NewStyle().
+		Foreground(palette.FgDim)
+}
+
 // Init returns the initial command for the input component.
 func (m InputModel) Init() tea.Cmd {
 	return textarea.Blink
