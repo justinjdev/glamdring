@@ -42,6 +42,9 @@ func NewSession(cfg Config) *Session {
 	}
 
 	client := api.NewClient(cfg.Creds, model)
+	if cfg.Endpoint != "" {
+		client.SetEndpoint(cfg.Endpoint)
+	}
 
 	registry := tools.NewRegistry()
 	for _, t := range cfg.Tools {
