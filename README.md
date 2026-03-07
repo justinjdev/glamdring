@@ -2,6 +2,8 @@
 
 A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](https://charm.sh) libraries, replacing Claude Code's Ink-based frontend with a lightweight, responsive alternative.
 
+**Documentation:** [glamdring docs](https://justinjdev.github.io/glamdring/)
+
 ## Features
 
 - **Agentic loop** — streaming responses, multi-turn conversations with persistent session memory, extended thinking with `/thinking` toggle, prompt caching support

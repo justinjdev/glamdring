@@ -1,0 +1,58 @@
+:root {
+	--color-bg: #1a1a1f;
+	--color-bg-elevated: #22222a;
+	--color-bg-card: #1e1e26;
+	--color-text: #e8dcc8;
+	--color-text-secondary: #b8c4d0;
+	--color-heading: #7daea3;
+	--color-accent: #7daea3;
+	--color-accent-hover: #9bc4b8;
+	--color-border: #3a3a4a;
+	--color-code-bg: #16161c;
+	--color-error: #8b2500;
+	--color-error-bg: rgba(139, 37, 0, 0.1);
+	--color-link: #7daea3;
+	--color-link-hover: #9bc4b8;
+	--color-focus: #7daea3;
+	--color-surface: #1e1e26;
+	--font-heading: 'Cinzel', serif;
+	--font-body: 'Crimson Pro', serif;
+	--font-code: 'JetBrains Mono', monospace;
+	--space-xs: 0.25rem;
+	--space-sm: 0.5rem;
+	--space-md: 1rem;
+	--space-lg: 2rem;
+	--space-xl: 4rem;
+	--space-2xl: 6rem;
+	--max-width: 72rem;
+	--nav-height: 4rem;
+	--transition-fast: 150ms ease;
+	--transition-normal: 250ms ease;
+}
+
+[data-theme='light'] {
+	--color-bg: #f4eee1;
+	--color-bg-elevated: #faf5ec;
+	--color-bg-card: #fff9f0;
+	--color-text: #2a2a2f;
+	--color-text-secondary: #5a5a60;
+	--color-heading: #4a7a70;
+	--color-accent: #4a7a70;
+	--color-accent-hover: #3a6a60;
+	--color-border: #d0ccc4;
+	--color-code-bg: #ece6d8;
+	--color-link: #4a7a70;
+	--color-link-hover: #3a6a60;
+	--color-focus: #4a7a70;
+	--color-surface: #fff9f0;
+	--color-error-bg: rgba(139, 37, 0, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
