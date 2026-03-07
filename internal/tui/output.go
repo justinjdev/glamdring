@@ -2,13 +2,26 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 )
+
+// detectGlamourStyle returns the appropriate glamour style option.
+// Uses dark style for TTYs to avoid OSC terminal queries that leak
+// escape sequences under alt screen. Falls back to notty for non-TTY
+// environments (tests, pipes).
+func detectGlamourStyle() glamour.TermRendererOption {
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		return glamour.WithStylePath("dark")
+	}
+	return glamour.WithStylePath("notty")
+}
 
 const (
 	// collapseThreshold is the line count above which tool results are collapsed.
@@ -38,6 +51,10 @@ type OutputModel struct {
 
 	width         int
 	rendererDirty bool
+
+	// glamourStyle is the resolved glamour style, detected once at creation
+	// to avoid repeated OSC terminal queries on resize.
+	glamourStyle glamour.TermRendererOption
 }
 
 type blockKind int
@@ -65,17 +82,22 @@ func NewOutputModel(styles Styles, width, height int) OutputModel {
 	vp := viewport.New(width, height)
 	vp.Style = lipgloss.NewStyle()
 
+	// Use dark style directly to avoid OSC terminal background queries,
+	// which leak escape sequences into stdin under alt screen.
+	glamourStyle := detectGlamourStyle()
+
 	r, _ := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamourStyle,
 		glamour.WithWordWrap(width-4),
 	)
 
 	return OutputModel{
-		viewport:  vp,
-		styles:    styles,
-		renderer:  r,
-		width:     width,
-		collapsed: make(map[int]bool),
+		viewport:     vp,
+		styles:       styles,
+		renderer:     r,
+		width:        width,
+		collapsed:    make(map[int]bool),
+		glamourStyle: glamourStyle,
 	}
 }
 
@@ -378,7 +400,7 @@ func (m *OutputModel) rerender() {
 			wrapWidth = 1
 		}
 		r, err := glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
+			m.glamourStyle,
 			glamour.WithWordWrap(wrapWidth),
 		)
 		if err == nil {
