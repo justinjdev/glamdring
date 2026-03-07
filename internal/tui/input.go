@@ -48,13 +48,16 @@ type InputModel struct {
 	searchIdx int
 }
 
+// maxInputHeight is the maximum number of visible rows for the input textarea.
+const maxInputHeight = 8
+
 // NewInputModel creates a configured input component.
 func NewInputModel(styles Styles) InputModel {
 	ta := textarea.New()
 	ta.Placeholder = "ask glamdring something..."
 	ta.CharLimit = 0 // no limit
 	ta.ShowLineNumbers = false
-	ta.SetHeight(3)
+	ta.SetHeight(1)
 
 	// Style the textarea to match our theme.
 	ta.FocusedStyle.Base = lipgloss.NewStyle()
@@ -328,6 +331,19 @@ func (m *InputModel) SetWidth(w int) {
 // SetHeight updates the visible rows of the textarea.
 func (m *InputModel) SetHeight(h int) {
 	m.textarea.SetHeight(h)
+}
+
+// DesiredHeight returns the number of rows the textarea wants based on content,
+// clamped between 1 and maxInputHeight.
+func (m InputModel) DesiredHeight() int {
+	lines := m.textarea.LineCount()
+	if lines < 1 {
+		lines = 1
+	}
+	if lines > maxInputHeight {
+		lines = maxInputHeight
+	}
+	return lines
 }
 
 // IsSlashCmd returns true if the current input text is a slash command.

@@ -22,6 +22,7 @@ import (
 	"github.com/justin/glamdring/pkg/index"
 	"github.com/justin/glamdring/pkg/mcp"
 	"github.com/justin/glamdring/pkg/tools"
+	"golang.org/x/term"
 )
 
 // State represents the current UI mode.
@@ -36,9 +37,6 @@ const (
 
 // AgentMsg wraps an agent.Message for delivery through the bubbletea message system.
 type AgentMsg agent.Message
-
-// inputHeight is the default number of visible rows for the input textarea.
-const inputHeight = 3
 
 // Model is the root bubbletea model for glamdring's TUI.
 type Model struct {
@@ -121,14 +119,28 @@ func New() Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(colorAmber)
-	return Model{
+
+	// Pre-fetch terminal size so the first render isn't narrow.
+	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
+	if w == 0 {
+		w = 80
+	}
+	if h == 0 {
+		h = 24
+	}
+
+	m := Model{
 		input:     NewInputModel(styles),
-		output:    NewOutputModel(styles, 80, 20),
+		output:    NewOutputModel(styles, w, h),
 		statusbar: NewStatusBar(styles),
 		styles:    styles,
 		state:     StateInput,
 		spinner:   s,
+		width:     w,
+		height:    h,
 	}
+	m.layoutComponents()
+	return m
 }
 
 // NewWithAgent creates the root TUI model wired to an agent config.
@@ -399,6 +411,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case StateInput:
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
+		m.layoutComponents()
 		return m, cmd
 
 	case StatePermission:
@@ -801,7 +814,8 @@ func (m *Model) layoutComponents() {
 	statusHeight := 1
 	// Input area: border adds 2 rows (top+bottom), plus the textarea rows.
 	inputBorderHeight := 2
-	inputTotalHeight := inputHeight + inputBorderHeight
+	desiredInput := m.input.DesiredHeight()
+	inputTotalHeight := desiredInput + inputBorderHeight
 
 	outputHeight := m.height - inputTotalHeight - statusHeight
 	if outputHeight < 1 {
@@ -809,7 +823,7 @@ func (m *Model) layoutComponents() {
 	}
 
 	m.input.SetWidth(m.width)
-	m.input.SetHeight(inputHeight)
+	m.input.SetHeight(desiredInput)
 	m.output.SetSize(m.width, outputHeight)
 	m.statusbar.SetWidth(m.width)
 }
