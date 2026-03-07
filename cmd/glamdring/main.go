@@ -229,11 +229,15 @@ func main() {
 		if themeName == "" {
 			themeName = "glamdring"
 		}
-		palette, _ := tui.LookupTheme(themeName)
+		palette, found := tui.LookupTheme(themeName)
 		if settings.Themes != nil {
 			if userTheme, ok := settings.Themes[themeName]; ok {
 				palette = tui.PaletteFromUserConfig(themeName, userTheme)
+				found = true
 			}
+		}
+		if !found && settings.Theme != "" {
+			log.Printf("warning: unknown theme %q, falling back to glamdring", settings.Theme)
 		}
 		if settings.Theme != "" || settings.HighContrast {
 			m.SetTheme(palette, settings.HighContrast)
@@ -275,7 +279,10 @@ func main() {
 // Used for VHS theme screenshot capture.
 func runDemo(themeName string) {
 	m := tui.New()
-	palette, _ := tui.LookupTheme(themeName)
+	palette, ok := tui.LookupTheme(themeName)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "warning: unknown theme %q, using glamdring\n", themeName)
+	}
 	m.SetTheme(palette, false)
 	m.PopulateDemoContent()
 	p := tea.NewProgram(m, tea.WithAltScreen())
