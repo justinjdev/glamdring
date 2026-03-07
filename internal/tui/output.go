@@ -86,10 +86,13 @@ func NewOutputModel(styles Styles, width, height int) OutputModel {
 	// which leak escape sequences into stdin under alt screen.
 	glamourStyle := detectGlamourStyle()
 
-	r, _ := glamour.NewTermRenderer(
+	r, err := glamour.NewTermRenderer(
 		glamourStyle,
 		glamour.WithWordWrap(width-4),
 	)
+	if err != nil {
+		r = nil // renderMarkdown falls back to plain text when renderer is nil
+	}
 
 	return OutputModel{
 		viewport:     vp,
