@@ -10,11 +10,11 @@
 		<div class="footer-content">
 			<div class="footer-links">
 				<a href="{base}/getting-started">Getting Started</a>
-				<a href="{base}/skills">Skills</a>
+				<a href="{base}/features">Features</a>
 				<a href="{base}/configuration">Configuration</a>
-				<a href="https://github.com/justinjdev/fellowship">GitHub</a>
+				<a href="https://github.com/justinjdev/glamdring">GitHub</a>
 			</div>
-			<p class="footer-note">A Claude Code plugin. MIT License.</p>
+			<p class="footer-note">A native TUI for agentic coding. Apache 2.0 License.</p>
 		</div>
 	</div>
 </footer>
