@@ -1,9 +1,16 @@
 package update
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -93,5 +100,108 @@ func TestIsNewer(t *testing.T) {
 				t.Errorf("isNewer(%s, %s) = %v, want %v", tt.latest, tt.current, got, tt.want)
 			}
 		})
+	}
+}
+
+func makeTarGz(t *testing.T, name string, content []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     name,
+		Size:     int64(len(content)),
+		Mode:     0o755,
+		Typeflag: tar.TypeReg,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	tw.Close()
+	gw.Close()
+	return buf.Bytes()
+}
+
+func TestDownloadAndReplace(t *testing.T) {
+	binaryContent := []byte("#!/bin/sh\necho updated")
+	tarball := makeTarGz(t, "glamdring", binaryContent)
+	hash := sha256.Sum256(tarball)
+	checksumLine := fmt.Sprintf("%x  glamdring_0.3.0_darwin_arm64.tar.gz\n", hash)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/glamdring_0.3.0_darwin_arm64.tar.gz":
+			w.Write(tarball)
+		case "/checksums.txt":
+			w.Write([]byte(checksumLine))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tmpFile, err := os.CreateTemp("", "glamdring-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpFile.Write([]byte("old binary"))
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	err = Download(&Release{
+		Version:     "v0.3.0",
+		AssetURL:    srv.URL + "/glamdring_0.3.0_darwin_arm64.tar.gz",
+		ChecksumURL: srv.URL + "/checksums.txt",
+	}, tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+
+	got, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, binaryContent) {
+		t.Errorf("binary content mismatch: got %q, want %q", got, binaryContent)
+	}
+}
+
+func TestDownloadChecksumMismatch(t *testing.T) {
+	binaryContent := []byte("#!/bin/sh\necho updated")
+	tarball := makeTarGz(t, "glamdring", binaryContent)
+	badChecksum := strings.Repeat("0", 64) + "  glamdring_0.3.0_darwin_arm64.tar.gz\n"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/glamdring_0.3.0_darwin_arm64.tar.gz":
+			w.Write(tarball)
+		case "/checksums.txt":
+			w.Write([]byte(badChecksum))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tmpFile, err := os.CreateTemp("", "glamdring-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpFile.Write([]byte("old binary"))
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	err = Download(&Release{
+		Version:     "v0.3.0",
+		AssetURL:    srv.URL + "/glamdring_0.3.0_darwin_arm64.tar.gz",
+		ChecksumURL: srv.URL + "/checksums.txt",
+	}, tmpFile.Name())
+	if err == nil {
+		t.Fatal("expected error for checksum mismatch, got nil")
+	}
+	if !strings.Contains(err.Error(), "checksum") {
+		t.Errorf("expected error containing 'checksum', got: %v", err)
 	}
 }

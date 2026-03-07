@@ -1,9 +1,16 @@
 package update
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -118,4 +125,128 @@ func parseSemver(s string) (major, minor, patch int, ok bool) {
 		return 0, 0, 0, false
 	}
 	return major, minor, patch, true
+}
+
+// Download downloads the release tarball, verifies its checksum (if available),
+// extracts the glamdring binary, and atomically replaces the file at destPath.
+func Download(rel *Release, destPath string) error {
+	client := &http.Client{Timeout: 60 * time.Second}
+
+	resp, err := client.Get(rel.AssetURL)
+	if err != nil {
+		return fmt.Errorf("downloading asset: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("downloading asset: HTTP %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading asset body: %w", err)
+	}
+
+	if rel.ChecksumURL != "" {
+		if err := verifyChecksum(client, rel.ChecksumURL, rel.AssetURL, data); err != nil {
+			return err
+		}
+	}
+
+	binary, err := extractBinary(data)
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Dir(destPath)
+	tmp, err := os.CreateTemp(dir, ".glamdring-update-*")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.Write(binary); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("writing temp file: %w", err)
+	}
+	if err := tmp.Chmod(0o755); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("setting permissions: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("replacing binary: %w", err)
+	}
+
+	return nil
+}
+
+func verifyChecksum(client *http.Client, checksumURL, assetURL string, data []byte) error {
+	resp, err := client.Get(checksumURL)
+	if err != nil {
+		return fmt.Errorf("downloading checksums: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("downloading checksums: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading checksums: %w", err)
+	}
+
+	assetFilename := filepath.Base(assetURL)
+	actual := fmt.Sprintf("%x", sha256.Sum256(data))
+
+	for _, line := range strings.Split(string(body), "\n") {
+		parts := strings.Fields(line)
+		if len(parts) != 2 {
+			continue
+		}
+		if parts[1] == assetFilename {
+			if parts[0] != actual {
+				return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", assetFilename, parts[0], actual)
+			}
+			return nil
+		}
+	}
+
+	return fmt.Errorf("checksum not found for %s in checksums file", assetFilename)
+}
+
+func extractBinary(tarball []byte) ([]byte, error) {
+	gr, err := gzip.NewReader(bytes.NewReader(tarball))
+	if err != nil {
+		return nil, fmt.Errorf("opening gzip: %w", err)
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading tar: %w", err)
+		}
+		if hdr.Typeflag == tar.TypeReg && filepath.Base(hdr.Name) == "glamdring" {
+			content, err := io.ReadAll(tr)
+			if err != nil {
+				return nil, fmt.Errorf("reading binary from tar: %w", err)
+			}
+			return content, nil
+		}
+	}
+
+	return nil, fmt.Errorf("glamdring binary not found in archive")
 }
