@@ -13,7 +13,7 @@ Set Width 900
 Set Height 600
 
 Hide
-Type "stty -echo && /tmp/glamdring-demo --demo glamdring"
+Type "stty -echo && /tmp/glamdring-demo --demo --demo-themeglamdring"
 Enter
 Sleep 2s
 Show
@@ -24,7 +24,7 @@ Hide
 Type "/quit"
 Enter
 Sleep 500ms
-Type "/tmp/glamdring-demo --demo rivendell"
+Type "/tmp/glamdring-demo --demo --demo-themerivendell"
 Enter
 Sleep 2s
 Show
@@ -35,7 +35,7 @@ Hide
 Type "/quit"
 Enter
 Sleep 500ms
-Type "/tmp/glamdring-demo --demo mithril"
+Type "/tmp/glamdring-demo --demo --demo-thememithril"
 Enter
 Sleep 2s
 Show
@@ -46,7 +46,7 @@ Hide
 Type "/quit"
 Enter
 Sleep 500ms
-Type "/tmp/glamdring-demo --demo lothlorien"
+Type "/tmp/glamdring-demo --demo --demo-themelothlorien"
 Enter
 Sleep 2s
 Show
@@ -57,7 +57,7 @@ Hide
 Type "/quit"
 Enter
 Sleep 500ms
-Type "/tmp/glamdring-demo --demo shire"
+Type "/tmp/glamdring-demo --demo --demo-themeshire"
 Enter
 Sleep 2s
 Show

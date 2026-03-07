@@ -163,6 +163,7 @@ func HighContrastTransform(p ThemePalette) ThemePalette {
 	p.FgBright = "#f4f4f8"
 	p.Fg = brighten(p.Fg, 25)
 	p.Primary = brighten(p.Primary, 20)
+	p.Subtle = brighten(p.Subtle, 20)
 	p.Success = brighten(p.Success, 20)
 	p.Error = brighten(p.Error, 20)
 	p.Info = brighten(p.Info, 20)

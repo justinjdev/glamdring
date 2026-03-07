@@ -57,11 +57,12 @@ func main() {
 	model := flag.String("model", "", "Claude model to use (overrides settings)")
 	yolo := flag.Bool("yolo", false, "auto-approve all tool permissions")
 	experimentalTeams := flag.Bool("experimental-teams", false, "enable experimental agent teams support")
-	demoTheme := flag.String("demo", "", "launch with demo content for theme screenshots (theme name or 'glamdring' default)")
+	demo := flag.Bool("demo", false, "launch with demo content for theme screenshots")
+	demoTheme := flag.String("demo-theme", "glamdring", "theme to use with --demo")
 	flag.Parse()
 
 	// Demo mode: launch TUI with sample content, no auth or agent needed.
-	if *demoTheme != "" {
+	if *demo {
 		runDemo(*demoTheme)
 		return
 	}
