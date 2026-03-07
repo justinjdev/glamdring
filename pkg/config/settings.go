@@ -83,8 +83,8 @@ func DefaultSettings() Settings {
 	}
 }
 
-// LoadSettings loads settings from .claude/settings.json if it exists.
-// It checks both user-level (~/.claude/settings.json) and project-level
+// LoadSettings loads settings from config files (.glamdring/config.json or
+// .claude/settings.json). It checks both user-level and project-level
 // settings, merging them with project taking precedence over user, and
 // both taking precedence over defaults.
 //

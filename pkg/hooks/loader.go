@@ -27,7 +27,8 @@ func LoadHooks(cwd string) []Hook {
 	}
 
 	// Project-level hooks (walk up from cwd).
-	// Skip the user config directory since it was already loaded above.
+	// Skip the home directory since user-level hooks were already loaded above.
+	userHome, _ := os.UserHomeDir()
 	dir, err := filepath.Abs(cwd)
 	if err != nil {
 		return all
@@ -35,7 +36,7 @@ func LoadHooks(cwd string) []Hook {
 
 	visited := map[string]bool{}
 	for {
-		if !visited[dir] && dir != userDir {
+		if !visited[dir] && dir != userHome {
 			visited[dir] = true
 			// Check .glamdring/ then .claude/ at this level.
 			for _, cfgName := range configFileNames {
@@ -61,8 +62,9 @@ func LoadHooks(cwd string) []Hook {
 func loadHooksFromDir(dir string) []Hook {
 	for _, name := range configFileNames {
 		path := filepath.Join(dir, name)
-		if hooks := loadHooksFromFile(path); len(hooks) > 0 {
-			return hooks
+		if _, err := os.Stat(path); err == nil {
+			// File exists -- use it even if it has no hooks (first found wins).
+			return loadHooksFromFile(path)
 		}
 	}
 	return nil

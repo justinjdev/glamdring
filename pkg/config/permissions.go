@@ -9,7 +9,8 @@ import (
 	"strings"
 )
 
-// PermissionConfig holds allow and deny rules loaded from .claude/permissions.json.
+// PermissionConfig holds allow and deny rules loaded from permissions.json
+// (.glamdring/ or .claude/ namespace).
 type PermissionConfig struct {
 	Allow []PermissionRule `json:"allow"`
 	Deny  []PermissionRule `json:"deny"`
