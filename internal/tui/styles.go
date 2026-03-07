@@ -174,9 +174,18 @@ func brighten(c lipgloss.Color, pct int) lipgloss.Color {
 	if len(hex) != 7 || hex[0] != '#' {
 		return c
 	}
-	r, _ := strconv.ParseInt(hex[1:3], 16, 32)
-	g, _ := strconv.ParseInt(hex[3:5], 16, 32)
-	b, _ := strconv.ParseInt(hex[5:7], 16, 32)
+	r, err := strconv.ParseInt(hex[1:3], 16, 32)
+	if err != nil {
+		return c
+	}
+	g, err := strconv.ParseInt(hex[3:5], 16, 32)
+	if err != nil {
+		return c
+	}
+	b, err := strconv.ParseInt(hex[5:7], 16, 32)
+	if err != nil {
+		return c
+	}
 
 	boost := func(v int64) int64 {
 		v = v + v*int64(pct)/100
