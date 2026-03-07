@@ -1,9 +1,5 @@
-# custom-agents Specification
+## MODIFIED Requirements
 
-## Purpose
-Custom agent definitions loaded from markdown or YAML files, providing user-defined subagent types with specific system prompts and tool restrictions.
-
-## Requirements
 ### Requirement: Load custom agent definitions
 The system SHALL scan agent directories in both project-level and user-level locations for agent definition files (markdown or YAML). At each level, the system SHALL check `.glamdring/agents/` first and `.claude/agents/` as fallback (using centralized directory resolution). Each file defines a custom agent with a name, description, system prompt, and allowed tools list.
 
@@ -18,17 +14,3 @@ The system SHALL scan agent directories in both project-level and user-level loc
 #### Scenario: .glamdring/ agents take precedence
 - **WHEN** both `.glamdring/agents/code-reviewer.md` and `.claude/agents/code-reviewer.md` exist
 - **THEN** the agent definition SHALL be loaded from `.glamdring/agents/code-reviewer.md`
-
-### Requirement: Custom agents available to Task tool
-Custom agents SHALL be available as subagent types when the agent loop spawns subagents via the Task tool. The custom agent's system prompt and tool restrictions SHALL override the defaults for that subagent.
-
-#### Scenario: Spawn custom agent
-- **WHEN** the agent requests a Task with `subagent_type: "code-reviewer"`
-- **THEN** the subagent runs with the code-reviewer's defined system prompt and tool set
-
-### Requirement: Agent definition format
-Agent definitions SHALL include: `name`, `description`, `prompt` (system prompt content), and `tools` (list of allowed tool names).
-
-#### Scenario: Agent with restricted tools
-- **WHEN** an agent definition specifies `tools: [Read, Glob, Grep]`
-- **THEN** the subagent can only use those three tools, regardless of what tools are available to the parent agent

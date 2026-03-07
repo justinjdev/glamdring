@@ -16,18 +16,22 @@ type AgentDefinition struct {
 	Tools       []string `json:"tools"`
 }
 
-// Discover scans .claude/agents/ directories for agent definition files.
+// Discover scans agent directories for agent definition files.
+// Checks .glamdring/agents/ then .claude/agents/ at both project and user levels.
 // Supports .md (with frontmatter) and .yaml/.yml files.
 // Project agents take precedence over user agents with the same name.
 func Discover(cwd string) []AgentDefinition {
 	var projectDir, userDir string
 
 	if projectRoot := config.FindProjectRoot(cwd); projectRoot != "" {
-		projectDir = filepath.Join(projectRoot, ".claude", "agents")
+		projectDir = config.ResolveDir(projectRoot, "agents")
 	}
 
-	if home, err := os.UserHomeDir(); err == nil {
-		userDir = filepath.Join(home, ".claude", "agents")
+	if userCfg := config.UserConfigDir(); userCfg != "" {
+		candidate := filepath.Join(userCfg, "agents")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			userDir = candidate
+		}
 	}
 
 	return discover(projectDir, userDir)

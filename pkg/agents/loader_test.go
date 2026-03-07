@@ -303,8 +303,6 @@ Test prompt.`
 		t.Fatal(err)
 	}
 
-	// Discover will also pick up user-level agents from ~/.claude/agents/,
-	// so we just verify our project agent is present.
 	agents := Discover(root)
 	found := false
 	for _, a := range agents {
@@ -315,5 +313,34 @@ Test prompt.`
 	}
 	if !found {
 		t.Error("expected to find project agent 'test-agent' in Discover results")
+	}
+}
+
+func TestDiscover_GlamdringDir(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, ".glamdring", "agents")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := `---
+name: glam-agent
+description: Glamdring agent
+---
+Glamdring prompt.`
+	if err := os.WriteFile(filepath.Join(agentDir, "glam-agent.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	agents := Discover(root)
+	found := false
+	for _, a := range agents {
+		if a.Name == "glam-agent" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected to find project agent 'glam-agent' from .glamdring/agents/")
 	}
 }

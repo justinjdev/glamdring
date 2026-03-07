@@ -397,3 +397,50 @@ func TestMergeSettings_ZeroMaxTurnsOverride(t *testing.T) {
 		t.Errorf("max turns: got %d, want 0 (explicitly unlimited)", *base.MaxTurns)
 	}
 }
+
+func TestLoadSettings_GlamdringConfigJSON(t *testing.T) {
+	root := t.TempDir()
+	glamDir := filepath.Join(root, ".glamdring")
+	if err := os.Mkdir(glamDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	settings := Settings{Model: "claude-haiku-4-5-20251001"}
+	data, _ := json.Marshal(settings)
+	if err := os.WriteFile(filepath.Join(glamDir, "config.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := LoadSettings(root)
+	if s.Model != "claude-haiku-4-5-20251001" {
+		t.Errorf("model: got %q, want claude-haiku-4-5-20251001", s.Model)
+	}
+}
+
+func TestLoadSettings_GlamdringOverridesClaude(t *testing.T) {
+	root := t.TempDir()
+	glamDir := filepath.Join(root, ".glamdring")
+	claudeDir := filepath.Join(root, ".claude")
+	if err := os.Mkdir(glamDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	glamSettings := Settings{Model: "glamdring-model"}
+	claudeSettings := Settings{Model: "claude-model"}
+	glamData, _ := json.Marshal(glamSettings)
+	claudeData, _ := json.Marshal(claudeSettings)
+	if err := os.WriteFile(filepath.Join(glamDir, "config.json"), glamData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), claudeData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := LoadSettings(root)
+	if s.Model != "glamdring-model" {
+		t.Errorf("model: got %q, want glamdring-model (.glamdring/ should win)", s.Model)
+	}
+}

@@ -15,18 +15,22 @@ type Command struct {
 	Source string // "project" or "user"
 }
 
-// Discover scans .claude/commands/ directories for markdown files.
-// Returns all found commands from both project and user level.
-// Project commands take precedence over user commands with the same name.
+// Discover scans command directories for markdown files.
+// Checks .glamdring/commands/ then .claude/commands/ at both project and user levels.
+// Returns all found commands. Project commands take precedence over user commands
+// with the same name.
 func Discover(cwd string) []Command {
 	var projectDir, userDir string
 
 	if projectRoot := config.FindProjectRoot(cwd); projectRoot != "" {
-		projectDir = filepath.Join(projectRoot, ".claude", "commands")
+		projectDir = config.ResolveDir(projectRoot, "commands")
 	}
 
-	if home, err := os.UserHomeDir(); err == nil {
-		userDir = filepath.Join(home, ".claude", "commands")
+	if userCfg := config.UserConfigDir(); userCfg != "" {
+		candidate := filepath.Join(userCfg, "commands")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			userDir = candidate
+		}
 	}
 
 	return discover(projectDir, userDir)

@@ -5,24 +5,30 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/justin/glamdring/pkg/config"
 )
 
-// LoadHooks loads hook definitions from settings files.
-// It checks both user-level (~/.claude/settings.json) and project-level
-// (.claude/settings.json) configuration, combining hooks from both.
-// Returns an empty slice if no hooks are configured.
+// configFileNames lists the config files to check at each directory level,
+// in priority order: glamdring config first, then claude settings fallback.
+var configFileNames = []string{"config.json", "settings.json"}
+
+// LoadHooks loads hook definitions from config files.
+// It checks both user-level and project-level configuration, combining hooks
+// from both. At each level, .glamdring/config.json is checked before
+// .claude/settings.json. Returns an empty slice if no hooks are configured.
 func LoadHooks(cwd string) []Hook {
 	var all []Hook
 
 	// User-level hooks.
-	userHome, _ := os.UserHomeDir()
-	if userHome != "" {
-		all = append(all, loadHooksFromFile(filepath.Join(userHome, ".claude", "settings.json"))...)
+	userDir := config.UserConfigDir()
+	if userDir != "" {
+		all = append(all, loadHooksFromDir(userDir)...)
 	}
 
 	// Project-level hooks (walk up from cwd).
-	// Skip the user home directory since it was already loaded above.
-	// Track visited directories to prevent duplicates.
+	// Skip the home directory since user-level hooks were already loaded above.
+	userHome, _ := os.UserHomeDir()
 	dir, err := filepath.Abs(cwd)
 	if err != nil {
 		return all
@@ -32,8 +38,13 @@ func LoadHooks(cwd string) []Hook {
 	for {
 		if !visited[dir] && dir != userHome {
 			visited[dir] = true
-			candidate := filepath.Join(dir, ".claude", "settings.json")
-			all = append(all, loadHooksFromFile(candidate)...)
+			// Check .glamdring/ then .claude/ at this level.
+			for _, cfgName := range configFileNames {
+				if path := config.Resolve(dir, cfgName); path != "" {
+					all = append(all, loadHooksFromFile(path)...)
+					break // Use the first config file found at this level.
+				}
+			}
 		}
 
 		parent := filepath.Dir(dir)
@@ -46,7 +57,20 @@ func LoadHooks(cwd string) []Hook {
 	return all
 }
 
-// loadHooksFromFile reads and parses the hooks array from a single settings file.
+// loadHooksFromDir checks for config files in a directory and loads hooks
+// from the first one found.
+func loadHooksFromDir(dir string) []Hook {
+	for _, name := range configFileNames {
+		path := filepath.Join(dir, name)
+		if _, err := os.Stat(path); err == nil {
+			// File exists -- use it even if it has no hooks (first found wins).
+			return loadHooksFromFile(path)
+		}
+	}
+	return nil
+}
+
+// loadHooksFromFile reads and parses the hooks array from a single config file.
 // The "hooks" value must be a JSON array of Hook objects; if the key is missing
 // or holds a different type (e.g. an object), the file is silently skipped.
 func loadHooksFromFile(path string) []Hook {

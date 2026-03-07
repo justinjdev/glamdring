@@ -9,7 +9,8 @@ import (
 	"strings"
 )
 
-// PermissionConfig holds allow and deny rules loaded from .claude/permissions.json.
+// PermissionConfig holds allow and deny rules loaded from permissions.json
+// (.glamdring/ or .claude/ namespace).
 type PermissionConfig struct {
 	Allow []PermissionRule `json:"allow"`
 	Deny  []PermissionRule `json:"deny"`
@@ -34,16 +35,17 @@ const (
 	PermissionResultDefault PermissionResult = "default"
 )
 
-// LoadPermissions reads .claude/permissions.json from the project root.
-// Returns (nil, nil) if the file doesn't exist. Returns an error if the
+// LoadPermissions reads permissions.json from the project config directory.
+// Checks .glamdring/permissions.json first, then .claude/permissions.json.
+// Returns (nil, nil) if no permissions file exists. Returns an error if the
 // file exists but cannot be read or contains invalid JSON.
 func LoadPermissions(cwd string) (*PermissionConfig, error) {
-	path := filepath.Join(cwd, ".claude", "permissions.json")
+	path := Resolve(cwd, "permissions.json")
+	if path == "" {
+		return nil, nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 	var pc PermissionConfig

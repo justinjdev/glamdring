@@ -171,8 +171,6 @@ func TestDiscover_Integration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Discover will also pick up user-level commands from ~/.claude/commands/,
-	// so we just verify our project command is present.
 	cmds := Discover(root)
 	found := false
 	for _, cmd := range cmds {
@@ -183,5 +181,28 @@ func TestDiscover_Integration(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected to find project command 'test' in Discover results")
+	}
+}
+
+func TestDiscover_GlamdringDir(t *testing.T) {
+	root := t.TempDir()
+	cmdDir := filepath.Join(root, ".glamdring", "commands")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cmdDir, "deploy.md"), []byte("Deploy"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmds := Discover(root)
+	found := false
+	for _, cmd := range cmds {
+		if cmd.Name == "deploy" && cmd.Source == "project" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected to find project command 'deploy' from .glamdring/commands/")
 	}
 }

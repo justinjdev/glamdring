@@ -1,10 +1,6 @@
-# config-loader Specification
+## MODIFIED Requirements
 
-## Purpose
-Discovers and loads configuration files (instructions, settings, permissions) from project and user directories, assembles the system prompt, and resolves the working directory.
-
-## Requirements
-### Requirement: Discover and load instruction files
+### Requirement: Discover and load CLAUDE.md files
 The system SHALL search for instruction files at two levels: project-level (walking up from CWD to filesystem root) and user-level. At each directory level, the system SHALL check for both glamdring-namespaced and claude-namespaced instruction files, concatenating all found contents. The glamdring-namespaced files SHALL be checked first at each level.
 
 Project-level check order at each directory:
@@ -41,16 +37,18 @@ All found files are concatenated (innermost directory first).
 - **WHEN** no GLAMDRING.md files exist but `CLAUDE.md` exists at the project root
 - **THEN** the system loads `CLAUDE.md` content into the system prompt
 
-### Requirement: Assemble system prompt
-The system SHALL construct the system prompt by combining: base agent instructions, tool descriptions (generated from registered tool schemas), and instruction file content (from GLAMDRING.md and/or CLAUDE.md). The assembled prompt SHALL be sent as the `system` parameter in API requests.
-
-#### Scenario: System prompt includes tool descriptions
-- **WHEN** tools Read, Write, Edit, Bash, Glob, and Grep are registered
-- **THEN** the system prompt includes a description of each tool and its parameters
-
 ### Requirement: Working directory resolution
 The system SHALL accept an optional `--cwd` flag. If not provided, the system SHALL use the current working directory. All file operations SHALL be relative to the resolved working directory.
 
 #### Scenario: Explicit CWD
 - **WHEN** the user runs `glamdring --cwd /path/to/project`
 - **THEN** all file tool operations are rooted at `/path/to/project` and instruction files are searched from there
+
+## MODIFIED Requirements
+
+### Requirement: Assemble system prompt
+The system SHALL construct the system prompt by combining: base agent instructions, tool descriptions (generated from registered tool schemas), and instruction file content (from GLAMDRING.md and/or CLAUDE.md). The assembled prompt SHALL be sent as the `system` parameter in API requests.
+
+#### Scenario: System prompt includes tool descriptions
+- **WHEN** tools Read, Write, Edit, Bash, Glob, and Grep are registered
+- **THEN** the system prompt includes a description of each tool and its parameters
