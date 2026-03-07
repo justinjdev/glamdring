@@ -55,7 +55,7 @@ func TestPngDimensions_NotPNG(t *testing.T) {
 }
 
 func TestInputResetClearsPendingImages(t *testing.T) {
-	m := NewInputModel(DefaultStyles())
+	m := NewInputModel(DefaultStyles(builtinThemes["glamdring"]), builtinThemes["glamdring"])
 	m.pendingImages = []PendingImage{{Data: []byte{1, 2, 3}}}
 	m.Reset()
 	if len(m.pendingImages) != 0 {

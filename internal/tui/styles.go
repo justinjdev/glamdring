@@ -15,8 +15,8 @@ func init() {
 // Styles holds all Lip Gloss styles for the TUI.
 type Styles struct {
 	// Input area
-	InputBorder    lipgloss.Style
-	InputPrompt    lipgloss.Style
+	InputBorder      lipgloss.Style
+	InputPrompt      lipgloss.Style
 	InputPlaceholder lipgloss.Style
 
 	// Output text
@@ -70,30 +70,6 @@ type Styles struct {
 	StatusBarDanger lipgloss.Style
 }
 
-// Color palette — a warm, amber-tinted dark theme inspired by aged parchment
-// and lantern light. Think candlelit workspace, not neon arcade.
-var (
-	// Base tones
-	colorBg         = lipgloss.Color("#1a1612")
-	colorFg         = lipgloss.Color("#d4be98")
-	colorFgDim      = lipgloss.Color("#7c6f64")
-	colorFgBright   = lipgloss.Color("#ebdbb2")
-
-	// Accent palette
-	colorAmber       = lipgloss.Color("#e78a4e") // primary accent — warm amber
-	colorGold        = lipgloss.Color("#d8a657") // secondary — burnished gold
-	colorSage        = lipgloss.Color("#a9b665") // success / tool results
-	colorRust        = lipgloss.Color("#ea6962") // errors / deny
-	colorLavender    = lipgloss.Color("#d3869b") // thinking / subtle highlight
-	colorTeal        = lipgloss.Color("#89b482") // permission / approve
-	colorSky         = lipgloss.Color("#7daea3") // informational / model name
-
-	// Surface tones
-	colorSurface0    = lipgloss.Color("#282420")
-	colorSurface1    = lipgloss.Color("#32302f")
-	colorSurface2    = lipgloss.Color("#3c3836")
-)
-
 // ThemePalette defines the named color slots for a theme.
 type ThemePalette struct {
 	Name     string
@@ -101,12 +77,12 @@ type ThemePalette struct {
 	Fg       lipgloss.Color
 	FgDim    lipgloss.Color
 	FgBright lipgloss.Color
-	Primary   lipgloss.Color
+	Primary  lipgloss.Color
 	Secondary lipgloss.Color
-	Success   lipgloss.Color
-	Error     lipgloss.Color
-	Info      lipgloss.Color
-	Subtle    lipgloss.Color
+	Success  lipgloss.Color
+	Error    lipgloss.Color
+	Info     lipgloss.Color
+	Subtle   lipgloss.Color
 	Surface0 lipgloss.Color
 	Surface1 lipgloss.Color
 	Surface2 lipgloss.Color
@@ -159,145 +135,145 @@ func ThemeNames() []string {
 	return names
 }
 
-// DefaultStyles creates the default dark theme styles.
-func DefaultStyles() Styles {
+// DefaultStyles creates theme styles from the given palette.
+func DefaultStyles(p ThemePalette) Styles {
 	return Styles{
-		// Input area — bordered with amber accent
+		// Input area — bordered with primary accent
 		InputBorder: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorAmber).
+			BorderForeground(p.Primary).
 			Padding(0, 1),
 
 		InputPrompt: lipgloss.NewStyle().
-			Foreground(colorAmber).
+			Foreground(p.Primary).
 			Bold(true),
 
 		InputPlaceholder: lipgloss.NewStyle().
-			Foreground(colorFgDim).
+			Foreground(p.FgDim).
 			Italic(true),
 
 		// Output text
 		OutputText: lipgloss.NewStyle().
-			Foreground(colorFg),
+			Foreground(p.Fg),
 
-		// Tool calls — sage green header, dimmer body
+		// Tool calls — success header, dimmer body
 		ToolCallHeader: lipgloss.NewStyle().
-			Foreground(colorSage).
+			Foreground(p.Success).
 			Bold(true).
 			PaddingLeft(1),
 
 		ToolCallIcon: lipgloss.NewStyle().
-			Foreground(colorGold).
+			Foreground(p.Secondary).
 			Bold(true),
 
 		ToolResult: lipgloss.NewStyle().
-			Foreground(colorFgDim).
+			Foreground(p.FgDim).
 			PaddingLeft(3),
 
 		ToolResultErr: lipgloss.NewStyle().
-			Foreground(colorRust).
+			Foreground(p.Error).
 			PaddingLeft(3),
 
-		// Thinking — dimmed lavender, italic
+		// Thinking — dimmed subtle, italic
 		ThinkingText: lipgloss.NewStyle().
-			Foreground(colorLavender).
+			Foreground(p.Subtle).
 			Italic(true).
 			PaddingLeft(2),
 
 		ThinkingBorder: lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder(), false, false, false, true).
-			BorderForeground(colorLavender).
+			BorderForeground(p.Subtle).
 			PaddingLeft(1),
 
 		// Thinking separator — subtle dotted line between thinking and response
 		ThinkingSeparator: lipgloss.NewStyle().
-			Foreground(colorLavender).
+			Foreground(p.Subtle).
 			Faint(true).
 			PaddingLeft(2),
 
 		// New content indicator — shown when user has scrolled up
 		NewContentIndicator: lipgloss.NewStyle().
-			Background(colorAmber).
-			Foreground(colorBg).
+			Background(p.Primary).
+			Foreground(p.Bg).
 			Bold(true).
 			Padding(0, 1),
 
 		// Status bar — full-width surface strip
 		StatusBar: lipgloss.NewStyle().
-			Background(colorSurface1).
-			Foreground(colorFgDim).
+			Background(p.Surface1).
+			Foreground(p.FgDim).
 			Padding(0, 1),
 
 		StatusBarKey: lipgloss.NewStyle().
-			Background(colorSurface1).
-			Foreground(colorFgDim),
+			Background(p.Surface1).
+			Foreground(p.FgDim),
 
 		StatusBarValue: lipgloss.NewStyle().
-			Background(colorSurface1).
-			Foreground(colorFgBright),
+			Background(p.Surface1).
+			Foreground(p.FgBright),
 
 		StatusBarSep: lipgloss.NewStyle().
-			Background(colorSurface1).
-			Foreground(colorSurface2).
+			Background(p.Surface1).
+			Foreground(p.Surface2).
 			SetString(" \u2502 "),
 
 		// Permission prompt
 		PermissionBorder: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorGold).
+			BorderForeground(p.Secondary).
 			Padding(0, 1).
 			MarginTop(1),
 
 		PermissionTitle: lipgloss.NewStyle().
-			Foreground(colorGold).
+			Foreground(p.Secondary).
 			Bold(true),
 
 		PermissionHelp: lipgloss.NewStyle().
-			Foreground(colorFgDim).
+			Foreground(p.FgDim).
 			Italic(true),
 
 		// Error
 		ErrorText: lipgloss.NewStyle().
-			Foreground(colorRust).
+			Foreground(p.Error).
 			Bold(true),
 
 		// System messages (built-in command output)
 		SystemText: lipgloss.NewStyle().
-			Foreground(colorSky).
+			Foreground(p.Info).
 			PaddingLeft(1),
 
 		SystemBorder: lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder(), false, false, false, true).
-			BorderForeground(colorSky).
+			BorderForeground(p.Info).
 			PaddingLeft(1).
 			PaddingTop(1),
 
 		// Conversation role headers
 		UserHeader: lipgloss.NewStyle().
-			Foreground(colorSky).
+			Foreground(p.Info).
 			Bold(true).
 			PaddingTop(1),
 
 		// Spinner indicator
 		SpinnerText: lipgloss.NewStyle().
-			Foreground(colorAmber).
+			Foreground(p.Primary).
 			PaddingLeft(1),
 
 		// Status bar warning (e.g., YOLO indicator)
 		StatusBarWarning: lipgloss.NewStyle().
-			Background(colorSurface1).
-			Foreground(colorRust).
+			Background(p.Surface1).
+			Foreground(p.Error).
 			Bold(true),
 
 		// Status bar caution (context window 60-79%)
 		StatusBarCaution: lipgloss.NewStyle().
-			Background(colorSurface1).
-			Foreground(colorGold),
+			Background(p.Surface1).
+			Foreground(p.Secondary),
 
 		// Status bar danger (context window >= 80%)
 		StatusBarDanger: lipgloss.NewStyle().
-			Background(colorSurface1).
-			Foreground(colorRust).
+			Background(p.Surface1).
+			Foreground(p.Error).
 			Bold(true),
 	}
 }

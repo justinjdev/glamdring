@@ -6,7 +6,7 @@ import (
 )
 
 func newTestOutput(width, height int) OutputModel {
-	return NewOutputModel(DefaultStyles(), width, height)
+	return NewOutputModel(DefaultStyles(builtinThemes["glamdring"]), width, height)
 }
 
 func TestFinalizedBlocksCacheRenderedOutput(t *testing.T) {

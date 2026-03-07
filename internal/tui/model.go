@@ -44,6 +44,7 @@ type Model struct {
 	output    OutputModel
 	statusbar StatusBar
 	styles    Styles
+	palette   ThemePalette
 	state     State
 
 	// permission holds the current permission request when in StatePermission.
@@ -115,10 +116,11 @@ type Model struct {
 
 // New creates the root TUI model without agent wiring.
 func New() Model {
-	styles := DefaultStyles()
+	palette := builtinThemes["glamdring"]
+	styles := DefaultStyles(palette)
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(colorAmber)
+	s.Style = lipgloss.NewStyle().Foreground(palette.Primary)
 
 	// Pre-fetch terminal size so the first render isn't narrow.
 	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
@@ -130,10 +132,11 @@ func New() Model {
 	}
 
 	m := Model{
-		input:     NewInputModel(styles),
+		input:     NewInputModel(styles, palette),
 		output:    NewOutputModel(styles, w, h),
 		statusbar: NewStatusBar(styles),
 		styles:    styles,
+		palette:   palette,
 		state:     StateInput,
 		spinner:   s,
 		width:     w,
