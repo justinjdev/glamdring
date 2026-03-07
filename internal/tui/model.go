@@ -436,6 +436,13 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch m.state {
 	case StateInput:
+		// Route scroll keys to the output viewport so users can scroll
+		// the conversation while composing input.
+		if isScrollKey(msg) {
+			var cmd tea.Cmd
+			m.output, cmd = m.output.Update(msg)
+			return m, cmd
+		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		m.layoutComponents()
@@ -835,6 +842,20 @@ func currentGitBranch(dir string) string {
 		return "unknown"
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// isScrollKey returns true if the key message is a viewport scroll command
+// that should be routed to the output viewport even when the input is focused.
+func isScrollKey(msg tea.KeyMsg) bool {
+	switch msg.Type {
+	case tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
+		return true
+	}
+	switch msg.String() {
+	case "ctrl+u", "ctrl+d":
+		return true
+	}
+	return false
 }
 
 // layoutComponents recalculates component dimensions after a resize.
