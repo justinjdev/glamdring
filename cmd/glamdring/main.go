@@ -338,10 +338,12 @@ func phaseConfigToPhases(configs []config.PhaseConfig) []teams.Phase {
 	phases := make([]teams.Phase, len(configs))
 	for i, c := range configs {
 		phases[i] = teams.Phase{
-			Name:     c.Name,
-			Tools:    c.Tools,
-			Model:    c.Model,
-			Fallback: c.Fallback,
+			Name:       c.Name,
+			Tools:      c.Tools,
+			Model:      c.Model,
+			Fallback:   c.Fallback,
+			Gate:       teams.GateType(c.Gate),
+			GateConfig: c.GateConfig,
 		}
 	}
 	return phases
@@ -436,7 +438,17 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 		agentRegistry.Register(teams.TaskGetTool{Registry: registry})
 		agentRegistry.Register(teams.TaskUpdateTool{Registry: registry, AgentName: params.AgentName})
 		agentRegistry.Register(teams.SendMessageTool{Registry: registry, AgentName: params.AgentName})
-		agentRegistry.Register(teams.AdvancePhaseTool{Registry: registry, AgentName: params.AgentName})
+
+		// agentCancel is wired to AdvancePhaseTool and the cleanup closure so
+		// force shutdown and agent teardown both release the child context.
+		_, agentCancel := context.WithCancel(ctx)
+
+		agentRegistry.Register(teams.AdvancePhaseTool{
+			Registry:   registry,
+			AgentName:  params.AgentName,
+			PriorityCh: priorityAnyCh,
+			CancelFunc: agentCancel,
+		})
 
 		// Build the PhaseRegistry as the ToolProvider for this agent.
 		var provider tools.ToolProvider
@@ -460,15 +472,18 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 			memberNames = append(memberNames, m.Name)
 		}
 		phaseName := ""
+		gateType := ""
 		if len(phases) > 0 {
 			if phase, _, err := mgr.Phases.Current(params.AgentName); err == nil {
 				phaseName = phase.Name
+				gateType = string(phase.Gate)
 			}
 		}
 		teamPrompt := config.BuildTeamAgentPrompt(config.TeamAgentInfo{
 			TeamName:  params.TeamName,
 			AgentName: params.AgentName,
 			Phase:     phaseName,
+			Gate:      gateType,
 			Members:   memberNames,
 		})
 
@@ -495,6 +510,7 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 			Model:        agentModel,
 			TeamState:    state,
 			Cleanup: func() {
+				agentCancel()
 				if err := mgr.CleanupAgent(params.AgentName); err != nil {
 					log.Printf("warning: cleanup errors for agent %q: %v", params.AgentName, err)
 				}

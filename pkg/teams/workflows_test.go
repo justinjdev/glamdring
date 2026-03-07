@@ -13,6 +13,16 @@ func TestWorkflowRPIV(t *testing.T) {
 			t.Errorf("phase %d: expected %q, got %q", i, expected[i], p.Name)
 		}
 	}
+
+	// Plan phase should have leader gate; others should default to auto (empty).
+	if phases[1].Gate != GateLeader {
+		t.Errorf("plan phase gate: expected %q, got %q", GateLeader, phases[1].Gate)
+	}
+	for _, i := range []int{0, 2, 3} {
+		if phases[i].Gate != "" {
+			t.Errorf("phase %q gate: expected empty (auto), got %q", phases[i].Name, phases[i].Gate)
+		}
+	}
 }
 
 func TestWorkflowPlanImplement(t *testing.T) {
@@ -25,6 +35,14 @@ func TestWorkflowPlanImplement(t *testing.T) {
 	}
 	if phases[1].Name != "implement" {
 		t.Errorf("expected 'implement', got %q", phases[1].Name)
+	}
+
+	// Plan phase should have leader gate.
+	if phases[0].Gate != GateLeader {
+		t.Errorf("plan phase gate: expected %q, got %q", GateLeader, phases[0].Gate)
+	}
+	if phases[1].Gate != "" {
+		t.Errorf("implement phase gate: expected empty (auto), got %q", phases[1].Gate)
 	}
 }
 

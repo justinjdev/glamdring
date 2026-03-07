@@ -229,7 +229,33 @@ When no workflow is specified, the default is `scoped` (file scope enforcement w
 }
 ```
 
-Each phase controls which tools are available to team agents and optionally overrides the model. Phase transitions are managed via the `AdvancePhase` tool. Custom workflows from settings take precedence over built-in presets when names conflict.
+Each phase controls which tools are available to team agents and optionally overrides the model. Phase transitions are managed via the `AdvancePhase` tool (requires a `summary` of work done in the current phase). Custom workflows from settings take precedence over built-in presets when names conflict.
+
+**Phase gates** control how phase transitions are enforced:
+
+| Gate | Behavior |
+|---|---|
+| `auto` (default) | Advances immediately when requested |
+| `leader` | Sends an approval request to the team leader; blocks until approved or rejected |
+| `condition` | Runs a shell command; advances only if exit code is 0 |
+
+The `rpiv` and `plan-implement` workflows set `gate: "leader"` on their plan phase by default. Custom workflows can set gates per phase:
+
+```json
+{
+  "workflows": {
+    "gated": {
+      "phases": [
+        {"name": "plan", "tools": ["Read", "Glob", "Grep"], "gate": "leader"},
+        {"name": "test", "tools": ["Read", "Bash"], "gate": "condition", "gate_config": {"command": "make test"}},
+        {"name": "implement", "tools": ["Read", "Write", "Edit", "Bash"]}
+      ]
+    }
+  }
+}
+```
+
+Leader resolution for the `leader` gate follows this priority: phase-level `gate_config.leader`, team-level `leader` field, then alphabetically first team member.
 
 **File locking:** File locks are scoped to the active task. When a task is completed via `TaskUpdate`, all locks acquired for that task are automatically released. This prevents lock leaks across task boundaries.
 

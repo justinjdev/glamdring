@@ -377,6 +377,53 @@ func TestValidateWorkflows_ValidModelPasses(t *testing.T) {
 	}
 }
 
+func TestValidateWorkflows_LeaderGatePasses(t *testing.T) {
+	wf := map[string]WorkflowConfig{
+		"custom": {Phases: []PhaseConfig{
+			{Name: "plan", Tools: []string{"Read"}, Gate: "leader"},
+			{Name: "work", Tools: []string{"Write"}},
+		}},
+	}
+	if err := validateWorkflows(wf); err != nil {
+		t.Errorf("expected no error for leader gate, got: %v", err)
+	}
+}
+
+func TestValidateWorkflows_ConditionGateWithCommand(t *testing.T) {
+	wf := map[string]WorkflowConfig{
+		"custom": {Phases: []PhaseConfig{
+			{Name: "check", Tools: []string{"Read"}, Gate: "condition", GateConfig: map[string]string{"command": "make test"}},
+		}},
+	}
+	if err := validateWorkflows(wf); err != nil {
+		t.Errorf("expected no error for condition gate with command, got: %v", err)
+	}
+}
+
+func TestValidateWorkflows_ConditionGateMissingCommand(t *testing.T) {
+	wf := map[string]WorkflowConfig{
+		"custom": {Phases: []PhaseConfig{
+			{Name: "check", Tools: []string{"Read"}, Gate: "condition"},
+		}},
+	}
+	err := validateWorkflows(wf)
+	if err == nil {
+		t.Error("expected error for condition gate without command")
+	}
+}
+
+func TestValidateWorkflows_UnknownGateTypeErrors(t *testing.T) {
+	wf := map[string]WorkflowConfig{
+		"custom": {Phases: []PhaseConfig{
+			{Name: "step", Tools: []string{"Read"}, Gate: "magic"},
+		}},
+	}
+	err := validateWorkflows(wf)
+	if err == nil {
+		t.Error("expected error for unknown gate type")
+	}
+}
+
 func TestMergeSettings_ZeroMaxTurnsOverride(t *testing.T) {
 	base := Settings{
 		Model:    "default-model",
