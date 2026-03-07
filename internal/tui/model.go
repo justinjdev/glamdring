@@ -191,6 +191,17 @@ func (m *Model) SetTheme(p ThemePalette, highContrast bool) {
 	m.spinner.Style = lipgloss.NewStyle().Foreground(p.Primary)
 }
 
+// PopulateDemoContent fills the output viewport with representative sample
+// content for theme screenshots. Call after SetTheme if a non-default theme
+// is desired.
+func (m *Model) PopulateDemoContent() {
+	m.output.AppendUserMessage("How do I switch themes in glamdring?")
+	m.output.AppendText("Use `/theme <name>` to switch at runtime. Five built-in themes ship with glamdring.\n\nEach theme defines **Primary**, **Secondary**, **Success**, and **Error** accent colors that are applied across the entire interface.\n\n```go\npalette, ok := tui.LookupTheme(\"mithril\")\n```\n")
+	m.output.AppendToolCall("Read", "internal/tui/styles.go")
+	m.output.AppendToolResult("type ThemePalette struct {\n    Name     string\n    Bg       lipgloss.Color\n    Primary  lipgloss.Color\n    // ... 11 more color slots\n}", false)
+	m.output.AppendText("The `ThemePalette` struct defines all color slots. You can also create custom themes in your settings file.")
+}
+
 // SetMCPManager stores the MCP manager for /mcp command and status bar updates.
 func (m *Model) SetMCPManager(mgr *mcp.Manager) {
 	m.mcpMgr = mgr

@@ -1,41 +1,70 @@
-# VHS tape for capturing theme screenshots.
-# Usage: vhs docs/screenshots/themes.tape
+# VHS tape for capturing theme screenshots using the real TUI.
+# Usage:
+#   go build -o /tmp/glamdring-demo ./cmd/glamdring
+#   vhs docs/screenshots/themes.tape
 
 Set Shell zsh
-Set Width 1200
-Set Height 800
-Set FontFamily "JetBrains Mono"
-Set FontSize 16
-Set Padding 24
+Set FontFamily "Monaco"
+Set FontSize 12
+Set LetterSpacing 0
+Set LineHeight 1.2
+Set Padding 0
+Set Width 900
+Set Height 600
 
 Hide
-Type "stty -echo"
+Type "stty -echo && /tmp/glamdring-demo --demo glamdring"
 Enter
-Sleep 500ms
+Sleep 2s
 Show
-
-Type "clear && docs/screenshots/preview.sh glamdring"
-Enter
-Sleep 3s
+Sleep 1s
 Screenshot docs/screenshots/theme-glamdring.png
 
-Type "clear && docs/screenshots/preview.sh rivendell"
+Hide
+Type "/quit"
 Enter
-Sleep 3s
+Sleep 500ms
+Type "/tmp/glamdring-demo --demo rivendell"
+Enter
+Sleep 2s
+Show
+Sleep 1s
 Screenshot docs/screenshots/theme-rivendell.png
 
-Type "clear && docs/screenshots/preview.sh mithril"
+Hide
+Type "/quit"
 Enter
-Sleep 3s
+Sleep 500ms
+Type "/tmp/glamdring-demo --demo mithril"
+Enter
+Sleep 2s
+Show
+Sleep 1s
 Screenshot docs/screenshots/theme-mithril.png
 
-Type "clear && docs/screenshots/preview.sh lothlorien"
+Hide
+Type "/quit"
 Enter
-Sleep 3s
+Sleep 500ms
+Type "/tmp/glamdring-demo --demo lothlorien"
+Enter
+Sleep 2s
+Show
+Sleep 1s
 Screenshot docs/screenshots/theme-lothlorien.png
 
-Type "clear && docs/screenshots/preview.sh shire"
+Hide
+Type "/quit"
 Enter
-Sleep 3s
+Sleep 500ms
+Type "/tmp/glamdring-demo --demo shire"
+Enter
+Sleep 2s
+Show
+Sleep 1s
 Screenshot docs/screenshots/theme-shire.png
+
+Hide
+Type "/quit"
+Enter
 Sleep 500ms
