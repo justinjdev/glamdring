@@ -6,12 +6,46 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/justin/glamdring/pkg/api"
 	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/hooks"
 	"github.com/justin/glamdring/pkg/tools"
 )
+
+// --- Test helper functions ---
+
+// buildToolUseSSEResponse constructs a complete SSE stream for a tool_use response.
+func buildToolUseSSEResponse(toolName, inputJSON string) string {
+	var b strings.Builder
+
+	b.WriteString("event: message_start\n")
+	b.WriteString(`data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","content":[],"model":"test","stop_reason":null,"usage":{"input_tokens":100,"output_tokens":0}}}`)
+	b.WriteString("\n\n")
+
+	b.WriteString("event: content_block_start\n")
+	b.WriteString(fmt.Sprintf(`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_1","name":"%s"}}`, toolName))
+	b.WriteString("\n\n")
+
+	b.WriteString("event: content_block_delta\n")
+	b.WriteString(fmt.Sprintf(`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"%s"}}`, inputJSON))
+	b.WriteString("\n\n")
+
+	b.WriteString("event: content_block_stop\n")
+	b.WriteString(`data: {"type":"content_block_stop","index":0}`)
+	b.WriteString("\n\n")
+
+	b.WriteString("event: message_delta\n")
+	b.WriteString(`data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":20}}`)
+	b.WriteString("\n\n")
+
+	b.WriteString("event: message_stop\n")
+	b.WriteString(`data: {"type":"message_stop"}`)
+	b.WriteString("\n\n")
+
+	return b.String()
+}
 
 // --- mock tool that can be configured to return errors ---
 
@@ -191,20 +225,8 @@ func TestTruncateToolResult_UTF8Boundary(t *testing.T) {
 	}
 	// The result before the notice should be valid UTF-8.
 	beforeNotice := strings.SplitN(result, "\n... (truncated", 2)[0]
-	for i := 0; i < len(beforeNotice); {
-		r, size := rune(beforeNotice[i]), 0
-		for _, b := range []byte(beforeNotice[i:]) {
-			_ = b
-			size++
-			if size >= 4 {
-				break
-			}
-		}
-		if r == '\uFFFD' {
-			t.Error("found replacement character in truncated result, expected clean UTF-8")
-			break
-		}
-		i += size
+	if !utf8.ValidString(beforeNotice) {
+		t.Error("truncated result is not valid UTF-8")
 	}
 }
 
@@ -560,16 +582,31 @@ func TestExecuteTools_ContextCancelled(t *testing.T) {
 	cancel() // Cancel immediately.
 
 	out := make(chan Message, 64)
-	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{})}
+	calls := []toolCall{
+		makeToolCall("tc1", "Read", map[string]any{}),
+		makeToolCall("tc2", "Read", map[string]any{}),
+	}
 
-	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
 	close(out)
 
-	if err == nil {
-		t.Fatal("expected error from cancelled context")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "context cancelled") {
-		t.Errorf("expected 'context cancelled' in error, got: %v", err)
+	// Should return error tool_results for all calls to keep history valid.
+	if len(results) != len(calls) {
+		t.Fatalf("expected %d results, got %d", len(calls), len(results))
+	}
+	for i, r := range results {
+		if r.Type != "tool_result" {
+			t.Errorf("result[%d]: expected type tool_result, got %s", i, r.Type)
+		}
+		if !r.IsError {
+			t.Errorf("result[%d]: expected IsError=true", i)
+		}
+		if r.ToolUseID != calls[i].id {
+			t.Errorf("result[%d]: expected ToolUseID %s, got %s", i, calls[i].id, r.ToolUseID)
+		}
 	}
 }
 
@@ -1786,14 +1823,24 @@ func TestExecuteTools_ContextCancelledDuringPermission(t *testing.T) {
 		}
 	}()
 
-	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
 	close(out)
 
-	if err == nil {
-		t.Fatal("expected error from context cancellation during permission wait")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "context cancelled") {
-		t.Errorf("expected 'context cancelled' in error, got: %v", err)
+	// Should return error tool_results for all calls to keep history valid.
+	if len(results) != len(calls) {
+		t.Fatalf("expected %d results, got %d", len(calls), len(results))
+	}
+	if results[0].Type != "tool_result" {
+		t.Errorf("expected type tool_result, got %s", results[0].Type)
+	}
+	if !results[0].IsError {
+		t.Error("expected IsError=true for cancelled permission wait")
+	}
+	if results[0].ToolUseID != "tc1" {
+		t.Errorf("expected ToolUseID tc1, got %s", results[0].ToolUseID)
 	}
 }
 
@@ -1950,5 +1997,617 @@ func TestRunTurn_MaxTokensContinuation(t *testing.T) {
 	}
 	if len(texts) < 2 {
 		t.Errorf("expected at least 2 text deltas, got %d", len(texts))
+	}
+}
+
+// --- Additional comprehensive tests ---
+
+// TestTruncateToolResult_ExactBoundary tests truncation exactly at maxToolResultSize.
+func TestTruncateToolResult_ExactBoundary(t *testing.T) {
+	// Test string exactly at maxToolResultSize should not be truncated.
+	input := strings.Repeat("a", maxToolResultSize)
+	result := truncateToolResult(input)
+	if result != input {
+		t.Errorf("expected no truncation for string exactly at max size")
+	}
+	if strings.Contains(result, "truncated") {
+		t.Error("should not show truncation message for exact boundary")
+	}
+}
+
+// TestTruncateToolResult_OneBytePastBoundary tests truncation one byte past maxToolResultSize.
+func TestTruncateToolResult_OneBytePastBoundary(t *testing.T) {
+	input := strings.Repeat("x", maxToolResultSize+1)
+	result := truncateToolResult(input)
+	if !strings.Contains(result, "truncated") {
+		t.Error("expected truncation notice for string one byte past max")
+	}
+	if len(result) <= maxToolResultSize {
+		t.Fatalf("expected truncation suffix to extend the result past %d bytes, got %d", maxToolResultSize, len(result))
+	}
+	beforeNotice := strings.SplitN(result, "\n... (truncated", 2)[0]
+	if len(beforeNotice) != maxToolResultSize {
+		t.Errorf("expected truncated portion to be exactly maxToolResultSize, got %d", len(beforeNotice))
+	}
+}
+
+// TestTruncateToolResult_EmptyString tests truncation with empty string.
+func TestTruncateToolResult_EmptyString(t *testing.T) {
+	result := truncateToolResult("")
+	if result != "" {
+		t.Errorf("expected empty result for empty input, got %q", result)
+	}
+}
+
+// TestTruncateToolResult_VeryLargeResult tests truncation with very large output.
+func TestTruncateToolResult_VeryLargeResult(t *testing.T) {
+	input := strings.Repeat("large", maxToolResultSize) // Much larger than max
+	result := truncateToolResult(input)
+	if !strings.Contains(result, "truncated") {
+		t.Error("expected truncation notice for very large input")
+	}
+	// Verify the truncated part is valid UTF-8.
+	beforeNotice := strings.SplitN(result, "\n... (truncated", 2)[0]
+	if !utf8.ValidString(beforeNotice) {
+		t.Error("truncated result should be valid UTF-8")
+	}
+}
+
+// TestTruncateToolResult_MultiByteAtBoundary tests multi-byte UTF-8 character at boundary.
+func TestTruncateToolResult_MultiByteAtBoundary(t *testing.T) {
+	// Create a string where a 3-byte character is split at the boundary.
+	// Using Japanese character (3 bytes in UTF-8)
+	prefix := strings.Repeat("a", maxToolResultSize-1)
+	input := prefix + "あ" // This 3-byte character extends past boundary
+	result := truncateToolResult(input)
+
+	if !strings.Contains(result, "truncated") {
+		t.Error("expected truncation notice")
+	}
+	beforeNotice := strings.SplitN(result, "\n... (truncated", 2)[0]
+	if !utf8.ValidString(beforeNotice) {
+		t.Error("truncated result should be valid UTF-8, multi-byte char should be removed")
+	}
+}
+
+// TestExecuteTools_MixedSuccessAndFailure tests multiple tools with mixed results.
+func TestExecuteTools_MixedSuccessAndFailure(t *testing.T) {
+	successTool := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "success"},
+	}
+	failureTool := &configurableMockTool{
+		name:    "Write",
+		execErr: fmt.Errorf("disk full"),
+	}
+	errorResultTool := &configurableMockTool{
+		name:   "Bash",
+		result: tools.Result{Output: "command failed", IsError: true},
+	}
+
+	registry := tools.NewRegistry()
+	registry.Register(successTool)
+	registry.Register(failureTool)
+	registry.Register(errorResultTool)
+
+	ctx := context.Background()
+	out := make(chan Message, 64)
+	calls := []toolCall{
+		makeToolCall("tc1", "Read", map[string]any{"file_path": "/tmp/a"}),
+		makeToolCall("tc2", "Write", map[string]any{"file_path": "/tmp/b"}),
+		makeToolCall("tc3", "Bash", map[string]any{"command": "false"}),
+	}
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{"Write": true, "Bash": true}, nil, nil, nil, nil, nil)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+
+	// First should succeed.
+	if results[0].IsError {
+		t.Error("expected first result to succeed")
+	}
+	if results[0].Content != "success" {
+		t.Errorf("result[0] content = %q, want 'success'", results[0].Content)
+	}
+
+	// Second should be execution error.
+	if !results[1].IsError {
+		t.Error("expected second result to be error")
+	}
+	if !strings.Contains(results[1].Content, "tool execution error") {
+		t.Errorf("expected 'tool execution error' in result[1], got: %q", results[1].Content)
+	}
+
+	// Third should be error result from tool.
+	if !results[2].IsError {
+		t.Error("expected third result to be error")
+	}
+	if results[2].Content != "command failed" {
+		t.Errorf("result[2] content = %q, want 'command failed'", results[2].Content)
+	}
+}
+
+// TestExecuteTools_LargeOutputTruncation tests that large tool outputs are truncated.
+func TestExecuteTools_LargeOutputTruncation(t *testing.T) {
+	largeOutput := strings.Repeat("x", maxToolResultSize+1000)
+	mockT := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: largeOutput},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(mockT)
+
+	ctx := context.Background()
+	out := make(chan Message, 64)
+	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{})}
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	// Result content should be truncated.
+	if !strings.Contains(results[0].Content, "truncated") {
+		t.Error("expected truncation notice in result content")
+	}
+	if len(results[0].Content) > maxToolResultSize+200 {
+		t.Errorf("result content too large after truncation: %d bytes", len(results[0].Content))
+	}
+
+	// Verify the tool result message has full output (before truncation).
+	var gotFullOutput bool
+	for m := range out {
+		if m.Type == MessageToolResult && m.ToolOutput == largeOutput {
+			gotFullOutput = true
+		}
+	}
+	if !gotFullOutput {
+		t.Error("expected full output in MessageToolResult")
+	}
+}
+
+// TestProcessTurn_MultipleToolUseBlocks tests response with multiple tool_use blocks.
+func TestProcessTurn_MultipleToolUseBlocks(t *testing.T) {
+	events := make(chan api.StreamEvent, 30)
+
+	events <- api.StreamEvent{
+		Type: "message_start",
+		Message: &api.MessageResponse{
+			Usage: api.Usage{InputTokens: 100},
+		},
+	}
+
+	// First tool_use block
+	events <- api.StreamEvent{
+		Type:  "content_block_start",
+		Index: 0,
+		ContentBlock: &api.ContentBlock{
+			Type: "tool_use",
+			ID:   "tool_1",
+			Name: "Read",
+		},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_delta",
+		Index: 0,
+		Delta: &api.Delta{Type: "input_json_delta", PartialJSON: `{"file_path":"/tmp/a"}`},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_stop",
+		Index: 0,
+	}
+
+	// Second tool_use block
+	events <- api.StreamEvent{
+		Type:  "content_block_start",
+		Index: 1,
+		ContentBlock: &api.ContentBlock{
+			Type: "tool_use",
+			ID:   "tool_2",
+			Name: "Grep",
+		},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_delta",
+		Index: 1,
+		Delta: &api.Delta{Type: "input_json_delta", PartialJSON: `{"pattern":"test"}`},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_stop",
+		Index: 1,
+	}
+
+	events <- api.StreamEvent{
+		Type:       "message_delta",
+		StopReason: "tool_use",
+		Usage:      &api.Usage{OutputTokens: 40},
+	}
+	events <- api.StreamEvent{Type: "message_stop"}
+	close(events)
+
+	out := make(chan Message, 64)
+	result, err := processTurn(context.Background(), events, out)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.toolCalls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d", len(result.toolCalls))
+	}
+
+	// Verify first tool call
+	if result.toolCalls[0].id != "tool_1" {
+		t.Errorf("toolCalls[0].id = %q, want 'tool_1'", result.toolCalls[0].id)
+	}
+	if result.toolCalls[0].name != "Read" {
+		t.Errorf("toolCalls[0].name = %q, want 'Read'", result.toolCalls[0].name)
+	}
+
+	// Verify second tool call
+	if result.toolCalls[1].id != "tool_2" {
+		t.Errorf("toolCalls[1].id = %q, want 'tool_2'", result.toolCalls[1].id)
+	}
+	if result.toolCalls[1].name != "Grep" {
+		t.Errorf("toolCalls[1].name = %q, want 'Grep'", result.toolCalls[1].name)
+	}
+}
+
+// TestProcessTurn_MixedTextAndToolUse tests response with both text and tool_use blocks.
+func TestProcessTurn_MixedTextAndToolUse(t *testing.T) {
+	events := make(chan api.StreamEvent, 30)
+
+	events <- api.StreamEvent{
+		Type:    "message_start",
+		Message: &api.MessageResponse{Usage: api.Usage{InputTokens: 50}},
+	}
+
+	// Text block
+	events <- api.StreamEvent{
+		Type:         "content_block_start",
+		Index:        0,
+		ContentBlock: &api.ContentBlock{Type: "text"},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_delta",
+		Index: 0,
+		Delta: &api.Delta{Type: "text_delta", Text: "Let me check that file."},
+	}
+	events <- api.StreamEvent{Type: "content_block_stop", Index: 0}
+
+	// Tool use block
+	events <- api.StreamEvent{
+		Type:  "content_block_start",
+		Index: 1,
+		ContentBlock: &api.ContentBlock{
+			Type: "tool_use",
+			ID:   "tool_1",
+			Name: "Read",
+		},
+	}
+	events <- api.StreamEvent{
+		Type:  "content_block_delta",
+		Index: 1,
+		Delta: &api.Delta{Type: "input_json_delta", PartialJSON: `{"file_path":"/tmp/test"}`},
+	}
+	events <- api.StreamEvent{Type: "content_block_stop", Index: 1}
+
+	events <- api.StreamEvent{
+		Type:       "message_delta",
+		StopReason: "tool_use",
+		Usage:      &api.Usage{OutputTokens: 30},
+	}
+	events <- api.StreamEvent{Type: "message_stop"}
+	close(events)
+
+	out := make(chan Message, 64)
+	result, err := processTurn(context.Background(), events, out)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.contentBlocks) != 2 {
+		t.Fatalf("expected 2 content blocks, got %d", len(result.contentBlocks))
+	}
+	if result.contentBlocks[0].Type != "text" {
+		t.Errorf("block[0] type = %q, want 'text'", result.contentBlocks[0].Type)
+	}
+	if result.contentBlocks[0].Text != "Let me check that file." {
+		t.Errorf("block[0] text = %q", result.contentBlocks[0].Text)
+	}
+	if result.contentBlocks[1].Type != "tool_use" {
+		t.Errorf("block[1] type = %q, want 'tool_use'", result.contentBlocks[1].Type)
+	}
+	if len(result.toolCalls) != 1 {
+		t.Errorf("expected 1 tool call, got %d", len(result.toolCalls))
+	}
+}
+
+// TestEmit_SuccessfulSend tests that emit successfully sends a message.
+func TestEmit_SuccessfulSend(t *testing.T) {
+	ctx := context.Background()
+	out := make(chan Message, 1)
+
+	msg := Message{Type: MessageTextDelta, Text: "test"}
+	emit(ctx, out, msg)
+
+	select {
+	case received := <-out:
+		if received.Type != MessageTextDelta {
+			t.Errorf("expected MessageTextDelta, got %v", received.Type)
+		}
+		if received.Text != "test" {
+			t.Errorf("expected text 'test', got %q", received.Text)
+		}
+	default:
+		t.Error("expected message to be sent")
+	}
+}
+
+// TestPermissionSummary_SpecialCharacters tests permission summary with special characters.
+func TestPermissionSummary_SpecialCharacters(t *testing.T) {
+	tests := []struct {
+		name     string
+		toolName string
+		input    map[string]any
+		want     string
+	}{
+		{
+			name:     "Bash with quotes and special chars",
+			toolName: "Bash",
+			input:    map[string]any{"command": `echo "hello $USER"`},
+			want:     `Run: echo "hello $USER"`,
+		},
+		{
+			name:     "Write with path containing spaces",
+			toolName: "Write",
+			input:    map[string]any{"file_path": "/tmp/my file.txt"},
+			want:     "Write to /tmp/my file.txt",
+		},
+		{
+			name:     "Edit with unicode path",
+			toolName: "Edit",
+			input:    map[string]any{"file_path": "/tmp/文件.txt"},
+			want:     "Edit /tmp/文件.txt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := permissionSummary(tt.toolName, tt.input)
+			if got != tt.want {
+				t.Errorf("permissionSummary() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestIsAllowed_EdgeCases tests isAllowed with edge case inputs.
+func TestIsAllowed_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name         string
+		toolName     string
+		sessionAllow map[string]bool
+		want         bool
+	}{
+		{
+			name:         "empty string tool name",
+			toolName:     "",
+			sessionAllow: map[string]bool{"": true},
+			want:         true,
+		},
+		{
+			name:         "empty string tool not in session",
+			toolName:     "",
+			sessionAllow: map[string]bool{},
+			want:         false,
+		},
+		{
+			name:         "case sensitivity",
+			toolName:     "read",
+			sessionAllow: map[string]bool{"Read": true},
+			want:         false,
+		},
+		{
+			name:         "Read with correct case",
+			toolName:     "Read",
+			sessionAllow: nil,
+			want:         true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isAllowed(tt.toolName, tt.sessionAllow)
+			if got != tt.want {
+				t.Errorf("isAllowed(%q) = %v, want %v", tt.toolName, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestExecuteTools_PreCancelledContext tests that all tool calls get error
+// results when context is already cancelled before execution starts.
+func TestExecuteTools_PreCancelledContext(t *testing.T) {
+	tool1 := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "should not execute"},
+	}
+	tool2 := &configurableMockTool{
+		name:   "Grep",
+		result: tools.Result{Output: "should not execute"},
+	}
+	tool3 := &configurableMockTool{
+		name:   "Glob",
+		result: tools.Result{Output: "should not execute"},
+	}
+
+	registry := tools.NewRegistry()
+	registry.Register(tool1)
+	registry.Register(tool2)
+	registry.Register(tool3)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel before calling executeTools
+
+	out := make(chan Message, 64)
+	calls := []toolCall{
+		makeToolCall("tc1", "Read", map[string]any{}),
+		makeToolCall("tc2", "Grep", map[string]any{}),
+		makeToolCall("tc3", "Glob", map[string]any{}),
+	}
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have results for all 3 calls
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+
+	// All should be error results with cancellation message
+	for i, r := range results {
+		if !r.IsError {
+			t.Errorf("result[%d]: expected error result", i)
+		}
+		if !strings.Contains(r.Content, "cancelled") {
+			t.Errorf("result[%d]: expected 'cancelled' in content, got: %q", i, r.Content)
+		}
+	}
+
+	// No tools should have executed
+	if tool1.execCount != 0 {
+		t.Errorf("tool1 should not execute, got %d executions", tool1.execCount)
+	}
+	if tool2.execCount != 0 {
+		t.Errorf("tool2 should not execute, got %d executions", tool2.execCount)
+	}
+	if tool3.execCount != 0 {
+		t.Errorf("tool3 should not execute, got %d executions", tool3.execCount)
+	}
+}
+
+// TestFormatPriorityMessage_ComplexJSON tests formatting with nested JSON structures.
+func TestFormatPriorityMessage_ComplexJSON(t *testing.T) {
+	msg := map[string]any{
+		"kind": "dm",
+		"from": "agent1",
+		"to":   "agent2",
+		"data": map[string]any{
+			"nested": []int{1, 2, 3},
+		},
+	}
+	result := formatPriorityMessage(msg)
+	if !strings.Contains(result, "[Team Message]") {
+		t.Error("expected [Team Message] prefix")
+	}
+	if !strings.Contains(result, `"kind":"dm"`) {
+		t.Error("expected kind field in JSON")
+	}
+	if !strings.Contains(result, `"nested"`) {
+		t.Error("expected nested data in JSON")
+	}
+}
+
+// TestExecuteTools_ForceShutdownWithMultipleRemainingCalls tests that force
+// shutdown fills error results for all remaining tools.
+func TestExecuteTools_ForceShutdownWithMultipleRemainingCalls(t *testing.T) {
+	tool1 := &configurableMockTool{
+		name:   "Read",
+		result: tools.Result{Output: "ok"},
+	}
+	tool2 := &configurableMockTool{
+		name:   "Grep",
+		result: tools.Result{Output: "should not run"},
+	}
+	tool3 := &configurableMockTool{
+		name:   "Glob",
+		result: tools.Result{Output: "should not run"},
+	}
+
+	registry := tools.NewRegistry()
+	registry.Register(tool1)
+	registry.Register(tool2)
+	registry.Register(tool3)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out := make(chan Message, 64)
+	calls := []toolCall{
+		makeToolCall("tc1", "Read", map[string]any{}),
+		makeToolCall("tc2", "Grep", map[string]any{}),
+		makeToolCall("tc3", "Glob", map[string]any{}),
+	}
+
+	priorityCh := make(chan any, 1)
+	priorityCh <- map[string]any{
+		"kind":  "shutdown_request",
+		"force": true,
+	}
+
+	cancelled := false
+	cancelFunc := func() { cancelled = true; cancel() }
+
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, priorityCh, cancelFunc)
+	close(out)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cancelled {
+		t.Error("expected cancel to be called")
+	}
+
+	// Should have results for all 3 calls
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+
+	// First result should have force shutdown message
+	if !strings.Contains(results[0].Content, "[Force shutdown received -- terminating]") {
+		t.Error("expected force shutdown message in first result")
+	}
+
+	// Remaining should be error results for cancelled tools
+	if !results[1].IsError {
+		t.Error("expected second result to be error")
+	}
+	if !strings.Contains(results[1].Content, "force shutdown") {
+		t.Errorf("expected 'force shutdown' in result[1], got: %q", results[1].Content)
+	}
+
+	if !results[2].IsError {
+		t.Error("expected third result to be error")
+	}
+	if !strings.Contains(results[2].Content, "force shutdown") {
+		t.Errorf("expected 'force shutdown' in result[2], got: %q", results[2].Content)
+	}
+
+	// Only first tool should have executed
+	if tool1.execCount != 1 {
+		t.Errorf("expected tool1 to execute once, got %d", tool1.execCount)
+	}
+	if tool2.execCount != 0 {
+		t.Errorf("tool2 should not execute, got %d", tool2.execCount)
+	}
+	if tool3.execCount != 0 {
+		t.Errorf("tool3 should not execute, got %d", tool3.execCount)
 	}
 }

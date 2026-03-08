@@ -79,10 +79,7 @@ func NewSession(cfg Config) *Session {
 // The user message is appended to the conversation history, preserving context
 // from prior turns.
 func (s *Session) Turn(ctx context.Context, prompt string) <-chan Message {
-	s.messages = append(s.messages, api.RequestMessage{
-		Role:    "user",
-		Content: prompt,
-	})
+	s.appendUserMessage([]api.ContentBlock{{Type: "text", Text: prompt}})
 
 	out := make(chan Message, 64)
 	go func() {
@@ -95,10 +92,7 @@ func (s *Session) Turn(ctx context.Context, prompt string) <-chan Message {
 // TurnWithBlocks sends structured content blocks (text + images) as a user message.
 // Use this instead of Turn when the message includes non-text content.
 func (s *Session) TurnWithBlocks(ctx context.Context, blocks []api.ContentBlock) <-chan Message {
-	s.messages = append(s.messages, api.RequestMessage{
-		Role:    "user",
-		Content: blocks,
-	})
+	s.appendUserMessage(blocks)
 
 	out := make(chan Message, 64)
 	go func() {
@@ -106,6 +100,28 @@ func (s *Session) TurnWithBlocks(ctx context.Context, blocks []api.ContentBlock)
 		s.runTurn(ctx, out)
 	}()
 	return out
+}
+
+// appendUserMessage appends user content blocks to the conversation history.
+// If the last message is already a user message (e.g. error tool_results from
+// a cancelled turn), the new blocks are merged into it to avoid consecutive
+// user messages which the API rejects.
+func (s *Session) appendUserMessage(blocks []api.ContentBlock) {
+	if n := len(s.messages); n > 0 && s.messages[n-1].Role == "user" {
+		var existing []api.ContentBlock
+		switch v := s.messages[n-1].Content.(type) {
+		case string:
+			existing = []api.ContentBlock{{Type: "text", Text: v}}
+		case []api.ContentBlock:
+			existing = v
+		}
+		s.messages[n-1].Content = append(existing, blocks...)
+		return
+	}
+	s.messages = append(s.messages, api.RequestMessage{
+		Role:    "user",
+		Content: blocks,
+	})
 }
 
 // Messages returns the current conversation history.
@@ -266,15 +282,32 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 			s.syncPhaseModel()
 
 		case "max_tokens":
-			// Model ran out of output tokens mid-response. Send a continuation
-			// prompt so it can finish its thought.
-			s.messages = append(s.messages, api.RequestMessage{
-				Role:    "user",
-				Content: "Continue from where you left off.",
-			})
+			// If the model hit max_tokens while generating tool_use blocks,
+			// the contentBlocks contain tool_use that need matching
+			// tool_results. Generate error results before continuing.
+			if errBlocks := errorResultsForOrphanedToolUse(turnResult.contentBlocks); len(errBlocks) > 0 {
+				s.messages = append(s.messages, api.RequestMessage{
+					Role:    "user",
+					Content: errBlocks,
+				})
+			} else {
+				// No tool_use blocks — safe to send a continuation prompt.
+				s.messages = append(s.messages, api.RequestMessage{
+					Role:    "user",
+					Content: "Continue from where you left off.",
+				})
+			}
 
 		default:
-			// Unknown stop reason -- treat as done.
+			// Unknown or empty stop reason. If the response contains
+			// tool_use blocks (e.g. stream ended before message_delta),
+			// we must add error tool_results to keep the history valid.
+			if errBlocks := errorResultsForOrphanedToolUse(turnResult.contentBlocks); len(errBlocks) > 0 {
+				s.messages = append(s.messages, api.RequestMessage{
+					Role:    "user",
+					Content: errBlocks,
+				})
+			}
 			emit(ctx, out, Message{
 				Type:                     MessageDone,
 				InputTokens:              s.TotalInput - turnInputBefore,
@@ -331,6 +364,24 @@ drain:
 			Content: combined,
 		})
 	}
+}
+
+// errorResultsForOrphanedToolUse scans content blocks for tool_use entries
+// and returns error tool_result blocks for each one. Returns nil if no
+// tool_use blocks are found.
+func errorResultsForOrphanedToolUse(blocks []api.ContentBlock) []api.ContentBlock {
+	var results []api.ContentBlock
+	for _, b := range blocks {
+		if b.Type == "tool_use" && b.ID != "" {
+			results = append(results, api.ContentBlock{
+				Type:      "tool_result",
+				ToolUseID: b.ID,
+				Content:   "tool not executed: response truncated or stream interrupted",
+				IsError:   true,
+			})
+		}
+	}
+	return results
 }
 
 // syncPhaseModel checks if the ToolProvider is phase-aware and updates the
