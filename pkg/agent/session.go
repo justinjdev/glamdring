@@ -236,17 +236,29 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 		case "tool_use":
 			toolResults, err := executeTools(ctx, out, s.provider, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner, s.cfg.Permissions, s.teamScope, s.priorityCh, s.cfg.CancelFunc)
 			if err != nil {
+				// The assistant message with tool_use blocks was already
+				// appended above. We must add error tool_results for every
+				// call so the history stays valid for the next API request.
+				errBlocks := make([]api.ContentBlock, len(turnResult.toolCalls))
+				for i, tc := range turnResult.toolCalls {
+					errBlocks[i] = api.ContentBlock{
+						Type:      "tool_result",
+						ToolUseID: tc.id,
+						Content:   fmt.Sprintf("tool execution cancelled: %s", err.Error()),
+						IsError:   true,
+					}
+				}
+				s.messages = append(s.messages, api.RequestMessage{
+					Role:    "user",
+					Content: errBlocks,
+				})
 				emit(ctx, out, Message{Type: MessageError, Err: err})
 				return
 			}
 
-			resultBlocks := make([]api.ContentBlock, len(toolResults))
-			for i, r := range toolResults {
-				resultBlocks[i] = r
-			}
 			s.messages = append(s.messages, api.RequestMessage{
 				Role:    "user",
-				Content: resultBlocks,
+				Content: toolResults,
 			})
 
 			// After tool execution, sync the model if the phase changed
