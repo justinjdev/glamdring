@@ -1058,13 +1058,16 @@ func (m *Model) applyModalChange(c *ModalChange) {
 	case "thinking":
 		m.showThinking = c.Value == "on"
 	case "yolo":
+		wantYolo := c.Value == "on"
 		if m.session != nil {
-			m.session.ToggleYolo()
-			m.agentCfg.Yolo = m.session.IsYolo()
-			m.statusbar.SetYolo(m.session.IsYolo())
+			if m.session.IsYolo() != wantYolo {
+				m.session.ToggleYolo()
+			}
+			m.agentCfg.Yolo = wantYolo
+			m.statusbar.SetYolo(wantYolo)
 		} else {
-			m.agentCfg.Yolo = !m.agentCfg.Yolo
-			m.statusbar.SetYolo(m.agentCfg.Yolo)
+			m.agentCfg.Yolo = wantYolo
+			m.statusbar.SetYolo(wantYolo)
 		}
 	case "high_contrast":
 		m.settings.HighContrast = c.Value == "on"

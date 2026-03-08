@@ -93,6 +93,9 @@ func TestCmdModel_NoArg(t *testing.T) {
 	if m.modal == nil {
 		t.Fatal("expected modal to be set")
 	}
+	if got := m.modal.items[m.modal.cursor].Label; got != "Model" {
+		t.Fatalf("expected cursor on Model, got %q", got)
+	}
 }
 
 func TestCmdModel_WithArg(t *testing.T) {

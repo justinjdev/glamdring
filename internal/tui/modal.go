@@ -225,8 +225,8 @@ func (m *ModalModel) View(maxWidth int) string {
 
 	// Content width inside border+padding.
 	contentWidth := maxWidth - 4
-	if contentWidth < 20 {
-		contentWidth = 20
+	if contentWidth < 0 {
+		contentWidth = 0
 	}
 
 	var lines []string

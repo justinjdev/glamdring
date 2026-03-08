@@ -203,7 +203,13 @@ func SaveUserSetting(key string, value any) error {
 	// Always write to the primary glamdring config to avoid polluting
 	// fallback locations (e.g. ~/.claude/settings.json used by Claude Code).
 	path := ResolveUserFile(primaryConfigFile)
+	readPath := path
 	if path == "" {
+		// No primary config yet. If a legacy fallback config exists, seed
+		// from it so we don't lose unrelated settings on the next load.
+		if legacy := ResolveUserFile(fallbackConfigFile); legacy != "" {
+			readPath = legacy
+		}
 		dir := filepath.Join(home, ".config", "glamdring")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create config dir: %w", err)
@@ -213,10 +219,12 @@ func SaveUserSetting(key string, value any) error {
 
 	// Read existing config as raw JSON to preserve unknown fields.
 	raw := make(map[string]json.RawMessage)
-	if data, err := os.ReadFile(path); err == nil {
-		if len(data) > 0 {
-			if err := json.Unmarshal(data, &raw); err != nil {
-				return fmt.Errorf("parse existing config %s: %w", path, err)
+	if readPath != "" {
+		if data, err := os.ReadFile(readPath); err == nil {
+			if len(data) > 0 {
+				if err := json.Unmarshal(data, &raw); err != nil {
+					return fmt.Errorf("parse existing config %s: %w", readPath, err)
+				}
 			}
 		}
 	}

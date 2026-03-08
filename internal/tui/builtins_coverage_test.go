@@ -664,21 +664,17 @@ func TestCmdConfig_ModalHasItems(t *testing.T) {
 		t.Fatal("expected modal")
 	}
 
-	// Check that modal has theme and model items.
-	hasTheme, hasModel := false, false
+	// Check that modal has all expected items.
+	want := map[string]bool{"Theme": false, "Model": false, "Thinking": false, "Yolo": false, "High contrast": false}
 	for _, item := range m.modal.items {
-		if item.Label == "Theme" {
-			hasTheme = true
-		}
-		if item.Label == "Model" {
-			hasModel = true
+		if _, ok := want[item.Label]; ok {
+			want[item.Label] = true
 		}
 	}
-	if !hasTheme {
-		t.Error("expected Theme item in modal")
-	}
-	if !hasModel {
-		t.Error("expected Model item in modal")
+	for label, found := range want {
+		if !found {
+			t.Errorf("expected %q item in modal", label)
+		}
 	}
 }
 
