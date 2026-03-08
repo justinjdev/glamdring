@@ -37,6 +37,7 @@ func (m *InputModel) TrySubmit() *SubmitMsg {
 		return nil
 	}
 	m.history.ResetCursor()
+	m.textarea.Reset()
 	images := m.pendingImages
 	m.pendingImages = nil
 	return &SubmitMsg{Text: value, Images: images}

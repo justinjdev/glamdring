@@ -130,6 +130,10 @@ func (m *ModalModel) HandleKey(key string) (close bool, change *ModalChange) {
 		case MenuChoice:
 			if m.expanded == m.cursor {
 				// Select the current sub-choice.
+				if len(item.Choices) == 0 {
+					m.expanded = -1
+					return false, nil
+				}
 				choice := item.Choices[m.subCursor]
 				item.Value = choice
 				m.expanded = -1
