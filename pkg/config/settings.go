@@ -216,7 +216,11 @@ func SaveUserSetting(key string, value any) error {
 	// Read existing config as raw JSON to preserve unknown fields.
 	raw := make(map[string]json.RawMessage)
 	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &raw)
+		if len(data) > 0 {
+			if err := json.Unmarshal(data, &raw); err != nil {
+				return fmt.Errorf("parse existing config %s: %w", path, err)
+			}
+		}
 	}
 
 	val, err := json.Marshal(value)
@@ -229,7 +233,27 @@ func SaveUserSetting(key string, value any) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	return os.WriteFile(path, append(out, '\n'), 0o644)
+
+	// Write atomically via a temp file so a crash during write does not
+	// corrupt the existing config.
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		// Clean up temp file if rename failed.
+		_ = os.Remove(tmpPath)
+	}()
+	if _, err := tmp.Write(append(out, '\n')); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // IndexerEnabled returns whether the indexer is enabled.
