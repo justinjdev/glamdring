@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -354,6 +355,23 @@ func (m *OutputModel) FinalizeStar() {
 		return
 	}
 	m.starDone = true
+	// Invalidate the cached render of the first content block after the last
+	// user message so doRender picks up the final star glyph.
+	lastUserIdx := -1
+	for i, b := range m.blocks {
+		if b.kind == blockUserMessage {
+			lastUserIdx = i
+		}
+	}
+	if lastUserIdx >= 0 {
+		for i := lastUserIdx + 1; i < len(m.blocks); i++ {
+			if m.blocks[i].kind != blockSystem && m.blocks[i].kind != blockError {
+				m.blocks[i].rendered = ""
+				break
+			}
+		}
+	}
+	m.doRender()
 }
 
 // renderStar returns the styled star prefix for the current frame.
@@ -578,20 +596,20 @@ func (m *OutputModel) HasPending() bool {
 func (m *OutputModel) DrainPending() bool {
 	drained := false
 
-	if n := len(m.pendingText); n > 0 {
-		take := drainChunkSize(n)
+	if len(m.pendingText) > 0 {
+		take := runeAlignedChunk(m.pendingText)
 		m.appendTextImmediate(m.pendingText[:take])
 		m.pendingText = m.pendingText[take:]
 		drained = true
 	}
-	if n := len(m.pendingThink); n > 0 {
-		take := drainChunkSize(n)
+	if len(m.pendingThink) > 0 {
+		take := runeAlignedChunk(m.pendingThink)
 		m.appendThinkImmediate(m.pendingThink[:take])
 		m.pendingThink = m.pendingThink[take:]
 		drained = true
 	}
-	if n := len(m.pendingToolOut); n > 0 {
-		take := drainChunkSize(n)
+	if len(m.pendingToolOut) > 0 {
+		take := runeAlignedChunk(m.pendingToolOut)
 		m.appendToolOutImmediate(m.pendingToolOut[:take])
 		m.pendingToolOut = m.pendingToolOut[take:]
 		drained = true
@@ -645,6 +663,29 @@ func drainChunkSize(n int) int {
 		rate = n
 	}
 	return rate
+}
+
+// runeAlignedChunk returns the byte length of a chunk of s that is safe to
+// slice — i.e., it does not split a multi-byte UTF-8 sequence. It starts from
+// drainChunkSize(len(s)) bytes and retreats to the nearest rune boundary,
+// ensuring at least one complete rune is always consumed.
+func runeAlignedChunk(s string) int {
+	n := len(s)
+	take := drainChunkSize(n)
+	if take >= n {
+		return n
+	}
+	// Retreat until we land on a rune-start byte.
+	for take > 0 && !utf8.RuneStart(s[take]) {
+		take--
+	}
+	// If we retreated all the way to 0, advance past the first rune so we
+	// always make forward progress.
+	if take == 0 {
+		_, size := utf8.DecodeRuneInString(s)
+		take = size
+	}
+	return take
 }
 
 // scheduleRenderTick returns a tea.Cmd that fires a renderTickMsg after renderInterval.
