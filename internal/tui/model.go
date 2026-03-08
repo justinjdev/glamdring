@@ -341,6 +341,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
 
+	case tea.MouseMsg:
+		// Always route mouse events to the output viewport so scroll wheel
+		// works regardless of which component has focus.
+		var cmd tea.Cmd
+		m.output, cmd = m.output.Update(msg)
+		return m, cmd
+
 	case SubmitMsg:
 		return m.handleSubmit(msg)
 
@@ -983,12 +990,13 @@ func isScrollKey(msg tea.KeyMsg) bool {
 // layoutComponents recalculates component dimensions after a resize.
 func (m *Model) layoutComponents() {
 	statusHeight := 1
+	paddingLines := 1 // blank line above status bar
 	// Input area: border adds 2 rows (top+bottom), plus the textarea rows.
 	inputBorderHeight := 2
 	desiredInput := m.input.DesiredHeight()
 	inputTotalHeight := desiredInput + inputBorderHeight
 
-	outputHeight := m.height - inputTotalHeight - statusHeight
+	outputHeight := m.height - inputTotalHeight - statusHeight - paddingLines
 	if outputHeight < 1 {
 		outputHeight = 1
 	}
@@ -1022,7 +1030,7 @@ func (m Model) View() string {
 		spinnerLine := m.styles.SpinnerText.Render(m.spinner.View() + " Thinking...")
 		parts = append(parts, spinnerLine)
 	}
-	parts = append(parts, status, input)
+	parts = append(parts, "", status, input)
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }

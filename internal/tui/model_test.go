@@ -343,7 +343,7 @@ func TestExpandCollapseKeyToggle(t *testing.T) {
 	}
 	m.output.AppendToolResult(longOutput, false)
 
-	// The block should be auto-collapsed (30 > collapseThreshold of 20).
+	// The block should be auto-collapsed (30 > collapseThreshold).
 	blockIdx := len(m.output.blocks) - 1
 	if !m.output.collapsed[blockIdx] {
 		t.Fatal("expected tool result to be auto-collapsed")

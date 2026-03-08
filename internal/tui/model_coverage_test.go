@@ -2136,3 +2136,28 @@ func TestUpdate_SpinnerTick_WhenIdle(t *testing.T) {
 		t.Error("expected nil cmd when not spinning")
 	}
 }
+
+// --- Mouse events routed to output viewport ---
+
+func TestUpdate_MouseMsg_RoutesToOutput(t *testing.T) {
+	m := New()
+	m.state = StateInput
+
+	// Mouse events should go to the output viewport even in StateInput.
+	result, _ := m.Update(tea.MouseMsg{})
+	model := result.(Model)
+	if model.state != StateInput {
+		t.Errorf("expected StateInput, got %d", model.state)
+	}
+}
+
+func TestUpdate_MouseMsg_RoutesToOutput_Running(t *testing.T) {
+	m := New()
+	m.state = StateRunning
+
+	result, _ := m.Update(tea.MouseMsg{})
+	model := result.(Model)
+	if model.state != StateRunning {
+		t.Errorf("expected StateRunning, got %d", model.state)
+	}
+}

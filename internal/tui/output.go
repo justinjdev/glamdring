@@ -25,10 +25,10 @@ func detectGlamourStyle() glamour.TermRendererOption {
 
 const (
 	// collapseThreshold is the line count above which tool results are collapsed.
-	collapseThreshold = 20
+	collapseThreshold = 8
 
 	// collapsePreviewLines is the number of lines to show when a tool result is collapsed.
-	collapsePreviewLines = 5
+	collapsePreviewLines = 3
 )
 
 // OutputModel wraps a bubbles viewport for displaying conversation output.
