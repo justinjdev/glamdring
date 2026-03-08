@@ -266,15 +266,32 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 			s.syncPhaseModel()
 
 		case "max_tokens":
-			// Model ran out of output tokens mid-response. Send a continuation
-			// prompt so it can finish its thought.
-			s.messages = append(s.messages, api.RequestMessage{
-				Role:    "user",
-				Content: "Continue from where you left off.",
-			})
+			// If the model hit max_tokens while generating tool_use blocks,
+			// the contentBlocks contain tool_use that need matching
+			// tool_results. Generate error results before continuing.
+			if errBlocks := errorResultsForOrphanedToolUse(turnResult.contentBlocks); len(errBlocks) > 0 {
+				s.messages = append(s.messages, api.RequestMessage{
+					Role:    "user",
+					Content: errBlocks,
+				})
+			} else {
+				// No tool_use blocks — safe to send a continuation prompt.
+				s.messages = append(s.messages, api.RequestMessage{
+					Role:    "user",
+					Content: "Continue from where you left off.",
+				})
+			}
 
 		default:
-			// Unknown stop reason -- treat as done.
+			// Unknown or empty stop reason. If the response contains
+			// tool_use blocks (e.g. stream ended before message_delta),
+			// we must add error tool_results to keep the history valid.
+			if errBlocks := errorResultsForOrphanedToolUse(turnResult.contentBlocks); len(errBlocks) > 0 {
+				s.messages = append(s.messages, api.RequestMessage{
+					Role:    "user",
+					Content: errBlocks,
+				})
+			}
 			emit(ctx, out, Message{
 				Type:                     MessageDone,
 				InputTokens:              s.TotalInput - turnInputBefore,
@@ -331,6 +348,24 @@ drain:
 			Content: combined,
 		})
 	}
+}
+
+// errorResultsForOrphanedToolUse scans content blocks for tool_use entries
+// and returns error tool_result blocks for each one. Returns nil if no
+// tool_use blocks are found.
+func errorResultsForOrphanedToolUse(blocks []api.ContentBlock) []api.ContentBlock {
+	var results []api.ContentBlock
+	for _, b := range blocks {
+		if b.Type == "tool_use" && b.ID != "" {
+			results = append(results, api.ContentBlock{
+				Type:      "tool_result",
+				ToolUseID: b.ID,
+				Content:   "tool not executed: response truncated or stream interrupted",
+				IsError:   true,
+			})
+		}
+	}
+	return results
 }
 
 // syncPhaseModel checks if the ToolProvider is phase-aware and updates the

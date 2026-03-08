@@ -1835,14 +1835,24 @@ func TestExecuteTools_ContextCancelledDuringPermission(t *testing.T) {
 		}
 	}()
 
-	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
 	close(out)
 
-	if err == nil {
-		t.Fatal("expected error from context cancellation during permission wait")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "context cancelled") {
-		t.Errorf("expected 'context cancelled' in error, got: %v", err)
+	// Should return error tool_results for all calls to keep history valid.
+	if len(results) != len(calls) {
+		t.Fatalf("expected %d results, got %d", len(calls), len(results))
+	}
+	if results[0].Type != "tool_result" {
+		t.Errorf("expected type tool_result, got %s", results[0].Type)
+	}
+	if !results[0].IsError {
+		t.Error("expected IsError=true for cancelled permission wait")
+	}
+	if results[0].ToolUseID != "tc1" {
+		t.Errorf("expected ToolUseID tc1, got %s", results[0].ToolUseID)
 	}
 }
 

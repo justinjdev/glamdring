@@ -349,7 +349,17 @@ func executeTools(
 			select {
 			case answer = <-permCh:
 			case <-ctx.Done():
-				return nil, fmt.Errorf("context cancelled waiting for permission: %w", ctx.Err())
+				// Fill in error results for this and all remaining calls,
+				// preserving any results already collected.
+				for _, remaining := range calls[i:] {
+					results = append(results, api.ContentBlock{
+						Type:      "tool_result",
+						ToolUseID: remaining.id,
+						Content:   fmt.Sprintf("tool execution cancelled: %s", ctx.Err()),
+						IsError:   true,
+					})
+				}
+				return results, nil
 			}
 
 			switch answer {
