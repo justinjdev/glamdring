@@ -153,7 +153,20 @@ func (m *ModalModel) HandleKey(key string) (close bool, change *ModalChange) {
 }
 
 // skipToSelectable moves cursor in direction (1 or -1) to next non-section item.
+// It is a no-op if no selectable items exist.
 func (m *ModalModel) skipToSelectable(dir int) {
+	// Guard: if no selectable items exist, leave cursor as-is.
+	hasSelectable := false
+	for _, item := range m.items {
+		if item.Kind != MenuSection {
+			hasSelectable = true
+			break
+		}
+	}
+	if !hasSelectable {
+		return
+	}
+
 	for m.cursor >= 0 && m.cursor < len(m.items) && m.items[m.cursor].Kind == MenuSection {
 		m.cursor += dir
 	}
@@ -266,7 +279,11 @@ func (m *ModalModel) View(maxWidth int) string {
 						cLine += strings.Repeat(" ", contentWidth-4-lipgloss.Width(cLine))
 					}
 					if j == m.subCursor {
-						lines = append(lines, choiceSelectedStyle.Render("> "+choice+strings.Repeat(" ", contentWidth-4-lipgloss.Width("> "+choice))))
+						pad := contentWidth - 4 - lipgloss.Width("> "+choice)
+						if pad < 0 {
+							pad = 0
+						}
+						lines = append(lines, choiceSelectedStyle.Render("> "+choice+strings.Repeat(" ", pad)))
 					} else {
 						lines = append(lines, choiceStyle.Render(cLine))
 					}
