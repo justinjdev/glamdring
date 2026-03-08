@@ -21,6 +21,7 @@ func TestDefaultSettings(t *testing.T) {
 
 func TestLoadSettings_NoFiles(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", dir)
 	s := LoadSettings(dir)
 	if s.Model != "claude-opus-4-6" {
 		t.Errorf("model: got %q, want default", s.Model)
@@ -87,6 +88,7 @@ func TestLoadSettings_MCPServersMerge(t *testing.T) {
 
 func TestLoadSettings_MalformedJSON(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("HOME", root)
 	claudeDir := filepath.Join(root, ".claude")
 	if err := os.Mkdir(claudeDir, 0o755); err != nil {
 		t.Fatal(err)
