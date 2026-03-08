@@ -489,6 +489,9 @@ func (m *OutputModel) Clear() {
 	m.collapsed = make(map[int]bool)
 	m.userScrolled = false
 	m.hasNewContent = false
+	m.ClearPending()
+	m.toolSpinner = ""
+	m.dirty = false
 	m.viewport.SetContent("")
 	m.viewport.GotoTop()
 }
@@ -723,7 +726,7 @@ func (m *OutputModel) doRender() {
 
 		case blockToolCall:
 			var icon string
-			if m.toolSpinner != "" && i == m.lastToolCallIndex() {
+			if m.toolSpinner != "" && i == activeToolIdx {
 				icon = m.styles.ToolCallIcon.Render(m.toolSpinner)
 			} else {
 				icon = m.styles.ToolCallIcon.Render("\u25b6")
