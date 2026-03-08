@@ -12,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justin/glamdring/pkg/agent"
+	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/index"
 	"github.com/justin/glamdring/pkg/update"
 )
@@ -622,8 +623,14 @@ func cmdTheme(m *Model, args string) tea.Cmd {
 	}
 
 	m.SetTheme(palette, m.settings.HighContrast)
+	m.settings.Theme = args
 	m.layoutComponents()
-	m.output.AppendSystem(fmt.Sprintf("Theme changed to: %s", args))
+
+	if err := config.SaveUserSetting("theme", args); err != nil {
+		m.output.AppendSystem(fmt.Sprintf("Theme changed to: %s (failed to save: %v)", args, err))
+	} else {
+		m.output.AppendSystem(fmt.Sprintf("Theme changed to: %s (saved)", args))
+	}
 	return nil
 }
 

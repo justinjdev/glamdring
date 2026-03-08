@@ -57,8 +57,13 @@ type Styles struct {
 	SystemText   lipgloss.Style
 	SystemBorder lipgloss.Style
 
-	// User message header
-	UserHeader lipgloss.Style
+	// User message (highlighted background)
+	UserMessage lipgloss.Style
+
+	// Assistant response star (outline, animating)
+	AssistantStar lipgloss.Style
+	// Assistant response star (filled, done or active pulse)
+	AssistantStarDone lipgloss.Style
 
 	// Spinner
 	SpinnerText lipgloss.Style
@@ -316,11 +321,19 @@ func DefaultStyles(p ThemePalette) Styles {
 			PaddingLeft(1).
 			PaddingTop(1),
 
-		// Conversation role headers
-		UserHeader: lipgloss.NewStyle().
-			Foreground(p.Info).
-			Bold(true).
-			PaddingTop(1),
+		// User message — subtle background highlight
+		UserMessage: lipgloss.NewStyle().
+			Background(p.Surface1).
+			Foreground(p.FgBright).
+			PaddingLeft(1),
+
+		// Assistant response star (outline, animating)
+		AssistantStar: lipgloss.NewStyle().
+			Foreground(p.Subtle),
+
+		// Assistant response star (filled, done or active pulse)
+		AssistantStarDone: lipgloss.NewStyle().
+			Foreground(p.Primary),
 
 		// Spinner indicator
 		SpinnerText: lipgloss.NewStyle().

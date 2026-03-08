@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // modelPricing maps model names to [input, output] cost per million tokens.
@@ -113,7 +115,7 @@ func (s StatusBar) View() string {
 	}
 
 	if s.yolo {
-		left += sep + s.styles.StatusBarWarning.Render("YOLO")
+		left += sep + renderRainbow("YOLO", s.styles)
 	}
 
 	if s.mcpTotal > 0 {
@@ -164,6 +166,31 @@ func (s *StatusBar) UpdateContext(lastInputTokens int, model string) {
 // ContextPercent returns the current context window usage percentage.
 func (s *StatusBar) ContextPercent() int {
 	return s.contextPct
+}
+
+// rainbowColors are the per-character colors for the YOLO indicator.
+var rainbowColors = []lipgloss.Color{
+	lipgloss.Color("#FF0000"), // red
+	lipgloss.Color("#FF8800"), // orange
+	lipgloss.Color("#FFFF00"), // yellow
+	lipgloss.Color("#00FF00"), // green
+	lipgloss.Color("#0088FF"), // blue
+	lipgloss.Color("#8800FF"), // violet
+}
+
+// renderRainbow renders each character in cycling rainbow colors, bold,
+// on the status bar background.
+func renderRainbow(text string, s Styles) string {
+	var out string
+	for i, ch := range text {
+		color := rainbowColors[i%len(rainbowColors)]
+		out += lipgloss.NewStyle().
+			Foreground(color).
+			Background(s.StatusBar.GetBackground()).
+			Bold(true).
+			Render(string(ch))
+	}
+	return out
 }
 
 // UpdateMCP sets the MCP server counts for the status bar.

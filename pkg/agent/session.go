@@ -230,6 +230,14 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 
 		turnResult, err := processTurn(ctx, events, out)
 		if err != nil {
+			// Save partial response to conversation history so the model
+			// knows what it already generated (prevents re-generation).
+			if turnResult != nil && len(turnResult.contentBlocks) > 0 {
+				s.messages = append(s.messages, api.RequestMessage{
+					Role:    "assistant",
+					Content: turnResult.contentBlocks,
+				})
+			}
 			emit(ctx, out, Message{Type: MessageError, Err: err})
 			return
 		}

@@ -131,6 +131,7 @@ func TestCmdClear(t *testing.T) {
 	// Add some output first.
 	m.output.AppendUserMessage("hello")
 	m.output.AppendText("response")
+	m.output.FlushAllPending()
 
 	if len(m.output.blocks) == 0 {
 		t.Fatal("expected non-empty output before clear")

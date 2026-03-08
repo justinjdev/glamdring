@@ -85,6 +85,42 @@ func TestCtrlCInterruptsAgent(t *testing.T) {
 	}
 }
 
+func TestCtrlCClearsPendingBuffers(t *testing.T) {
+	m := New()
+	m.state = StateRunning
+	m.cancelTurn = func() {}
+	m.spinning = true
+	m.spinnerLabel = "Thinking..."
+	agentCh := make(chan agent.Message, 1)
+	m.agentCh = agentCh
+
+	// Simulate buffered pending text from a streaming response.
+	m.output.AppendText("stale text that should be discarded")
+	m.output.AppendThinking("stale thinking")
+	m.output.SetToolSpinner("running...")
+
+	// Verify pending buffers are populated.
+	if !m.output.HasPending() {
+		t.Fatal("expected pending buffers to be populated before interrupt")
+	}
+
+	result, _ := m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyCtrlC})
+	model := result.(Model)
+
+	// Pending buffers should be cleared.
+	if model.output.HasPending() {
+		t.Error("expected pending buffers to be cleared after Ctrl+C")
+	}
+	// Tool spinner should be cleared.
+	if model.output.toolSpinner != "" {
+		t.Error("expected tool spinner to be cleared after Ctrl+C")
+	}
+	// Spinner label should be cleared.
+	if model.spinnerLabel != "" {
+		t.Error("expected spinner label to be cleared after Ctrl+C")
+	}
+}
+
 func TestDoubleCtrlCQuits(t *testing.T) {
 	m := New()
 	m.state = StateInput
@@ -139,9 +175,10 @@ func TestSpinnerStopsOnTextDelta(t *testing.T) {
 	}
 }
 
-func TestSpinnerStopsOnToolCall(t *testing.T) {
+func TestToolCallShowsInlineSpinner(t *testing.T) {
 	m := New()
 	m.spinning = true
+	m.spinnerLabel = "Thinking..."
 
 	agentMsg := AgentMsg(agent.Message{
 		Type:     agent.MessageToolCall,
@@ -149,8 +186,16 @@ func TestSpinnerStopsOnToolCall(t *testing.T) {
 		ToolInput: map[string]any{"file_path": "/tmp/test"},
 	})
 	result, _ := m.handleAgentMsg(agentMsg)
-	if result.spinning {
-		t.Error("expected spinning to stop on tool call")
+	if !result.spinning {
+		t.Error("expected spinning to continue during tool execution")
+	}
+	// Spinner label is empty because the spinner is rendered inline
+	// on the tool call block, not as a separate line.
+	if result.spinnerLabel != "" {
+		t.Errorf("expected empty spinner label for inline tool spinner, got %q", result.spinnerLabel)
+	}
+	if result.output.toolSpinner == "" {
+		t.Error("expected inline tool spinner to be set")
 	}
 }
 
@@ -254,8 +299,10 @@ func TestExtractLastText(t *testing.T) {
 
 	// Add some blocks.
 	m.output.AppendText("first text")
+	m.output.FlushAllPending()
 	m.output.AppendToolCall("Read", "file.go")
 	m.output.AppendText("second text")
+	m.output.FlushAllPending()
 
 	text := m.extractLastText()
 	if text != "second text" {
