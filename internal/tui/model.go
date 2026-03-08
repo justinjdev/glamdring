@@ -280,6 +280,7 @@ func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		m.input.Init(),
 		m.output.Init(),
+		m.renderStartupHeader(),
 		m.startupCmd(),
 		m.spinner.Tick,
 	}
@@ -287,6 +288,35 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, m.checkUpdateCmd())
 	}
 	return tea.Batch(cmds...)
+}
+
+// startupHeaderMsg carries the rendered header for display.
+type startupHeaderMsg struct{ content string }
+
+// renderStartupHeader builds the startup banner showing app name, version, model, and cwd.
+func (m Model) renderStartupHeader() tea.Cmd {
+	return func() tea.Msg {
+		ver := m.version
+		if ver == "" {
+			ver = "dev"
+		}
+		model := m.agentCfg.Model
+		if model == "" {
+			model = "default"
+		}
+		cwd := m.agentCfg.CWD
+		if cwd == "" {
+			cwd, _ = os.Getwd()
+		}
+		// Shorten home directory.
+		if home, err := os.UserHomeDir(); err == nil {
+			cwd = strings.Replace(cwd, home, "~", 1)
+		}
+
+		return startupHeaderMsg{content: fmt.Sprintf(
+			"glamdring %s\n%s\n%s", ver, model, cwd,
+		)}
+	}
 }
 
 // startupCmd fires SessionStart hooks and checks for a checkpoint file.
@@ -352,6 +382,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.output, cmd = m.output.Update(msg)
 		return m, cmd
+
+	case startupHeaderMsg:
+		m.output.AppendHeader(msg.content, m.styles, m.palette)
+		return m, nil
 
 	case SubmitMsg:
 		return m.handleSubmit(msg)
@@ -452,6 +486,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Tool running -- update inline spinner on the tool call block.
 				m.output.SetToolSpinner(m.spinner.View())
 			}
+			// Animate the assistant header star while working.
+			m.output.TickStar()
 			return m, cmd
 		}
 		return m, nil
@@ -494,6 +530,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = StateInput
 			m.output.ClearPending()
 			m.output.ClearToolSpinner()
+			m.output.FinalizeStar()
 			m.output.AppendSystem("(interrupted)")
 			return m, m.input.Focus()
 		}
@@ -541,6 +578,17 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.output, cmd = m.output.Update(msg)
 			return m, cmd
+		}
+		// Intercept Enter to handle submission synchronously so the
+		// user message appears in the same frame as the input clears.
+		// Skip if the input is in search mode (Ctrl+R) — let input handle it.
+		if msg.Type == tea.KeyEnter && !m.input.IsSearching() {
+			submit := m.input.TrySubmit()
+			if submit != nil {
+				return m.handleSubmit(*submit)
+			}
+			// Enter consumed but no submission (empty input) — fall through.
+			return m, nil
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
@@ -599,6 +647,12 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	if msg.Text != "" {
 		m.input.history.Add(msg.Text)
 	}
+	// Reset input and relayout BEFORE appending user message so doRender()
+	// uses the correct viewport height (input shrinks after clearing).
+	m.input.Reset()
+	m.input.Blur()
+	m.layoutComponents()
+
 	if len(msg.Images) > 0 {
 		var parts []string
 		for i, img := range msg.Images {
@@ -617,8 +671,6 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	} else {
 		m.output.AppendUserMessage(msg.Text)
 	}
-	m.input.Reset()
-	m.input.Blur()
 
 	// Expand user-defined slash commands before sending to the agent.
 	prompt := msg.Text
@@ -639,6 +691,7 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	m.state = StateRunning
 	m.spinning = true
 	m.spinnerLabel = "Thinking..."
+	m.output.StartAssistantStar()
 
 	ctx := m.ctx
 	if ctx == nil {
@@ -777,6 +830,7 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.spinning = false
 		m.output.ClearToolSpinner()
 		m.output.FlushAllPending()
+		m.output.FinalizeStar()
 		errMsg := "unknown error"
 		if am.Err != nil {
 			errMsg = am.Err.Error()
@@ -787,6 +841,7 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.spinning = false
 		m.output.ClearToolSpinner()
 		m.output.FlushAllPending()
+		m.output.FinalizeStar()
 		m.totalInputTokens += am.InputTokens
 		m.totalOutputTokens += am.OutputTokens
 		m.statusbar.Update(m.agentCfg.Model, m.totalInputTokens, m.totalOutputTokens, m.turn)
@@ -896,10 +951,12 @@ func (m Model) handleCheckpointKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
 		m.agentCfg.SystemPrompt += "\n\n## Previous Session Context\n\n" + m.checkpointContent
+		m.removeCheckpointFile()
 		m.checkpointContent = ""
 		m.state = StateInput
 		return m, m.input.Focus()
 	case "n", "N":
+		m.removeCheckpointFile()
 		m.checkpointContent = ""
 		m.output.Clear()
 		m.state = StateInput
@@ -975,6 +1032,15 @@ func (m *Model) writeCheckpoint(summary string) error {
 		return fmt.Errorf("write checkpoint file: %w", err)
 	}
 	return nil
+}
+
+// removeCheckpointFile deletes tmp/checkpoint.md so it doesn't prompt again.
+func (m *Model) removeCheckpointFile() {
+	if m.agentCfg.CWD == "" {
+		return
+	}
+	path := filepath.Join(m.agentCfg.CWD, "tmp", "checkpoint.md")
+	os.Remove(path)
 }
 
 // fireContextThresholdHook runs the ContextThreshold hook if configured.

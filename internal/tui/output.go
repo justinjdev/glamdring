@@ -80,6 +80,12 @@ type OutputModel struct {
 	// inline on the last tool call block while a tool is running.
 	// Empty string means no tool is actively running.
 	toolSpinner string
+
+	// starFrame tracks the animation frame for the assistant header star.
+	// Even frames show ✧ (outline), odd frames show ✦ (filled).
+	starFrame int
+	// starDone marks the star as finalized (filled ✦ in primary color).
+	starDone bool
 }
 
 type blockKind int
@@ -91,6 +97,7 @@ const (
 	blockThinking
 	blockError
 	blockUserMessage
+	blockHeader
 	blockSystem
 )
 
@@ -259,6 +266,60 @@ func (m *OutputModel) lastToolCallIndex() int {
 	return -1
 }
 
+// banner holds the ANSI Shadow figlet art for "GLAMDRING".
+// Each line is colored with a gradient from the theme palette.
+var banner = [6]string{
+	" \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557      \u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557\u2588\u2588\u2588\u2557   \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557 ",
+	"\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2551     \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d ",
+	"\u2588\u2588\u2551  \u2588\u2588\u2588\u2557\u2588\u2588\u2551     \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2588\u2588\u2554\u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2588\u2557",
+	"\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551     \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2554\u255d\u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2557\u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551",
+	"\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551 \u255a\u2550\u255d \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2551\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d",
+	" \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d     \u255a\u2550\u255d\u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d ",
+}
+
+// AppendHeader adds a startup header block with the app banner.
+// The content string has lines: "glamdring <ver>", "<model>", "<cwd>".
+// If bannerImage is non-nil, it is rendered as half-block pixel art.
+func (m *OutputModel) AppendHeader(content string, styles Styles, palette ThemePalette) {
+	m.finalizePreviousBlock()
+
+	lines := strings.Split(content, "\n")
+	ver, model, cwd := "dev", "", ""
+	if len(lines) >= 1 {
+		ver = lines[0]
+	}
+	if len(lines) >= 2 {
+		model = lines[1]
+	}
+	if len(lines) >= 3 {
+		cwd = lines[2]
+	}
+
+	dim := lipgloss.NewStyle().Foreground(palette.FgDim)
+	info := dim.Render("  " + ver + " \u2502 " + model + " \u2502 " + cwd)
+
+	gradient := []lipgloss.Color{
+		palette.FgBright, palette.Primary, palette.Primary,
+		palette.Secondary, palette.Subtle, palette.FgDim,
+	}
+	var parts []string
+	for i, line := range banner {
+		style := lipgloss.NewStyle().Foreground(gradient[i])
+		parts = append(parts, style.Render(line))
+	}
+	parts = append(parts, info)
+	styled := strings.Join(parts, "\n")
+
+	m.blocks = append(m.blocks, outputBlock{
+		kind:      blockHeader,
+		content:   styled,
+		finalized: true,
+	})
+	m.doRender()
+}
+
+// bannerCols returns the number of columns for the banner image,
+// capped to a reasonable width.
 // AppendUserMessage adds a styled user message header and text.
 func (m *OutputModel) AppendUserMessage(text string) {
 	m.finalizePreviousBlock()
@@ -268,6 +329,43 @@ func (m *OutputModel) AppendUserMessage(text string) {
 		finalized: true,
 	})
 	m.doRender()
+}
+
+// StartAssistantStar begins the star animation for a new agent response.
+// The star is rendered as a prefix on the first content block, not as a
+// separate block, so the text flows on the same line.
+func (m *OutputModel) StartAssistantStar() {
+	m.starFrame = 0
+	m.starDone = false
+}
+
+// TickStar advances the star animation frame and re-renders.
+func (m *OutputModel) TickStar() {
+	if !m.starDone {
+		m.starFrame++
+		m.doRender()
+	}
+}
+
+// FinalizeStar marks the star as done (solid filled) and clears the render
+// cache on the first content block so it re-renders with the final star.
+func (m *OutputModel) FinalizeStar() {
+	if m.starDone {
+		return
+	}
+	m.starDone = true
+}
+
+// renderStar returns the styled star prefix for the current frame.
+func (m *OutputModel) renderStar() string {
+	if m.starDone {
+		return m.styles.AssistantStarDone.Render("\u2726")
+	}
+	// Alternate every 4 frames (~320ms per blink at ~80ms/frame).
+	if (m.starFrame/4)%2 == 0 {
+		return m.styles.AssistantStar.Render("\u2727")
+	}
+	return m.styles.AssistantStarDone.Render("\u2726")
 }
 
 // finalizePreviousBlock marks the last block as finalized if it is not
@@ -578,10 +676,22 @@ func (m *OutputModel) doRender() {
 		activeToolIdx = m.lastToolCallIndex()
 	}
 
+	// Track whether the star prefix needs to be placed on the next
+	// content block. Set to true after each user message block.
+	needsStar := false
+
 	for i, b := range m.blocks {
 		// Use cached render for finalized blocks, but skip cache for
-		// the active tool call block (spinner changes each frame).
-		if b.finalized && b.rendered != "" && i != activeToolIdx {
+		// the active tool call block (spinner changes each frame),
+		// and skip cache for the first content block after a user
+		// message while the star is still animating.
+		skipCache := i == activeToolIdx || (needsStar && !m.starDone)
+		if b.finalized && b.rendered != "" && !skipCache {
+			if b.kind == blockUserMessage {
+				needsStar = true
+			} else if needsStar && b.kind != blockSystem && b.kind != blockError {
+				needsStar = false
+			}
 			parts = append(parts, b.rendered)
 			continue
 		}
@@ -589,14 +699,24 @@ func (m *OutputModel) doRender() {
 		var rendered string
 		switch b.kind {
 		case blockUserMessage:
-			header := m.styles.UserHeader.Render("\u2500\u2500 You ")
-			dividerWidth := m.width - lipgloss.Width(header) - 1
-			if dividerWidth < 0 {
-				dividerWidth = 0
+			// Render user text with a highlighted background — no header.
+			text := strings.TrimRight(b.content, "\n")
+			lines := strings.Split(text, "\n")
+			var styledLines []string
+			for _, line := range lines {
+				padded := line
+				// Pad to full width so the background spans the line.
+				if w := m.width; lipgloss.Width(padded) < w {
+					padded += strings.Repeat(" ", w-lipgloss.Width(padded))
+				}
+				styledLines = append(styledLines, m.styles.UserMessage.Render(padded))
 			}
-			divider := m.styles.UserHeader.Render(strings.Repeat("\u2500", dividerWidth))
-			md := renderMarkdown(m.renderer, b.content)
-			rendered = header + divider + "\n" + md
+			rendered = strings.Join(styledLines, "\n")
+			needsStar = true
+
+		case blockHeader:
+			// Pre-styled in AppendHeader — render as-is.
+			rendered = b.content
 
 		case blockText:
 			rendered = renderMarkdown(m.renderer, b.content)
@@ -630,10 +750,17 @@ func (m *OutputModel) doRender() {
 			rendered = m.styles.ErrorText.Render("x error: " + b.content)
 		}
 
+		// Prepend the star prefix to the first content block after a user message.
+		if needsStar && b.kind != blockUserMessage && b.kind != blockSystem && b.kind != blockError {
+			rendered = m.renderStar() + " " + strings.TrimLeft(rendered, "\n")
+			needsStar = false
+		}
+
 		// Cache the rendered output for finalized blocks. Block indices are
 		// stable (append-only) so the cache key is valid for the session.
-		// Don't cache the active tool call block (spinner changes each frame).
-		if b.finalized && i != activeToolIdx {
+		// Don't cache the active tool call block (spinner changes each frame),
+		// and don't cache blocks with an animating star prefix.
+		if b.finalized && !skipCache {
 			m.blocks[i].rendered = rendered
 		}
 		parts = append(parts, rendered)

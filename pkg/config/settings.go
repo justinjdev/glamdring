@@ -191,6 +191,47 @@ func loadSettingsFile(path string) (Settings, bool) {
 	return s, true
 }
 
+// SaveUserSetting updates a single key in the user-level config file
+// (~/.config/glamdring/config.json). It reads the existing file, sets the
+// key, and writes it back. Creates the file and directory if needed.
+func SaveUserSetting(key string, value any) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("home dir: %w", err)
+	}
+
+	// Use existing user config if present, otherwise create primary.
+	path := ResolveUserFile(primaryConfigFile)
+	if path == "" {
+		path = ResolveUserFile(fallbackConfigFile)
+	}
+	if path == "" {
+		dir := filepath.Join(home, ".config", "glamdring")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create config dir: %w", err)
+		}
+		path = filepath.Join(dir, primaryConfigFile)
+	}
+
+	// Read existing config as raw JSON to preserve unknown fields.
+	raw := make(map[string]json.RawMessage)
+	if data, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(data, &raw)
+	}
+
+	val, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("marshal value: %w", err)
+	}
+	raw[key] = val
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	return os.WriteFile(path, append(out, '\n'), 0o644)
+}
+
 // IndexerEnabled returns whether the indexer is enabled.
 // nil (unset) means auto-detect; this helper resolves to explicit bool.
 func (c IndexerConfig) IndexerEnabled() *bool { return c.Enabled }

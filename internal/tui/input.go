@@ -22,6 +22,26 @@ type SubmitMsg struct {
 	Images []PendingImage
 }
 
+// IsSearching returns true if the input is in Ctrl+R reverse search mode.
+func (m InputModel) IsSearching() bool {
+	return m.searching
+}
+
+// TrySubmit attempts a synchronous submission. Returns a SubmitMsg if there
+// is content to submit (text or images), or nil if the input is empty.
+// Resets the input state on success. Called by the parent model to handle
+// Enter synchronously so the user message appears in the same render frame.
+func (m *InputModel) TrySubmit() *SubmitMsg {
+	value := m.textarea.Value()
+	if value == "" && len(m.pendingImages) == 0 {
+		return nil
+	}
+	m.history.ResetCursor()
+	images := m.pendingImages
+	m.pendingImages = nil
+	return &SubmitMsg{Text: value, Images: images}
+}
+
 // InputModel wraps a bubbles textarea for multiline user input.
 // Enter submits; Shift+Enter (Alt+Enter as fallback) inserts a newline.
 type InputModel struct {
