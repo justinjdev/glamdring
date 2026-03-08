@@ -187,7 +187,13 @@ func processTurn(ctx context.Context, events <-chan api.StreamEvent, out chan<- 
 
 		case "error":
 			if ev.Err != nil {
-				return nil, fmt.Errorf("stream error: %w", ev.Err)
+				// Build partial content blocks before returning the error
+				// so the caller can save partial progress to conversation history.
+				result.contentBlocks = make([]api.ContentBlock, len(blocks))
+				for i, b := range blocks {
+					result.contentBlocks[i] = b.block
+				}
+				return result, fmt.Errorf("stream error: %w", ev.Err)
 			}
 		}
 	}

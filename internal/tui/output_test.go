@@ -14,6 +14,7 @@ func TestFinalizedBlocksCacheRenderedOutput(t *testing.T) {
 
 	// Append text (streaming, not finalized).
 	m.AppendText("Hello world")
+	m.FlushAllPending()
 
 	// Append a tool call, which finalizes the previous text block.
 	m.AppendToolCall("Read", "file.go")
@@ -33,6 +34,7 @@ func TestFinalizedBlocksCacheRenderedOutput(t *testing.T) {
 
 	// Append more text (triggers rerender), verify cached value is stable.
 	m.AppendText("More text")
+	m.FlushAllPending()
 	if m.blocks[0].rendered != cached {
 		t.Error("expected cached rendered output to be stable across rerenders")
 	}
@@ -43,6 +45,7 @@ func TestStreamingBlocksNotCached(t *testing.T) {
 
 	// Append text -- this creates a streaming (non-finalized) block.
 	m.AppendText("streaming content")
+	m.FlushAllPending()
 
 	if len(m.blocks) == 0 {
 		t.Fatal("expected at least 1 block")
@@ -167,8 +170,10 @@ func TestClamp(t *testing.T) {
 func TestRenderThinkingBlock_WithContent(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendThinking("deep thoughts")
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
 	m.rerender()
+	m.FlushRender()
 
 	if len(m.blocks) == 0 {
 		t.Fatal("expected at least 1 block")
@@ -180,7 +185,7 @@ func TestRenderThinkingBlock_WithContent(t *testing.T) {
 	if b.content != "deep thoughts" {
 		t.Errorf("expected content 'deep thoughts', got %q", b.content)
 	}
-	// After finalization and rerender, rendered should be non-empty.
+	// After finalization and FlushRender, rendered should be non-empty.
 	if b.rendered == "" {
 		t.Error("expected non-empty rendered output for thinking block")
 	}
@@ -188,9 +193,9 @@ func TestRenderThinkingBlock_WithContent(t *testing.T) {
 
 func TestRenderThinkingBlock_Empty(t *testing.T) {
 	m := newTestOutput(80, 24)
-	m.AppendThinking("")
-	m.finalizePreviousBlock()
-	m.rerender()
+	// Directly create an empty thinking block since AppendThinking("")
+	// buffers nothing (empty string is a no-op).
+	m.appendThinkImmediate("")
 
 	if len(m.blocks) == 0 {
 		t.Fatal("expected at least 1 block")
@@ -204,6 +209,7 @@ func TestRenderThinkingBlock_Empty(t *testing.T) {
 func TestAppendToolOutputDelta_CreatesBlock(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendToolOutputDelta("partial output")
+	m.FlushAllPending()
 
 	if len(m.blocks) != 1 {
 		t.Fatalf("expected 1 block, got %d", len(m.blocks))
@@ -224,6 +230,7 @@ func TestAppendToolOutputDelta_AppendsToExisting(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendToolOutputDelta("part1")
 	m.AppendToolOutputDelta("part2")
+	m.FlushAllPending()
 
 	if len(m.blocks) != 1 {
 		t.Fatalf("expected 1 block after appending, got %d", len(m.blocks))
@@ -237,6 +244,7 @@ func TestAppendToolResult_FinalizesStreamingBlock(t *testing.T) {
 	m := newTestOutput(80, 24)
 	// Start a streaming tool result.
 	m.AppendToolOutputDelta("streaming...")
+	m.FlushAllPending()
 	// Finalize with the full result.
 	m.AppendToolResult("final output", false)
 
@@ -277,6 +285,7 @@ func TestToggleCollapse_InvalidIndex(t *testing.T) {
 func TestToggleCollapse_NonToolResultBlock(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendText("just text")
+	m.FlushAllPending()
 	if m.ToggleCollapse(0) {
 		t.Error("expected false for non-tool-result block")
 	}
@@ -285,6 +294,7 @@ func TestToggleCollapse_NonToolResultBlock(t *testing.T) {
 func TestToggleLastToolResult_NoToolResults(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendText("just text")
+	m.FlushAllPending()
 	if m.ToggleLastToolResult() {
 		t.Error("expected false when no tool result blocks exist")
 	}
@@ -309,6 +319,7 @@ func TestAppendError_Content(t *testing.T) {
 func TestClear_ResetsEverything(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendText("text")
+	m.FlushAllPending()
 	m.AppendUserMessage("msg")
 	longOutput := strings.Repeat("line\n", 30)
 	m.AppendToolResult(longOutput, false)
@@ -330,6 +341,7 @@ func TestRendererDirtyRetriesOnFailure(t *testing.T) {
 	m.width = 1
 	m.rendererDirty = true
 	m.rerender()
+	m.FlushRender()
 
 	// glamour should succeed even with width 1, so dirty should be consumed.
 	if m.rendererDirty {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,6 +12,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
 )
+
+// renderInterval is the minimum time between viewport re-renders during
+// streaming. Limits rendering to ~60fps to avoid jerkiness from re-rendering
+// on every single delta event.
+const renderInterval = 16 * time.Millisecond
+
+// renderTickMsg signals that a pending render should be flushed.
+type renderTickMsg struct{}
 
 // detectGlamourStyle returns the appropriate glamour style option.
 // Uses dark style for TTYs to avoid OSC terminal queries that leak
@@ -55,6 +64,22 @@ type OutputModel struct {
 	// glamourStyle is the resolved glamour style, detected once at creation
 	// to avoid repeated OSC terminal queries on resize.
 	glamourStyle glamour.TermRendererOption
+
+	// dirty is true when content has changed but the viewport has not yet
+	// been re-rendered. Used for render throttling during streaming.
+	dirty bool
+
+	// Pending buffers accumulate streaming text between render ticks.
+	// DrainPending moves a proportional chunk to the actual blocks each
+	// tick, creating a smooth typewriter effect instead of bursty chunks.
+	pendingText    string
+	pendingThink   string
+	pendingToolOut string
+
+	// toolSpinner holds the current spinner frame (e.g. "⣾") to display
+	// inline on the last tool call block while a tool is running.
+	// Empty string means no tool is actively running.
+	toolSpinner string
 }
 
 type blockKind int
@@ -210,6 +235,30 @@ func (m OutputModel) View() string {
 	return view
 }
 
+// SetToolSpinner sets the inline spinner for the last tool call block
+// and re-renders immediately.
+func (m *OutputModel) SetToolSpinner(view string) {
+	m.toolSpinner = view
+	m.doRender()
+}
+
+// ClearToolSpinner removes the inline tool spinner.
+func (m *OutputModel) ClearToolSpinner() {
+	if m.toolSpinner != "" {
+		m.toolSpinner = ""
+	}
+}
+
+// lastToolCallIndex returns the index of the last blockToolCall, or -1.
+func (m *OutputModel) lastToolCallIndex() int {
+	for i := len(m.blocks) - 1; i >= 0; i-- {
+		if m.blocks[i].kind == blockToolCall {
+			return i
+		}
+	}
+	return -1
+}
+
 // AppendUserMessage adds a styled user message header and text.
 func (m *OutputModel) AppendUserMessage(text string) {
 	m.finalizePreviousBlock()
@@ -218,7 +267,7 @@ func (m *OutputModel) AppendUserMessage(text string) {
 		content:   text,
 		finalized: true,
 	})
-	m.rerender()
+	m.doRender()
 }
 
 // finalizePreviousBlock marks the last block as finalized if it is not
@@ -231,16 +280,19 @@ func (m *OutputModel) finalizePreviousBlock() {
 	m.blocks[len(m.blocks)-1].finalized = true
 }
 
-// AppendText adds agent text output (markdown).
+// AppendText buffers agent text output for gradual draining via DrainPending.
 func (m *OutputModel) AppendText(s string) {
-	// If the last block is a text block, append to it (streaming).
+	m.pendingText += s
+}
+
+// appendTextImmediate moves text directly into the current text block.
+func (m *OutputModel) appendTextImmediate(s string) {
 	if len(m.blocks) > 0 && m.blocks[len(m.blocks)-1].kind == blockText {
 		m.blocks[len(m.blocks)-1].content += s
 	} else {
 		m.finalizePreviousBlock()
 		m.blocks = append(m.blocks, outputBlock{kind: blockText, content: s})
 	}
-	m.rerender()
 }
 
 // AppendToolCall adds a tool call header block.
@@ -248,19 +300,21 @@ func (m *OutputModel) AppendToolCall(name, summary string) {
 	m.finalizePreviousBlock()
 	content := fmt.Sprintf("%s: %s", name, summary)
 	m.blocks = append(m.blocks, outputBlock{kind: blockToolCall, content: content, finalized: true})
-	m.rerender()
+	m.doRender()
 }
 
-// AppendToolOutputDelta appends streaming output from a tool execution.
-// Creates a non-finalized blockToolResult if one doesn't exist, or appends
-// to the existing one.
+// AppendToolOutputDelta buffers streaming tool output for gradual draining.
 func (m *OutputModel) AppendToolOutputDelta(text string) {
+	m.pendingToolOut += text
+}
+
+// appendToolOutImmediate moves tool output directly into the current block.
+func (m *OutputModel) appendToolOutImmediate(text string) {
 	if len(m.blocks) > 0 {
 		last := &m.blocks[len(m.blocks)-1]
 		if last.kind == blockToolResult && !last.finalized {
 			last.content += text
 			last.rendered = "" // invalidate cache
-			m.rerender()
 			return
 		}
 	}
@@ -269,7 +323,6 @@ func (m *OutputModel) AppendToolOutputDelta(text string) {
 		kind:    blockToolResult,
 		content: text,
 	})
-	m.rerender()
 }
 
 // AppendToolResult adds a tool result block. If the last block is an
@@ -289,7 +342,7 @@ func (m *OutputModel) AppendToolResult(output string, isError bool) {
 			if len(lines) >= collapseThreshold {
 				m.collapsed[idx] = true
 			}
-			m.rerender()
+			m.doRender()
 			return
 		}
 	}
@@ -307,26 +360,29 @@ func (m *OutputModel) AppendToolResult(output string, isError bool) {
 	if len(lines) >= collapseThreshold {
 		m.collapsed[idx] = true
 	}
-	m.rerender()
+	m.doRender()
 }
 
-// AppendThinking adds a thinking block.
+// AppendThinking buffers thinking text for gradual draining.
 func (m *OutputModel) AppendThinking(s string) {
-	// If the last block is thinking, append to it (streaming).
+	m.pendingThink += s
+}
+
+// appendThinkImmediate moves thinking text directly into the current block.
+func (m *OutputModel) appendThinkImmediate(s string) {
 	if len(m.blocks) > 0 && m.blocks[len(m.blocks)-1].kind == blockThinking {
 		m.blocks[len(m.blocks)-1].content += s
 	} else {
 		m.finalizePreviousBlock()
 		m.blocks = append(m.blocks, outputBlock{kind: blockThinking, content: s})
 	}
-	m.rerender()
 }
 
 // AppendSystem adds a system message block (for built-in command output).
 func (m *OutputModel) AppendSystem(s string) {
 	m.finalizePreviousBlock()
 	m.blocks = append(m.blocks, outputBlock{kind: blockSystem, content: s, finalized: true})
-	m.rerender()
+	m.doRender()
 }
 
 // Clear removes all content blocks and resets the viewport.
@@ -343,7 +399,7 @@ func (m *OutputModel) Clear() {
 func (m *OutputModel) AppendError(s string) {
 	m.finalizePreviousBlock()
 	m.blocks = append(m.blocks, outputBlock{kind: blockError, content: s, finalized: true})
-	m.rerender()
+	m.doRender()
 }
 
 // ToggleCollapse toggles the collapsed state of the tool result block at
@@ -357,7 +413,7 @@ func (m *OutputModel) ToggleCollapse(blockIdx int) bool {
 	}
 	m.collapsed[blockIdx] = !m.collapsed[blockIdx]
 	m.blocks[blockIdx].rendered = "" // invalidate cache
-	m.rerender()
+	m.doRender()
 	return true
 }
 
@@ -388,12 +444,109 @@ func (m *OutputModel) SetSize(width, height int) {
 		}
 	}
 
-	m.rerender()
+	m.doRender()
 }
 
-// rerender converts all accumulated blocks into styled text and updates the viewport.
-// Finalized blocks with a cached render are reused without re-rendering.
+// rerender marks the output as needing a re-render. The actual rendering is
+// deferred until FlushRender is called, allowing render throttling during streaming.
 func (m *OutputModel) rerender() {
+	m.dirty = true
+}
+
+// IsDirty returns true if content has changed since the last render.
+func (m *OutputModel) IsDirty() bool {
+	return m.dirty
+}
+
+// FlushRender performs the actual rendering if the output is dirty.
+func (m *OutputModel) FlushRender() {
+	if !m.dirty {
+		return
+	}
+	m.dirty = false
+	m.doRender()
+}
+
+// HasPending returns true if any pending text buffers have content.
+func (m *OutputModel) HasPending() bool {
+	return len(m.pendingText) > 0 || len(m.pendingThink) > 0 || len(m.pendingToolOut) > 0
+}
+
+// DrainPending moves a proportional chunk from each pending buffer into the
+// actual blocks and renders. Returns true if there is still pending content.
+func (m *OutputModel) DrainPending() bool {
+	drained := false
+
+	if n := len(m.pendingText); n > 0 {
+		take := drainChunkSize(n)
+		m.appendTextImmediate(m.pendingText[:take])
+		m.pendingText = m.pendingText[take:]
+		drained = true
+	}
+	if n := len(m.pendingThink); n > 0 {
+		take := drainChunkSize(n)
+		m.appendThinkImmediate(m.pendingThink[:take])
+		m.pendingThink = m.pendingThink[take:]
+		drained = true
+	}
+	if n := len(m.pendingToolOut); n > 0 {
+		take := drainChunkSize(n)
+		m.appendToolOutImmediate(m.pendingToolOut[:take])
+		m.pendingToolOut = m.pendingToolOut[take:]
+		drained = true
+	}
+
+	if drained {
+		m.doRender()
+	} else {
+		m.FlushRender()
+	}
+	return m.HasPending()
+}
+
+// FlushAllPending moves all remaining pending text into blocks and renders.
+func (m *OutputModel) FlushAllPending() {
+	if len(m.pendingText) > 0 {
+		m.appendTextImmediate(m.pendingText)
+		m.pendingText = ""
+	}
+	if len(m.pendingThink) > 0 {
+		m.appendThinkImmediate(m.pendingThink)
+		m.pendingThink = ""
+	}
+	if len(m.pendingToolOut) > 0 {
+		m.appendToolOutImmediate(m.pendingToolOut)
+		m.pendingToolOut = ""
+	}
+	m.dirty = false
+	m.doRender()
+}
+
+// drainChunkSize returns how many bytes to move from a pending buffer of
+// size n. Adapts so small buffers drip slowly (smooth) while large buffers
+// drain fast enough to keep up with the API.
+func drainChunkSize(n int) int {
+	// Aim to drain the buffer in ~6 ticks (~96ms), with a floor of 2 chars.
+	rate := n / 6
+	if rate < 2 {
+		rate = 2
+	}
+	if rate > n {
+		rate = n
+	}
+	return rate
+}
+
+// scheduleRenderTick returns a tea.Cmd that fires a renderTickMsg after renderInterval.
+func scheduleRenderTick() tea.Cmd {
+	return tea.Tick(renderInterval, func(time.Time) tea.Msg {
+		return renderTickMsg{}
+	})
+}
+
+// doRender converts all accumulated blocks into styled text and updates the viewport.
+// Finalized blocks with a cached render are reused without re-rendering.
+func (m *OutputModel) doRender() {
 	if m.rendererDirty {
 		wrapWidth := m.width - 4
 		if wrapWidth < 1 {
@@ -411,9 +564,15 @@ func (m *OutputModel) rerender() {
 
 	var parts []string
 
+	activeToolIdx := -1
+	if m.toolSpinner != "" {
+		activeToolIdx = m.lastToolCallIndex()
+	}
+
 	for i, b := range m.blocks {
-		// Use cached render for finalized blocks.
-		if b.finalized && b.rendered != "" {
+		// Use cached render for finalized blocks, but skip cache for
+		// the active tool call block (spinner changes each frame).
+		if b.finalized && b.rendered != "" && i != activeToolIdx {
 			parts = append(parts, b.rendered)
 			continue
 		}
@@ -434,7 +593,12 @@ func (m *OutputModel) rerender() {
 			rendered = renderMarkdown(m.renderer, b.content)
 
 		case blockToolCall:
-			icon := m.styles.ToolCallIcon.Render("\u25b6")
+			var icon string
+			if m.toolSpinner != "" && i == m.lastToolCallIndex() {
+				icon = m.styles.ToolCallIcon.Render(m.toolSpinner)
+			} else {
+				icon = m.styles.ToolCallIcon.Render("\u25b6")
+			}
 			header := m.styles.ToolCallHeader.Render(b.content)
 			rendered = icon + " " + header
 
@@ -454,12 +618,13 @@ func (m *OutputModel) rerender() {
 			rendered = m.styles.SystemBorder.Render(styled)
 
 		case blockError:
-			rendered = m.styles.ErrorText.Render("error: " + b.content)
+			rendered = m.styles.ErrorText.Render("x error: " + b.content)
 		}
 
 		// Cache the rendered output for finalized blocks. Block indices are
 		// stable (append-only) so the cache key is valid for the session.
-		if b.finalized {
+		// Don't cache the active tool call block (spinner changes each frame).
+		if b.finalized && i != activeToolIdx {
 			m.blocks[i].rendered = rendered
 		}
 		parts = append(parts, rendered)

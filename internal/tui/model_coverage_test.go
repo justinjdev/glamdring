@@ -763,6 +763,7 @@ func TestHandleAgentMsg_ThinkingDelta_ShowThinking(t *testing.T) {
 
 	msg := AgentMsg(agent.Message{Type: agent.MessageThinkingDelta, Text: "thinking..."})
 	result, _ := m.handleAgentMsg(msg)
+	result.output.FlushAllPending()
 
 	found := false
 	for _, b := range result.output.blocks {
@@ -829,6 +830,7 @@ func TestHandleAgentMsg_ToolOutputDelta(t *testing.T) {
 
 	msg := AgentMsg(agent.Message{Type: agent.MessageToolOutputDelta, Text: "output chunk"})
 	result, _ := m.handleAgentMsg(msg)
+	result.output.FlushAllPending()
 
 	found := false
 	for _, b := range result.output.blocks {
@@ -1141,6 +1143,7 @@ func TestView_Spinning(t *testing.T) {
 	m.layoutComponents()
 	m.state = StateRunning
 	m.spinning = true
+	m.spinnerLabel = "Thinking..."
 
 	view := m.View()
 	if !strings.Contains(view, "Thinking") {
@@ -1958,6 +1961,7 @@ func TestExtractLastText_NoTextBlocks(t *testing.T) {
 func TestExtractLastText_WithTextBlock(t *testing.T) {
 	m := New()
 	m.output.AppendText("  summary text  ")
+	m.output.FlushAllPending()
 	m.output.finalizePreviousBlock()
 
 	result := m.extractLastText()

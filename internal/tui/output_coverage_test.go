@@ -16,8 +16,9 @@ func TestOutputModel_Update_KeyUp(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		m.AppendText("line content\n")
 	}
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
-	m.rerender()
+	m.FlushRender()
 
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if !result.userScrolled {
@@ -125,8 +126,9 @@ func TestOutputModel_Update_TrackUserScrolled(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		m.AppendText("line content\n")
 	}
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
-	m.rerender()
+	m.FlushRender()
 
 	// Scroll up.
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -139,8 +141,9 @@ func TestOutputModel_Update_TrackUserScrolled(t *testing.T) {
 func TestOutputModel_View_Basic(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendText("hello world")
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
-	m.rerender()
+	m.FlushRender()
 
 	view := m.View()
 	if view == "" {
@@ -204,6 +207,7 @@ func TestAppendText_StreamingAccumulates(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendText("hello ")
 	m.AppendText("world")
+	m.FlushAllPending()
 
 	if len(m.blocks) != 1 {
 		t.Fatalf("expected 1 block (streaming), got %d", len(m.blocks))
@@ -216,10 +220,12 @@ func TestAppendText_StreamingAccumulates(t *testing.T) {
 func TestAppendText_ContinuesStreamingEvenAfterFinalized(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendText("first")
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
 	// AppendText checks kind == blockText and appends, even if finalized.
 	// This is the streaming behavior.
 	m.AppendText("second")
+	m.FlushAllPending()
 
 	if len(m.blocks) != 1 {
 		t.Fatalf("expected 1 block (text appends to existing text block), got %d", len(m.blocks))
@@ -232,8 +238,10 @@ func TestAppendText_ContinuesStreamingEvenAfterFinalized(t *testing.T) {
 func TestAppendText_NewBlockAfterDifferentKind(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendText("text")
+	m.FlushAllPending()
 	m.AppendToolCall("Read", "file.go")
 	m.AppendText("more text")
+	m.FlushAllPending()
 
 	if len(m.blocks) != 3 {
 		t.Fatalf("expected 3 blocks, got %d", len(m.blocks))
@@ -249,6 +257,7 @@ func TestAppendThinking_StreamingAccumulates(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendThinking("thinking ")
 	m.AppendThinking("more")
+	m.FlushAllPending()
 
 	if len(m.blocks) != 1 {
 		t.Fatalf("expected 1 block (streaming), got %d", len(m.blocks))
@@ -261,9 +270,11 @@ func TestAppendThinking_StreamingAccumulates(t *testing.T) {
 func TestAppendThinking_ContinuesStreamingEvenAfterFinalized(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendThinking("first")
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
 	// Same as AppendText: appends to existing thinking block.
 	m.AppendThinking("second")
+	m.FlushAllPending()
 
 	if len(m.blocks) != 1 {
 		t.Fatalf("expected 1 block (thinking appends to existing thinking block), got %d", len(m.blocks))
@@ -276,8 +287,11 @@ func TestAppendThinking_ContinuesStreamingEvenAfterFinalized(t *testing.T) {
 func TestAppendThinking_NewBlockAfterDifferentKind(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendThinking("thinking")
+	m.FlushAllPending()
 	m.AppendText("response")
+	m.FlushAllPending()
 	m.AppendThinking("more thinking")
+	m.FlushAllPending()
 
 	if len(m.blocks) != 3 {
 		t.Fatalf("expected 3 blocks, got %d", len(m.blocks))
@@ -321,6 +335,7 @@ func TestOutputModel_AutoScroll_WhenNotUserScrolled(t *testing.T) {
 	m.userScrolled = false
 
 	m.AppendText("new content")
+	m.FlushAllPending()
 	// Should auto-scroll (viewport.GotoBottom is called).
 	if m.userScrolled {
 		t.Error("expected userScrolled to remain false after auto-scroll")
@@ -333,10 +348,12 @@ func TestOutputModel_NewContentFlag_WhenUserScrolled(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		m.AppendText("line\n")
 	}
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
 
 	m.userScrolled = true
 	m.AppendText("new stuff")
+	m.FlushAllPending()
 
 	if !m.hasNewContent {
 		t.Error("expected hasNewContent to be true when user has scrolled")
@@ -364,8 +381,9 @@ func TestOutputModel_View_IndicatorOverlay_FitsOnLastLine(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		m.AppendText("short line\n")
 	}
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
-	m.rerender()
+	m.FlushRender()
 
 	// Scroll up so we're not at bottom.
 	m.viewport.LineUp(5)
@@ -388,8 +406,9 @@ func TestOutputModel_View_IndicatorOverlay_WideLastLine(t *testing.T) {
 		longLine := strings.Repeat("x", 29)
 		m.AppendText(longLine + "\n")
 	}
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
-	m.rerender()
+	m.FlushRender()
 
 	// Scroll up.
 	m.viewport.LineUp(5)
@@ -408,8 +427,9 @@ func TestOutputModel_View_IndicatorOverlay_NarrowViewport(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		m.AppendText(strings.Repeat("x", 39) + "\n")
 	}
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
-	m.rerender()
+	m.FlushRender()
 
 	m.viewport.LineUp(5)
 	m.userScrolled = true
@@ -451,6 +471,7 @@ func TestOutputModel_ToggleLastToolResult(t *testing.T) {
 func TestOutputModel_Clear(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendText("hello")
+	m.FlushAllPending()
 	m.AppendToolCall("Read", "test.go")
 	m.finalizePreviousBlock()
 
@@ -562,6 +583,7 @@ func TestOutputModel_AppendToolOutputDelta(t *testing.T) {
 	m := newTestOutput(80, 24)
 	m.AppendToolOutputDelta("chunk 1")
 	m.AppendToolOutputDelta(" chunk 2")
+	m.FlushAllPending()
 
 	found := false
 	for _, b := range m.blocks {
@@ -615,8 +637,9 @@ func TestOutputModel_Update_DefaultMsg_NotAtBottom(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		m.AppendText("line\n")
 	}
+	m.FlushAllPending()
 	m.finalizePreviousBlock()
-	m.rerender()
+	m.FlushRender()
 
 	// Scroll up so not at bottom.
 	m.viewport.LineUp(5)

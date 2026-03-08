@@ -94,8 +94,13 @@ type Model struct {
 	lastCtrlC time.Time
 
 	// spinner and spinning track the thinking/typing indicator.
-	spinner  spinner.Model
-	spinning bool
+	spinner      spinner.Model
+	spinning     bool
+	spinnerLabel string
+
+	// renderTickPending is true when a render tick has been scheduled but
+	// not yet fired. Prevents scheduling duplicate ticks.
+	renderTickPending bool
 
 	// showThinking controls whether thinking blocks are displayed.
 	showThinking bool
@@ -430,10 +435,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = StateInput
 		return m, m.input.Focus()
 
+	case renderTickMsg:
+		m.renderTickPending = false
+		hasMore := m.output.DrainPending()
+		if hasMore {
+			m.renderTickPending = true
+			return m, scheduleRenderTick()
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		if m.spinning {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
+			if m.spinnerLabel == "" {
+				// Tool running -- update inline spinner on the tool call block.
+				m.output.SetToolSpinner(m.spinner.View())
+			}
 			return m, cmd
 		}
 		return m, nil
@@ -617,6 +635,7 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 	m.turnModifiedFiles = false
 	m.state = StateRunning
 	m.spinning = true
+	m.spinnerLabel = "Thinking..."
 
 	ctx := m.ctx
 	if ctx == nil {
@@ -695,27 +714,55 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 	switch am.Type {
 	case agent.MessageTextDelta:
 		m.spinning = false
+		m.output.ClearToolSpinner()
 		m.output.AppendText(am.Text)
+		if !m.renderTickPending {
+			m.renderTickPending = true
+			return m, scheduleRenderTick()
+		}
+		return m, nil
 
 	case agent.MessageThinkingDelta:
 		if m.showThinking {
 			m.output.AppendThinking(am.Text)
+			if !m.renderTickPending {
+				m.renderTickPending = true
+				return m, scheduleRenderTick()
+			}
 		}
+		return m, nil
 
 	case agent.MessageToolCall:
-		m.spinning = false
+		m.output.FlushAllPending()
+		m.output.ClearToolSpinner()
 		switch am.ToolName {
 		case "Edit", "Write", "Bash":
 			m.turnModifiedFiles = true
 		}
 		summary := summarizeToolInput(am.ToolName, am.ToolInput)
 		m.output.AppendToolCall(am.ToolName, summary)
+		m.spinning = true
+		m.spinnerLabel = ""
+		m.output.SetToolSpinner(m.spinner.View())
+		return m, m.spinner.Tick
 
 	case agent.MessageToolOutputDelta:
+		m.spinning = false
+		m.output.ClearToolSpinner()
 		m.output.AppendToolOutputDelta(am.Text)
+		if !m.renderTickPending {
+			m.renderTickPending = true
+			return m, scheduleRenderTick()
+		}
+		return m, nil
 
 	case agent.MessageToolResult:
+		m.output.ClearToolSpinner()
+		m.output.FlushAllPending()
 		m.output.AppendToolResult(am.ToolOutput, am.ToolIsError)
+		m.spinning = true
+		m.spinnerLabel = "Thinking..."
+		return m, m.spinner.Tick
 
 	case agent.MessagePermissionRequest:
 		m.state = StatePermission
@@ -725,6 +772,8 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 
 	case agent.MessageError:
 		m.spinning = false
+		m.output.ClearToolSpinner()
+		m.output.FlushAllPending()
 		errMsg := "unknown error"
 		if am.Err != nil {
 			errMsg = am.Err.Error()
@@ -733,6 +782,8 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 
 	case agent.MessageDone:
 		m.spinning = false
+		m.output.ClearToolSpinner()
+		m.output.FlushAllPending()
 		m.totalInputTokens += am.InputTokens
 		m.totalOutputTokens += am.OutputTokens
 		m.statusbar.Update(m.agentCfg.Model, m.totalInputTokens, m.totalOutputTokens, m.turn)
@@ -1026,8 +1077,8 @@ func (m Model) View() string {
 	}
 
 	parts := []string{output}
-	if m.spinning {
-		spinnerLine := m.styles.SpinnerText.Render(m.spinner.View() + " Thinking...")
+	if m.spinning && m.spinnerLabel != "" {
+		spinnerLine := m.styles.SpinnerText.Render(m.spinner.View() + " " + m.spinnerLabel)
 		parts = append(parts, spinnerLine)
 	}
 	parts = append(parts, "", status, input)

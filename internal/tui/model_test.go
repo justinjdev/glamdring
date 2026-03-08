@@ -139,9 +139,10 @@ func TestSpinnerStopsOnTextDelta(t *testing.T) {
 	}
 }
 
-func TestSpinnerStopsOnToolCall(t *testing.T) {
+func TestToolCallShowsInlineSpinner(t *testing.T) {
 	m := New()
 	m.spinning = true
+	m.spinnerLabel = "Thinking..."
 
 	agentMsg := AgentMsg(agent.Message{
 		Type:     agent.MessageToolCall,
@@ -149,8 +150,16 @@ func TestSpinnerStopsOnToolCall(t *testing.T) {
 		ToolInput: map[string]any{"file_path": "/tmp/test"},
 	})
 	result, _ := m.handleAgentMsg(agentMsg)
-	if result.spinning {
-		t.Error("expected spinning to stop on tool call")
+	if !result.spinning {
+		t.Error("expected spinning to continue during tool execution")
+	}
+	// Spinner label is empty because the spinner is rendered inline
+	// on the tool call block, not as a separate line.
+	if result.spinnerLabel != "" {
+		t.Errorf("expected empty spinner label for inline tool spinner, got %q", result.spinnerLabel)
+	}
+	if result.output.toolSpinner == "" {
+		t.Error("expected inline tool spinner to be set")
 	}
 }
 
@@ -254,8 +263,10 @@ func TestExtractLastText(t *testing.T) {
 
 	// Add some blocks.
 	m.output.AppendText("first text")
+	m.output.FlushAllPending()
 	m.output.AppendToolCall("Read", "file.go")
 	m.output.AppendText("second text")
+	m.output.FlushAllPending()
 
 	text := m.extractLastText()
 	if text != "second text" {

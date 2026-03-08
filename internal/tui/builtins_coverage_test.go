@@ -487,6 +487,7 @@ func TestCmdCopy_WithTextBlocks(t *testing.T) {
 	m := newTestModel()
 	m.output.AppendToolCall("Read", "file.go") // non-text block
 	m.output.AppendText("response text here")
+	m.output.FlushAllPending()
 	m.output.finalizePreviousBlock()
 
 	// cmdCopy writes to clipboard which requires init. Skip actual clipboard test
@@ -514,6 +515,7 @@ func TestCmdCopy_WithTextBlocks(t *testing.T) {
 func TestCmdCopy_SkipsEmptyTextBlocks(t *testing.T) {
 	m := newTestModel()
 	m.output.AppendText("  ") // whitespace-only
+	m.output.FlushAllPending()
 	m.output.finalizePreviousBlock()
 
 	cmd := cmdCopy(&m, "")
