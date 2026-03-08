@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1285,6 +1286,64 @@ func TestTurn_MergesAfterCancelledTurn(t *testing.T) {
 	}
 	if !gotDone {
 		t.Error("expected done message after recovery turn")
+	}
+}
+
+func TestNewSessionAppliesThinkingBudget(t *testing.T) {
+	var receivedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, buildSSEResponse("ok", "end_turn"))
+	}))
+	defer srv.Close()
+
+	budget := 4000
+	cfg := Config{
+		Model:          "claude-opus-4-20250514",
+		Creds:          mockCreds{},
+		ThinkingBudget: &budget,
+	}
+	s := NewSession(cfg)
+	s.client.SetEndpoint(srv.URL)
+
+	drainMessages(s.Turn(context.Background(), "hello"))
+
+	thinking, ok := receivedBody["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking not set in request body")
+	}
+	if thinking["budget_tokens"] != float64(4000) {
+		t.Errorf("thinking.budget_tokens = %v, want 4000", thinking["budget_tokens"])
+	}
+}
+
+func TestNewSessionZeroBudgetDisablesThinking(t *testing.T) {
+	var receivedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, buildSSEResponse("ok", "end_turn"))
+	}))
+	defer srv.Close()
+
+	zero := 0
+	cfg := Config{
+		Model:          "claude-opus-4-20250514",
+		Creds:          mockCreds{},
+		ThinkingBudget: &zero,
+	}
+	s := NewSession(cfg)
+	s.client.SetEndpoint(srv.URL)
+
+	drainMessages(s.Turn(context.Background(), "hello"))
+
+	if _, ok := receivedBody["thinking"]; ok {
+		t.Error("thinking should not be set when budget is 0")
 	}
 }
 

@@ -178,6 +178,7 @@ func TestSupportsThinking(t *testing.T) {
 	}{
 		{"claude-opus-4-20250514", true},
 		{"claude-sonnet-4-20250514", true},
+		{"claude-3-7-sonnet-20250219", true},
 		{"claude-3-haiku-20240307", false},
 		{"claude-3-opus-20240229", false},
 		{"test-model", false},
@@ -519,6 +520,72 @@ func TestStreamEnablesThinkingForSupportedModel(t *testing.T) {
 	}
 	if thinking["type"] != "enabled" {
 		t.Errorf("thinking.type = %v, want %q", thinking["type"], "enabled")
+	}
+}
+
+func TestStreamUsesConfiguredThinkingBudget(t *testing.T) {
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, buildSSEResponse("hi", "end_turn"))
+	}))
+	defer server.Close()
+
+	budget := 5000
+	client := NewClient(&auth.APIKeyCredentials{Key: "test-key"}, "claude-opus-4-20250514")
+	client.SetEndpoint(server.URL)
+	client.SetThinkingBudget(&budget)
+
+	events, err := client.Stream(context.Background(), &MessageRequest{
+		MaxTokens: 16384,
+		Messages:  []RequestMessage{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error: %v", err)
+	}
+	for range events {
+	}
+
+	thinking, ok := receivedBody["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking not set in request body")
+	}
+	if thinking["budget_tokens"] != float64(5000) {
+		t.Errorf("thinking.budget_tokens = %v, want 5000", thinking["budget_tokens"])
+	}
+}
+
+func TestStreamZeroBudgetDisablesThinking(t *testing.T) {
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, buildSSEResponse("hi", "end_turn"))
+	}))
+	defer server.Close()
+
+	zero := 0
+	client := NewClient(&auth.APIKeyCredentials{Key: "test-key"}, "claude-opus-4-20250514")
+	client.SetEndpoint(server.URL)
+	client.SetThinkingBudget(&zero)
+
+	events, err := client.Stream(context.Background(), &MessageRequest{
+		MaxTokens: 16384,
+		Messages:  []RequestMessage{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error: %v", err)
+	}
+	for range events {
+	}
+
+	if _, ok := receivedBody["thinking"]; ok {
+		t.Error("thinking should not be set when budget is 0")
 	}
 }
 

@@ -213,15 +213,16 @@ func main() {
 	}
 
 	cfg := agent.Config{
-		Model:        settings.Model,
-		Creds:        creds,
-		SystemPrompt: systemPrompt,
-		Tools:        allTools,
-		MaxTurns:     settings.MaxTurns,
-		CWD:          workDir,
-		HookRunner:   hookRunner,
-		Permissions:  permissions,
-		Yolo:         *yolo,
+		Model:          settings.Model,
+		Creds:          creds,
+		SystemPrompt:   systemPrompt,
+		Tools:          allTools,
+		MaxTurns:       settings.MaxTurns,
+		CWD:            workDir,
+		HookRunner:     hookRunner,
+		Permissions:    permissions,
+		Yolo:           *yolo,
+		ThinkingBudget: settings.ThinkingBudget,
 	}
 
 	m := tui.NewWithAgent(ctx, cfg)

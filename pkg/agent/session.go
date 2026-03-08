@@ -45,6 +45,9 @@ func NewSession(cfg Config) *Session {
 	if cfg.Endpoint != "" {
 		client.SetEndpoint(cfg.Endpoint)
 	}
+	if cfg.ThinkingBudget != nil {
+		client.SetThinkingBudget(cfg.ThinkingBudget)
+	}
 
 	registry := tools.NewRegistry()
 	for _, t := range cfg.Tools {
