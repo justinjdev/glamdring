@@ -286,7 +286,7 @@ func (m *OutputModel) AppendToolResult(output string, isError bool) {
 			last.rendered = "" // invalidate cache
 			idx := len(m.blocks) - 1
 			lines := strings.Split(output, "\n")
-			if len(lines) > collapseThreshold {
+			if len(lines) >= collapseThreshold {
 				m.collapsed[idx] = true
 			}
 			m.rerender()
@@ -304,7 +304,7 @@ func (m *OutputModel) AppendToolResult(output string, isError bool) {
 	})
 	// Auto-collapse large tool results.
 	lines := strings.Split(output, "\n")
-	if len(lines) > collapseThreshold {
+	if len(lines) >= collapseThreshold {
 		m.collapsed[idx] = true
 	}
 	m.rerender()
@@ -484,7 +484,7 @@ func (m *OutputModel) renderToolResult(idx int, b outputBlock) string {
 	totalLines := len(lines)
 
 	// Check if this block is collapsed.
-	if m.collapsed[idx] && totalLines > collapseThreshold {
+	if m.collapsed[idx] && totalLines >= collapseThreshold {
 		preview := strings.Join(lines[:collapsePreviewLines], "\n")
 		remaining := totalLines - collapsePreviewLines
 		return preview + fmt.Sprintf("\n... (%d more lines, press 'e' to expand)", remaining)
