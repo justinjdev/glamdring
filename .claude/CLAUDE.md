@@ -6,3 +6,4 @@
 - Do not merge PRs without explicit approval by number.
 - Do not use emojis in code, comments, commit messages, or UI output.
 - Use OpenSpec (`/opsx:new`) for planning and implementing large features. This ensures structured artifact creation, clear task breakdowns, and traceable implementation.
+- Add unit tests for new components and behaviors. Cover navigation, state transitions, and edge cases.
