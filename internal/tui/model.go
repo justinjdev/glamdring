@@ -35,6 +35,7 @@ const (
 	StatePermission              // waiting for permission response
 	StateCheckpoint              // checkpoint found, awaiting user decision
 	StateUpdate                  // waiting for update confirmation
+	StateModal                   // interactive modal overlay is open
 )
 
 // AgentMsg wraps an agent.Message for delivery through the bubbletea message system.
@@ -51,6 +52,11 @@ type Model struct {
 
 	// permission holds the current permission request when in StatePermission.
 	permission *agent.Message
+
+	// modal holds the active modal overlay when in StateModal.
+	modal *ModalModel
+	// preModalState is restored when the modal closes.
+	preModalState State
 
 	width  int
 	height int
@@ -517,6 +523,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Global keybindings
 	switch msg.String() {
 	case "ctrl+c":
+		if m.state == StateModal {
+			cmd := m.closeModal()
+			return m, cmd
+		}
 		if m.state == StateRunning || m.state == StatePermission {
 			// Cancel the current agent turn.
 			if m.cancelTurn != nil {
@@ -604,6 +614,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case StateUpdate:
 		return m.handleUpdateKey(msg)
 
+	case StateModal:
+		return m.handleModalKey(msg)
+
 	case StateRunning:
 		// Toggle expand/collapse on tool result blocks.
 		if msg.String() == "e" {
@@ -633,7 +646,7 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 		if handler, ok := DispatchBuiltin(cmdName); ok {
 			m.input.Reset()
 			cmd := handler(&m, args)
-			if m.state != StateRunning && m.state != StateUpdate {
+			if m.state != StateRunning && m.state != StateUpdate && m.state != StateModal {
 				// Normal built-in — stay in input mode.
 				m.state = StateInput
 				return m, tea.Batch(cmd, m.input.Focus())
@@ -996,6 +1009,68 @@ func (m Model) handleUpdateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// openModal switches to StateModal with the given modal.
+func (m *Model) openModal(modal *ModalModel) {
+	m.preModalState = m.state
+	m.modal = modal
+	m.state = StateModal
+	m.input.Blur()
+}
+
+// closeModal dismisses the modal and restores the previous state.
+func (m *Model) closeModal() tea.Cmd {
+	m.modal = nil
+	m.state = m.preModalState
+	if m.state == StateInput {
+		return m.input.Focus()
+	}
+	return nil
+}
+
+// handleModalKey routes key presses to the active modal.
+func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.modal == nil {
+		cmd := m.closeModal()
+		return m, cmd
+	}
+
+	shouldClose, change := m.modal.HandleKey(msg.String())
+	if change != nil {
+		m.applyModalChange(change)
+	}
+	if shouldClose {
+		cmd := m.closeModal()
+		return m, cmd
+	}
+	return m, nil
+}
+
+// applyModalChange applies a setting change from the modal to the model.
+func (m *Model) applyModalChange(c *ModalChange) {
+	switch c.ID {
+	case "theme":
+		m.applyTheme(c.Value)
+	case "model":
+		m.agentCfg.Model = c.Value
+		m.session = nil
+		m.statusbar.Update(c.Value, m.totalInputTokens, m.totalOutputTokens, m.turn)
+		_ = config.SaveUserSetting("model", c.Value)
+	case "thinking":
+		m.showThinking = c.Value == "on"
+	case "yolo":
+		if m.session != nil {
+			m.session.ToggleYolo()
+			m.statusbar.SetYolo(m.session.IsYolo())
+		}
+	case "high_contrast":
+		m.settings.HighContrast = c.Value == "on"
+		m.SetTheme(m.palette, m.settings.HighContrast)
+		m.layoutComponents()
+		m.output.RefreshHeader(m.palette)
+		_ = config.SaveUserSetting("high_contrast", m.settings.HighContrast)
+	}
+}
+
 // extractLastText returns the content of the last text block in the output,
 // used to capture the agent's compact summary.
 func (m *Model) extractLastText() string {
@@ -1141,6 +1216,8 @@ func (m Model) View() string {
 		input = m.renderCheckpointPrompt()
 	case StateUpdate:
 		input = m.renderUpdatePrompt()
+	case StateModal:
+		input = m.input.View()
 	default:
 		input = m.input.View()
 	}
@@ -1152,7 +1229,15 @@ func (m Model) View() string {
 	}
 	parts = append(parts, "", status, input)
 
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	base := lipgloss.JoinVertical(lipgloss.Left, parts...)
+
+	// Overlay modal if active.
+	if m.state == StateModal && m.modal != nil {
+		modalBox := m.modal.OverlayView(m.width, m.height)
+		base = RenderOverlay(base, modalBox, m.width, m.height)
+	}
+
+	return base
 }
 
 // renderPermissionPrompt renders the inline permission prompt.

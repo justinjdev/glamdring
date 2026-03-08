@@ -1105,10 +1105,13 @@ func TestIntegration_ModelCommand(t *testing.T) {
 		buildSSEResponse("ok", "end_turn"),
 	})
 
-	// /model with no args shows current model.
+	// /model with no args opens config modal.
 	th.update(SubmitMsg{Text: "/model"})
-	if !th.OutputContains("test-model") {
-		t.Error("expected current model name in output")
+	if th.Model.state != StateModal {
+		t.Error("expected StateModal after /model with no args")
+	}
+	if th.Model.modal == nil {
+		t.Error("expected modal to be set")
 	}
 }
 

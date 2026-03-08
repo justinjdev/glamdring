@@ -200,11 +200,9 @@ func SaveUserSetting(key string, value any) error {
 		return fmt.Errorf("home dir: %w", err)
 	}
 
-	// Use existing user config if present, otherwise create primary.
+	// Always write to the primary glamdring config to avoid polluting
+	// fallback locations (e.g. ~/.claude/settings.json used by Claude Code).
 	path := ResolveUserFile(primaryConfigFile)
-	if path == "" {
-		path = ResolveUserFile(fallbackConfigFile)
-	}
 	if path == "" {
 		dir := filepath.Join(home, ".config", "glamdring")
 		if err := os.MkdirAll(dir, 0o755); err != nil {

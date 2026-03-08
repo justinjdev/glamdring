@@ -87,15 +87,11 @@ func TestCmdModel_NoArg(t *testing.T) {
 		t.Error("expected nil cmd")
 	}
 
-	if len(m.output.blocks) != 1 {
-		t.Fatalf("expected 1 block, got %d", len(m.output.blocks))
+	if m.state != StateModal {
+		t.Errorf("expected StateModal, got %d", m.state)
 	}
-	block := m.output.blocks[0]
-	if block.kind != blockSystem {
-		t.Errorf("expected blockSystem, got %d", block.kind)
-	}
-	if !strings.Contains(block.content, "claude-opus-4-6") {
-		t.Errorf("expected current model in output, got %q", block.content)
+	if m.modal == nil {
+		t.Fatal("expected modal to be set")
 	}
 }
 
@@ -114,14 +110,6 @@ func TestCmdModel_WithArg(t *testing.T) {
 	// Statusbar should reflect new model.
 	if m.statusbar.model != "claude-sonnet-4-6" {
 		t.Errorf("expected statusbar model to be updated, got %q", m.statusbar.model)
-	}
-
-	// Output should confirm change.
-	if len(m.output.blocks) != 1 {
-		t.Fatalf("expected 1 block, got %d", len(m.output.blocks))
-	}
-	if !strings.Contains(m.output.blocks[0].content, "claude-sonnet-4-6") {
-		t.Errorf("expected confirmation in output, got %q", m.output.blocks[0].content)
 	}
 }
 
@@ -205,15 +193,11 @@ func TestCmdConfig(t *testing.T) {
 		t.Error("expected nil cmd")
 	}
 
-	if len(m.output.blocks) != 1 {
-		t.Fatalf("expected 1 block, got %d", len(m.output.blocks))
+	if m.state != StateModal {
+		t.Errorf("expected StateModal, got %d", m.state)
 	}
-	content := m.output.blocks[0].content
-	if !strings.Contains(content, "claude-opus-4-6") {
-		t.Errorf("expected model in config output, got %q", content)
-	}
-	if !strings.Contains(content, "10") {
-		t.Errorf("expected max turns in config output, got %q", content)
+	if m.modal == nil {
+		t.Fatal("expected modal to be set")
 	}
 }
 

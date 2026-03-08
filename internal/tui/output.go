@@ -82,6 +82,10 @@ type OutputModel struct {
 	// Empty string means no tool is actively running.
 	toolSpinner string
 
+	// headerInfo stores the raw "ver\nmodel\ncwd" string for re-rendering
+	// the banner when the theme changes.
+	headerInfo string
+
 	// starFrame tracks the animation frame for the assistant header star.
 	// Even frames show ✧ (outline), odd frames show ✦ (filled).
 	starFrame int
@@ -283,7 +287,33 @@ var banner = [6]string{
 // If bannerImage is non-nil, it is rendered as half-block pixel art.
 func (m *OutputModel) AppendHeader(content string, styles Styles, palette ThemePalette) {
 	m.finalizePreviousBlock()
+	m.headerInfo = content
 
+	m.blocks = append(m.blocks, outputBlock{
+		kind:      blockHeader,
+		content:   renderBanner(content, palette),
+		finalized: true,
+	})
+	m.doRender()
+}
+
+// RefreshHeader re-renders the startup banner with the current palette.
+func (m *OutputModel) RefreshHeader(palette ThemePalette) {
+	if m.headerInfo == "" {
+		return
+	}
+	for i := range m.blocks {
+		if m.blocks[i].kind == blockHeader {
+			m.blocks[i].content = renderBanner(m.headerInfo, palette)
+			m.blocks[i].rendered = "" // invalidate cache
+			m.doRender()
+			return
+		}
+	}
+}
+
+// renderBanner creates the styled GLAMDRING banner text with theme gradient.
+func renderBanner(content string, palette ThemePalette) string {
 	lines := strings.Split(content, "\n")
 	ver, model, cwd := "dev", "", ""
 	if len(lines) >= 1 {
@@ -309,14 +339,7 @@ func (m *OutputModel) AppendHeader(content string, styles Styles, palette ThemeP
 		parts = append(parts, style.Render(line))
 	}
 	parts = append(parts, info)
-	styled := strings.Join(parts, "\n")
-
-	m.blocks = append(m.blocks, outputBlock{
-		kind:      blockHeader,
-		content:   styled,
-		finalized: true,
-	})
-	m.doRender()
+	return strings.Join(parts, "\n")
 }
 
 // AppendUserMessage adds a styled user message header and text.

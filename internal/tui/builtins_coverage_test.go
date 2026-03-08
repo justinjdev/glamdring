@@ -8,97 +8,24 @@ import (
 	"testing"
 
 	"github.com/justin/glamdring/pkg/agent"
-	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/mcp"
 )
 
 // --- cmdConfig coverage ---
 
-func TestCmdConfig_UnlimitedMaxTurns(t *testing.T) {
+func TestCmdConfig_OpensModal(t *testing.T) {
 	m := newTestModel()
-	m.agentCfg.MaxTurns = nil // unlimited
+	m.agentCfg.Model = "claude-opus-4-6"
 
 	cmd := cmdConfig(&m, "")
 	if cmd != nil {
 		t.Error("expected nil cmd")
 	}
-
-	content := m.output.blocks[0].content
-	if !strings.Contains(content, "unlimited") {
-		t.Errorf("expected 'unlimited' in output, got %q", content)
+	if m.state != StateModal {
+		t.Errorf("expected StateModal, got %d", m.state)
 	}
-}
-
-func TestCmdConfig_ZeroMaxTurns(t *testing.T) {
-	m := newTestModel()
-	zero := 0
-	m.agentCfg.MaxTurns = &zero
-
-	cmd := cmdConfig(&m, "")
-	if cmd != nil {
-		t.Error("expected nil cmd")
-	}
-
-	content := m.output.blocks[0].content
-	if !strings.Contains(content, "unlimited") {
-		t.Errorf("expected 'unlimited' for 0 max turns, got %q", content)
-	}
-}
-
-func TestCmdConfig_NoCWD(t *testing.T) {
-	m := newTestModel()
-	m.agentCfg.CWD = ""
-
-	cmd := cmdConfig(&m, "")
-	if cmd != nil {
-		t.Error("expected nil cmd")
-	}
-
-	content := m.output.blocks[0].content
-	if strings.Contains(content, "CWD:") {
-		t.Error("expected no CWD line when CWD is empty")
-	}
-}
-
-func TestCmdConfig_WithIndexDB(t *testing.T) {
-	m := newTestModel()
-	// Simulate indexDB being set (nil pointer is fine for testing config display).
-	// We can't easily create a real index.DB, but we can test the enabled/disabled path.
-
-	// Test disabled path.
-	enabled := false
-	m.indexerCfg = config.IndexerConfig{}
-	// We need to set the enabled field. Let me check what's available.
-	// For now, just test without indexDB (no indexer line).
-	m.indexDB = nil
-
-	cmd := cmdConfig(&m, "")
-	if cmd != nil {
-		t.Error("expected nil cmd")
-	}
-	_ = enabled // prevent unused error
-}
-
-func TestCmdConfig_WithMCPServers(t *testing.T) {
-	m := newTestModel()
-	m.settings = config.Settings{
-		MCPServers: map[string]config.MCPServerConfig{
-			"server-a": {},
-			"server-b": {},
-		},
-	}
-
-	cmd := cmdConfig(&m, "")
-	if cmd != nil {
-		t.Error("expected nil cmd")
-	}
-
-	content := m.output.blocks[0].content
-	if !strings.Contains(content, "MCP servers:") {
-		t.Errorf("expected 'MCP servers:' in output, got %q", content)
-	}
-	if !strings.Contains(content, "server-a") || !strings.Contains(content, "server-b") {
-		t.Errorf("expected both server names in output, got %q", content)
+	if m.modal == nil {
+		t.Fatal("expected modal to be set")
 	}
 }
 
@@ -728,55 +655,30 @@ func TestCmdExport_WriteError(t *testing.T) {
 
 // --- cmdConfig with indexer disabled ---
 
-func TestCmdConfig_IndexerDisabled(t *testing.T) {
+func TestCmdConfig_ModalHasItems(t *testing.T) {
 	m := newTestModel()
-	disabled := false
-	m.indexerCfg = config.IndexerConfig{Enabled: &disabled}
-	m.indexDB = nil
+	m.agentCfg.Model = "claude-opus-4-6"
 
-	cmd := cmdConfig(&m, "")
-	if cmd != nil {
-		t.Error("expected nil cmd")
+	cmdConfig(&m, "")
+	if m.modal == nil {
+		t.Fatal("expected modal")
 	}
 
-	content := m.output.blocks[0].content
-	if !strings.Contains(content, "disabled") {
-		t.Errorf("expected 'disabled' in output for disabled indexer, got %q", content)
+	// Check that modal has theme and model items.
+	hasTheme, hasModel := false, false
+	for _, item := range m.modal.items {
+		if item.Label == "Theme" {
+			hasTheme = true
+		}
+		if item.Label == "Model" {
+			hasModel = true
+		}
 	}
-}
-
-// --- cmdConfig with positive MaxTurns ---
-
-func TestCmdConfig_PositiveMaxTurns(t *testing.T) {
-	m := newTestModel()
-	maxTurns := 10
-	m.agentCfg.MaxTurns = &maxTurns
-
-	cmd := cmdConfig(&m, "")
-	if cmd != nil {
-		t.Error("expected nil cmd")
+	if !hasTheme {
+		t.Error("expected Theme item in modal")
 	}
-
-	content := m.output.blocks[0].content
-	if !strings.Contains(content, "10") {
-		t.Errorf("expected '10' in output for max turns, got %q", content)
-	}
-}
-
-// --- cmdConfig with CWD ---
-
-func TestCmdConfig_WithCWD(t *testing.T) {
-	m := newTestModel()
-	m.agentCfg.CWD = "/tmp/testdir"
-
-	cmd := cmdConfig(&m, "")
-	if cmd != nil {
-		t.Error("expected nil cmd")
-	}
-
-	content := m.output.blocks[0].content
-	if !strings.Contains(content, "/tmp/testdir") {
-		t.Errorf("expected CWD in output, got %q", content)
+	if !hasModel {
+		t.Error("expected Model item in modal")
 	}
 }
 
