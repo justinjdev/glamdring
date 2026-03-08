@@ -233,10 +233,19 @@ func executeTools(
 ) ([]api.ContentBlock, error) {
 	results := make([]api.ContentBlock, 0, len(calls))
 
-	for _, tc := range calls {
-		// Check context.
+	for i, tc := range calls {
+		// Check context. Fill in error results for remaining calls so the
+		// message history stays valid (every tool_use needs a tool_result).
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("context cancelled: %w", ctx.Err())
+			for _, remaining := range calls[i:] {
+				results = append(results, api.ContentBlock{
+					Type:      "tool_result",
+					ToolUseID: remaining.id,
+					Content:   fmt.Sprintf("tool execution cancelled: %s", ctx.Err()),
+					IsError:   true,
+				})
+			}
+			return results, nil
 		}
 
 		// Parse the tool input for the message.
@@ -431,6 +440,16 @@ func executeTools(
 					}
 					if isForceShutdown(msg) && cancelFunc != nil {
 						results[len(results)-1].Content += "\n\n[Force shutdown received -- terminating]"
+						// Fill in error results for remaining calls so
+						// every tool_use has a matching tool_result.
+						for _, remaining := range calls[i+1:] {
+							results = append(results, api.ContentBlock{
+								Type:      "tool_result",
+								ToolUseID: remaining.id,
+								Content:   "tool execution cancelled: force shutdown",
+								IsError:   true,
+							})
+						}
 						cancelFunc()
 						return results, nil
 					}

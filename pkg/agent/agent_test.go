@@ -560,16 +560,31 @@ func TestExecuteTools_ContextCancelled(t *testing.T) {
 	cancel() // Cancel immediately.
 
 	out := make(chan Message, 64)
-	calls := []toolCall{makeToolCall("tc1", "Read", map[string]any{})}
+	calls := []toolCall{
+		makeToolCall("tc1", "Read", map[string]any{}),
+		makeToolCall("tc2", "Read", map[string]any{}),
+	}
 
-	_, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
+	results, err := executeTools(ctx, out, registry, calls, map[string]bool{}, nil, nil, nil, nil, nil)
 	close(out)
 
-	if err == nil {
-		t.Fatal("expected error from cancelled context")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "context cancelled") {
-		t.Errorf("expected 'context cancelled' in error, got: %v", err)
+	// Should return error tool_results for all calls to keep history valid.
+	if len(results) != len(calls) {
+		t.Fatalf("expected %d results, got %d", len(calls), len(results))
+	}
+	for i, r := range results {
+		if r.Type != "tool_result" {
+			t.Errorf("result[%d]: expected type tool_result, got %s", i, r.Type)
+		}
+		if !r.IsError {
+			t.Errorf("result[%d]: expected IsError=true", i)
+		}
+		if r.ToolUseID != calls[i].id {
+			t.Errorf("result[%d]: expected ToolUseID %s, got %s", i, calls[i].id, r.ToolUseID)
+		}
 	}
 }
 
