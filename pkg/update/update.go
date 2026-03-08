@@ -106,6 +106,9 @@ func isNewer(latest, current string) bool {
 	return lPat > cPat
 }
 
+// parseSemver parses a stable semver string (MAJOR.MINOR.PATCH). Prerelease
+// versions like "v1.0.0-rc1" are intentionally rejected so that only stable
+// releases are offered as updates.
 func parseSemver(s string) (major, minor, patch int, ok bool) {
 	s = strings.TrimPrefix(s, "v")
 	parts := strings.Split(s, ".")
