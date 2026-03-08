@@ -114,6 +114,14 @@ func (s *Session) appendUserMessage(blocks []api.ContentBlock) {
 			existing = []api.ContentBlock{{Type: "text", Text: v}}
 		case []api.ContentBlock:
 			existing = v
+		default:
+			// Unexpected type -- don't merge to avoid silent data loss.
+			log.Printf("warning: unexpected Content type %T in last user message, not merging", v)
+			s.messages = append(s.messages, api.RequestMessage{
+				Role:    "user",
+				Content: blocks,
+			})
+			return
 		}
 		s.messages[n-1].Content = append(existing, blocks...)
 		return
@@ -250,27 +258,7 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 			return
 
 		case "tool_use":
-			toolResults, err := executeTools(ctx, out, s.provider, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner, s.cfg.Permissions, s.teamScope, s.priorityCh, s.cfg.CancelFunc)
-			if err != nil {
-				// The assistant message with tool_use blocks was already
-				// appended above. We must add error tool_results for every
-				// call so the history stays valid for the next API request.
-				errBlocks := make([]api.ContentBlock, len(turnResult.toolCalls))
-				for i, tc := range turnResult.toolCalls {
-					errBlocks[i] = api.ContentBlock{
-						Type:      "tool_result",
-						ToolUseID: tc.id,
-						Content:   fmt.Sprintf("tool execution cancelled: %s", err.Error()),
-						IsError:   true,
-					}
-				}
-				s.messages = append(s.messages, api.RequestMessage{
-					Role:    "user",
-					Content: errBlocks,
-				})
-				emit(ctx, out, Message{Type: MessageError, Err: err})
-				return
-			}
+			toolResults, _ := executeTools(ctx, out, s.provider, turnResult.toolCalls, s.sessionAllow, s.cfg.HookRunner, s.cfg.Permissions, s.teamScope, s.priorityCh, s.cfg.CancelFunc)
 
 			s.messages = append(s.messages, api.RequestMessage{
 				Role:    "user",
