@@ -25,6 +25,22 @@ func (mockCreds) SetAuthHeaders(r *http.Request) error {
 }
 func (mockCreds) IsOAuth() bool { return false }
 
+// containsText checks whether a RequestMessage Content (string or []ContentBlock)
+// contains the given substring in any text.
+func containsText(content any, substr string) bool {
+	switch v := content.(type) {
+	case string:
+		return strings.Contains(v, substr)
+	case []api.ContentBlock:
+		for _, b := range v {
+			if strings.Contains(b.Text, substr) || strings.Contains(b.Content, substr) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // buildSSEResponse constructs a complete SSE stream for a simple text response.
 func buildSSEResponse(text, stopReason string) string {
 	var b strings.Builder
@@ -987,11 +1003,9 @@ func TestRunTurn_RegularMessagesInjectedBetweenTurns(t *testing.T) {
 	found := false
 	for _, msg := range s.Messages() {
 		if msg.Role == "user" {
-			if content, ok := msg.Content.(string); ok {
-				if strings.Contains(content, "team notification") {
-					found = true
-					break
-				}
+			if containsText(msg.Content, "team notification") {
+				found = true
+				break
 			}
 		}
 	}
@@ -1139,6 +1153,138 @@ func TestNewSession_CustomToolProvider(t *testing.T) {
 	s := NewSession(cfg)
 	if s.provider != provider {
 		t.Error("expected custom ToolProvider to be used")
+	}
+}
+
+// --- Tests for appendUserMessage ---
+
+func TestAppendUserMessage_FirstMessage(t *testing.T) {
+	s := &Session{}
+	s.appendUserMessage([]api.ContentBlock{{Type: "text", Text: "hello"}})
+
+	if len(s.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(s.messages))
+	}
+	if s.messages[0].Role != "user" {
+		t.Errorf("role = %q, want 'user'", s.messages[0].Role)
+	}
+	blocks, ok := s.messages[0].Content.([]api.ContentBlock)
+	if !ok {
+		t.Fatalf("expected []ContentBlock, got %T", s.messages[0].Content)
+	}
+	if len(blocks) != 1 || blocks[0].Text != "hello" {
+		t.Errorf("unexpected content: %+v", blocks)
+	}
+}
+
+func TestAppendUserMessage_MergesConsecutiveUser(t *testing.T) {
+	s := &Session{
+		messages: []api.RequestMessage{
+			{Role: "user", Content: []api.ContentBlock{
+				{Type: "tool_result", ToolUseID: "t1", Content: "cancelled", IsError: true},
+			}},
+		},
+	}
+	s.appendUserMessage([]api.ContentBlock{{Type: "text", Text: "next prompt"}})
+
+	if len(s.messages) != 1 {
+		t.Fatalf("expected 1 merged message, got %d", len(s.messages))
+	}
+	blocks, ok := s.messages[0].Content.([]api.ContentBlock)
+	if !ok {
+		t.Fatalf("expected []ContentBlock, got %T", s.messages[0].Content)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks in merged message, got %d", len(blocks))
+	}
+	if blocks[0].Type != "tool_result" || blocks[0].ToolUseID != "t1" {
+		t.Errorf("first block should be original tool_result, got %+v", blocks[0])
+	}
+	if blocks[1].Type != "text" || blocks[1].Text != "next prompt" {
+		t.Errorf("second block should be new text, got %+v", blocks[1])
+	}
+}
+
+func TestAppendUserMessage_MergesStringContent(t *testing.T) {
+	s := &Session{
+		messages: []api.RequestMessage{
+			{Role: "user", Content: "existing string"},
+		},
+	}
+	s.appendUserMessage([]api.ContentBlock{{Type: "text", Text: "new prompt"}})
+
+	if len(s.messages) != 1 {
+		t.Fatalf("expected 1 merged message, got %d", len(s.messages))
+	}
+	blocks, ok := s.messages[0].Content.([]api.ContentBlock)
+	if !ok {
+		t.Fatalf("expected []ContentBlock, got %T", s.messages[0].Content)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks, got %d", len(blocks))
+	}
+	if blocks[0].Text != "existing string" {
+		t.Errorf("first block text = %q, want 'existing string'", blocks[0].Text)
+	}
+	if blocks[1].Text != "new prompt" {
+		t.Errorf("second block text = %q, want 'new prompt'", blocks[1].Text)
+	}
+}
+
+func TestAppendUserMessage_NoMergeAfterAssistant(t *testing.T) {
+	s := &Session{
+		messages: []api.RequestMessage{
+			{Role: "assistant", Content: "I responded"},
+		},
+	}
+	s.appendUserMessage([]api.ContentBlock{{Type: "text", Text: "follow up"}})
+
+	if len(s.messages) != 2 {
+		t.Fatalf("expected 2 messages (no merge), got %d", len(s.messages))
+	}
+	if s.messages[1].Role != "user" {
+		t.Errorf("second message role = %q, want 'user'", s.messages[1].Role)
+	}
+}
+
+func TestTurn_MergesAfterCancelledTurn(t *testing.T) {
+	// Simulate a session that ended with error tool_results from cancellation.
+	srv := newMockServer(buildSSEResponse("recovered", "end_turn"))
+	defer srv.Close()
+
+	s := newTestSession(srv.URL)
+	// Manually set up message history as if a previous turn was cancelled:
+	// assistant with tool_use, then user with error tool_results.
+	s.messages = []api.RequestMessage{
+		{Role: "user", Content: "original prompt"},
+		{Role: "assistant", Content: []api.ContentBlock{
+			{Type: "tool_use", ID: "t1", Name: "Read", Input: json.RawMessage(`{}`)},
+		}},
+		{Role: "user", Content: []api.ContentBlock{
+			{Type: "tool_result", ToolUseID: "t1", Content: "tool execution cancelled: context canceled", IsError: true},
+		}},
+	}
+
+	// The next Turn should merge with the trailing user message, not create
+	// consecutive user messages.
+	msgs := drainMessages(s.Turn(context.Background(), "try again"))
+
+	// Verify no consecutive user messages in the history.
+	for i := 1; i < len(s.Messages()); i++ {
+		if s.Messages()[i].Role == "user" && s.Messages()[i-1].Role == "user" {
+			t.Errorf("consecutive user messages at index %d and %d", i-1, i)
+		}
+	}
+
+	// Should have gotten a response.
+	var gotDone bool
+	for _, m := range msgs {
+		if m.Type == MessageDone {
+			gotDone = true
+		}
+	}
+	if !gotDone {
+		t.Error("expected done message after recovery turn")
 	}
 }
 

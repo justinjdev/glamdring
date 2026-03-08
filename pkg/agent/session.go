@@ -79,10 +79,7 @@ func NewSession(cfg Config) *Session {
 // The user message is appended to the conversation history, preserving context
 // from prior turns.
 func (s *Session) Turn(ctx context.Context, prompt string) <-chan Message {
-	s.messages = append(s.messages, api.RequestMessage{
-		Role:    "user",
-		Content: prompt,
-	})
+	s.appendUserMessage([]api.ContentBlock{{Type: "text", Text: prompt}})
 
 	out := make(chan Message, 64)
 	go func() {
@@ -95,10 +92,7 @@ func (s *Session) Turn(ctx context.Context, prompt string) <-chan Message {
 // TurnWithBlocks sends structured content blocks (text + images) as a user message.
 // Use this instead of Turn when the message includes non-text content.
 func (s *Session) TurnWithBlocks(ctx context.Context, blocks []api.ContentBlock) <-chan Message {
-	s.messages = append(s.messages, api.RequestMessage{
-		Role:    "user",
-		Content: blocks,
-	})
+	s.appendUserMessage(blocks)
 
 	out := make(chan Message, 64)
 	go func() {
@@ -106,6 +100,28 @@ func (s *Session) TurnWithBlocks(ctx context.Context, blocks []api.ContentBlock)
 		s.runTurn(ctx, out)
 	}()
 	return out
+}
+
+// appendUserMessage appends user content blocks to the conversation history.
+// If the last message is already a user message (e.g. error tool_results from
+// a cancelled turn), the new blocks are merged into it to avoid consecutive
+// user messages which the API rejects.
+func (s *Session) appendUserMessage(blocks []api.ContentBlock) {
+	if n := len(s.messages); n > 0 && s.messages[n-1].Role == "user" {
+		var existing []api.ContentBlock
+		switch v := s.messages[n-1].Content.(type) {
+		case string:
+			existing = []api.ContentBlock{{Type: "text", Text: v}}
+		case []api.ContentBlock:
+			existing = v
+		}
+		s.messages[n-1].Content = append(existing, blocks...)
+		return
+	}
+	s.messages = append(s.messages, api.RequestMessage{
+		Role:    "user",
+		Content: blocks,
+	})
 }
 
 // Messages returns the current conversation history.

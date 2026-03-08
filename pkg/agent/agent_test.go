@@ -225,20 +225,8 @@ func TestTruncateToolResult_UTF8Boundary(t *testing.T) {
 	}
 	// The result before the notice should be valid UTF-8.
 	beforeNotice := strings.SplitN(result, "\n... (truncated", 2)[0]
-	for i := 0; i < len(beforeNotice); {
-		r, size := rune(beforeNotice[i]), 0
-		for _, b := range []byte(beforeNotice[i:]) {
-			_ = b
-			size++
-			if size >= 4 {
-				break
-			}
-		}
-		if r == '\uFFFD' {
-			t.Error("found replacement character in truncated result, expected clean UTF-8")
-			break
-		}
-		i += size
+	if !utf8.ValidString(beforeNotice) {
+		t.Error("truncated result is not valid UTF-8")
 	}
 }
 
@@ -2035,11 +2023,11 @@ func TestTruncateToolResult_OneBytePastBoundary(t *testing.T) {
 		t.Error("expected truncation notice for string one byte past max")
 	}
 	if len(result) <= maxToolResultSize {
-		// Result should be slightly larger than max due to truncation message.
-		beforeNotice := strings.SplitN(result, "\n... (truncated", 2)[0]
-		if len(beforeNotice) != maxToolResultSize {
-			t.Errorf("expected truncated portion to be exactly maxToolResultSize, got %d", len(beforeNotice))
-		}
+		t.Fatalf("expected truncation suffix to extend the result past %d bytes, got %d", maxToolResultSize, len(result))
+	}
+	beforeNotice := strings.SplitN(result, "\n... (truncated", 2)[0]
+	if len(beforeNotice) != maxToolResultSize {
+		t.Errorf("expected truncated portion to be exactly maxToolResultSize, got %d", len(beforeNotice))
 	}
 }
 
