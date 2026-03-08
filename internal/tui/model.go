@@ -488,9 +488,12 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cancelTurn = nil
 			}
 			m.spinning = false
+			m.spinnerLabel = ""
 			m.permission = nil
 			m.agentCh = nil
 			m.state = StateInput
+			m.output.ClearPending()
+			m.output.ClearToolSpinner()
 			m.output.AppendSystem("(interrupted)")
 			return m, m.input.Focus()
 		}

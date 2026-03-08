@@ -522,6 +522,15 @@ func (m *OutputModel) FlushAllPending() {
 	m.doRender()
 }
 
+// ClearPending discards all pending text buffers without rendering them.
+// Used when an agent turn is interrupted to prevent stale buffered text
+// from leaking into the next response.
+func (m *OutputModel) ClearPending() {
+	m.pendingText = ""
+	m.pendingThink = ""
+	m.pendingToolOut = ""
+}
+
 // drainChunkSize returns how many bytes to move from a pending buffer of
 // size n. Adapts so small buffers drip slowly (smooth) while large buffers
 // drain fast enough to keep up with the API.
