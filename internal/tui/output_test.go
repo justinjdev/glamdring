@@ -172,8 +172,7 @@ func TestRenderThinkingBlock_WithContent(t *testing.T) {
 	m.AppendThinking("deep thoughts")
 	m.FlushAllPending()
 	m.finalizePreviousBlock()
-	m.rerender()
-	m.FlushRender()
+	m.doRender()
 
 	if len(m.blocks) == 0 {
 		t.Fatal("expected at least 1 block")
@@ -340,8 +339,7 @@ func TestRendererDirtyRetriesOnFailure(t *testing.T) {
 	// Set rendererDirty with width=1 (very small but valid).
 	m.width = 1
 	m.rendererDirty = true
-	m.rerender()
-	m.FlushRender()
+	m.doRender()
 
 	// glamour should succeed even with width 1, so dirty should be consumed.
 	if m.rendererDirty {

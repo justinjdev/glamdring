@@ -319,8 +319,6 @@ func (m *OutputModel) AppendHeader(content string, styles Styles, palette ThemeP
 	m.doRender()
 }
 
-// bannerCols returns the number of columns for the banner image,
-// capped to a reasonable width.
 // AppendUserMessage adds a styled user message header and text.
 func (m *OutputModel) AppendUserMessage(text string) {
 	m.finalizePreviousBlock()
@@ -564,12 +562,6 @@ func (m *OutputModel) SetSize(width, height int) {
 	}
 
 	m.doRender()
-}
-
-// rerender marks the output as needing a re-render. The actual rendering is
-// deferred until FlushRender is called, allowing render throttling during streaming.
-func (m *OutputModel) rerender() {
-	m.dirty = true
 }
 
 // IsDirty returns true if content has changed since the last render.
