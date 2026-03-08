@@ -979,8 +979,8 @@ func TestProcessTurn_CacheTokens(t *testing.T) {
 	if result.cacheReadTokens != 30 {
 		t.Errorf("cacheReadTokens = %d, want 30", result.cacheReadTokens)
 	}
-	if result.lastRequestInputTokens != 100 {
-		t.Errorf("lastRequestInputTokens = %d, want 100", result.lastRequestInputTokens)
+	if result.lastRequestInputTokens != 175 {
+		t.Errorf("lastRequestInputTokens = %d, want 175", result.lastRequestInputTokens)
 	}
 }
 

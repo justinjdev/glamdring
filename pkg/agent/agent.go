@@ -108,7 +108,9 @@ func processTurn(ctx context.Context, events <-chan api.StreamEvent, out chan<- 
 				result.outputTokens += ev.Message.Usage.OutputTokens
 				result.cacheCreationTokens += ev.Message.Usage.CacheCreationInputTokens
 				result.cacheReadTokens += ev.Message.Usage.CacheReadInputTokens
-				result.lastRequestInputTokens = ev.Message.Usage.InputTokens
+				result.lastRequestInputTokens = ev.Message.Usage.InputTokens +
+				ev.Message.Usage.CacheCreationInputTokens +
+				ev.Message.Usage.CacheReadInputTokens
 			}
 
 		case "content_block_start":

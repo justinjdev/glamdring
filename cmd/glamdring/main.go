@@ -260,7 +260,7 @@ func main() {
 	}
 	m.InitMCPStatus()
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	// Wire MCP death callback to send bubbletea message.
 	// Note: there is a small race window between StartServer (which spawns
@@ -291,7 +291,7 @@ func runDemo(themeName string) {
 	}
 	m.SetTheme(palette, false)
 	m.PopulateDemoContent()
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
