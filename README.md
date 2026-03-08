@@ -27,6 +27,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Custom agents** — define specialized subagents in `.glamdring/agents/`
 - **Subagents** — parallel task spawning via the Task tool
 - **Themes** — five LOTR-inspired color themes (glamdring, rivendell, mithril, lothlorien, shire) with `/theme` runtime switching, high contrast mode, and user-defined custom themes
+- **Auto-update** — startup notification when a new version is available, `/update` command and `glamdring update` CLI to download and replace the binary with checksum verification. Disable startup check with `"disable_update_check": true` in settings.
 - **Agent teams** (experimental) — coordinated multi-agent workflows with phase-gated tool access, inter-agent messaging, per-task file locking with automatic release, task dependencies with blocked-claim prevention, message ordering (timestamps + sequence numbers), force shutdown, team observability, context compaction archiving, and built-in workflow presets (RPIV, plan-implement, scoped) plus custom workflows from settings. Enable with `--experimental-teams` flag or `"experimental": {"teams": true}` in settings.
 
 ## Install
@@ -69,6 +70,7 @@ glamdring
 | `glamdring login` | Authenticate with Claude account |
 | `glamdring logout` | Remove credentials |
 | `glamdring version` | Print version |
+| `glamdring update` | Check for and install updates |
 
 ### Flags
 

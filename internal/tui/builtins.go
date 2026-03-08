@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justin/glamdring/pkg/agent"
 	"github.com/justin/glamdring/pkg/index"
+	"github.com/justin/glamdring/pkg/update"
 )
 
 // BuiltinHandler processes a built-in slash command. It may modify the model
@@ -35,6 +36,7 @@ var builtinCommands = map[string]BuiltinHandler{
 	"export":   cmdExport,
 	"copy":     cmdCopy,
 	"theme":    cmdTheme,
+	"update":   cmdUpdate,
 }
 
 // builtinDescriptions provides short help text for each built-in command.
@@ -53,6 +55,7 @@ var builtinDescriptions = map[string]string{
 	"export":   "Export conversation (--html for HTML format)",
 	"copy":     "Copy last response to clipboard",
 	"theme":    "Show or switch theme",
+	"update":   "Check for and install updates",
 }
 
 // BuiltinNames returns a sorted list of built-in command names.
@@ -622,6 +625,21 @@ func cmdTheme(m *Model, args string) tea.Cmd {
 	m.layoutComponents()
 	m.output.AppendSystem(fmt.Sprintf("Theme changed to: %s", args))
 	return nil
+}
+
+// cmdUpdate checks for a newer version and prompts the user to install it.
+func cmdUpdate(m *Model, args string) tea.Cmd {
+	if m.spinning {
+		m.output.AppendSystem("Update check already in progress.")
+		return nil
+	}
+	m.output.AppendSystem("Checking for updates...")
+	m.spinning = true
+	version := m.version
+	return func() tea.Msg {
+		rel, err := update.CheckLatest(version)
+		return updateCheckDoneMsg{rel: rel, err: err}
+	}
 }
 
 const compactPrompt = `Summarize our conversation so far into a compact context block. Be aggressive about compression — discard noise, keep only what matters for continuing work.

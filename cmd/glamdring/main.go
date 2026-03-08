@@ -24,6 +24,7 @@ import (
 	"github.com/justin/glamdring/pkg/mcp"
 	"github.com/justin/glamdring/pkg/teams"
 	"github.com/justin/glamdring/pkg/tools"
+	"github.com/justin/glamdring/pkg/update"
 )
 
 // version is set at build time via ldflags:
@@ -49,6 +50,9 @@ func main() {
 			return
 		case "version", "--version":
 			fmt.Printf("glamdring %s\n", version)
+			return
+		case "update":
+			runUpdate(version)
 			return
 		}
 	}
@@ -222,6 +226,8 @@ func main() {
 
 	m := tui.NewWithAgent(ctx, cfg)
 	m.SetSettings(settings)
+	m.SetVersion(version)
+	m.SetDisableUpdateCheck(settings.DisableUpdateCheck)
 
 	// Apply theme from settings.
 	{
@@ -564,4 +570,47 @@ func makeTeamSetupFunc(registry *teams.ManagerRegistry, creds auth.Credentials, 
 			},
 		}, nil
 	}
+}
+
+// runUpdate performs a CLI-based update check and install (glamdring update).
+func runUpdate(currentVersion string) {
+	fmt.Println("Checking for updates...")
+	rel, err := update.CheckLatest(currentVersion)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if rel == nil {
+		fmt.Printf("glamdring %s is up to date.\n", currentVersion)
+		return
+	}
+
+	fmt.Printf("Update available: %s -> %s\n", currentVersion, rel.Version)
+	fmt.Print("Install? [y/N] ")
+
+	var answer string
+	fmt.Scanln(&answer)
+	if answer != "y" && answer != "Y" {
+		fmt.Println("Update cancelled.")
+		return
+	}
+
+	fmt.Println("Downloading...")
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := update.Download(rel, exe); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Updated to %s. Restart glamdring to use the new version.\n", rel.Version)
 }

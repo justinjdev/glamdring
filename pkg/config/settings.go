@@ -11,15 +11,16 @@ import (
 
 // Settings holds resolved configuration values.
 type Settings struct {
-	Model        string                       `json:"model,omitempty"`
-	MaxTurns     *int                         `json:"max_turns,omitempty"`
-	MCPServers   map[string]MCPServerConfig   `json:"mcp_servers,omitempty"`
-	Indexer      IndexerConfig                `json:"indexer,omitempty"`
-	Experimental ExperimentalConfig           `json:"experimental,omitempty"`
-	Workflows    map[string]WorkflowConfig    `json:"workflows,omitempty"`
-	Theme        string                       `json:"theme,omitempty"`
-	HighContrast bool                         `json:"high_contrast,omitempty"`
-	Themes       map[string]UserThemeConfig   `json:"themes,omitempty"`
+	Model              string                     `json:"model,omitempty"`
+	MaxTurns           *int                       `json:"max_turns,omitempty"`
+	MCPServers         map[string]MCPServerConfig `json:"mcp_servers,omitempty"`
+	Indexer            IndexerConfig              `json:"indexer,omitempty"`
+	Experimental       ExperimentalConfig         `json:"experimental,omitempty"`
+	Workflows          map[string]WorkflowConfig  `json:"workflows,omitempty"`
+	Theme              string                     `json:"theme,omitempty"`
+	HighContrast       bool                       `json:"high_contrast,omitempty"`
+	Themes             map[string]UserThemeConfig `json:"themes,omitempty"`
+	DisableUpdateCheck bool                       `json:"disable_update_check,omitempty"`
 }
 
 // UserThemeConfig holds user-defined theme colors from settings.json.
@@ -62,7 +63,7 @@ type PhaseConfig struct {
 // IndexerConfig controls the shire code indexer integration.
 type IndexerConfig struct {
 	Enabled     *bool  `json:"enabled,omitempty"`      // nil = auto-detect, true = force on, false = disable
-	Command     string `json:"command,omitempty"`       // indexer binary name (default: "shire")
+	Command     string `json:"command,omitempty"`      // indexer binary name (default: "shire")
 	AutoRebuild *bool  `json:"auto_rebuild,omitempty"` // rebuild index after file-modifying turns (default: true)
 }
 
@@ -259,6 +260,9 @@ func mergeSettings(base, override *Settings) {
 		for k, v := range override.Themes {
 			base.Themes[k] = v
 		}
+	}
+	if override.DisableUpdateCheck {
+		base.DisableUpdateCheck = true
 	}
 }
 

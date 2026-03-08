@@ -22,6 +22,7 @@ import (
 	"github.com/justin/glamdring/pkg/index"
 	"github.com/justin/glamdring/pkg/mcp"
 	"github.com/justin/glamdring/pkg/tools"
+	"github.com/justin/glamdring/pkg/update"
 	"golang.org/x/term"
 )
 
@@ -33,6 +34,7 @@ const (
 	StateRunning                 // agent is working
 	StatePermission              // waiting for permission response
 	StateCheckpoint              // checkpoint found, awaiting user decision
+	StateUpdate                  // waiting for update confirmation
 )
 
 // AgentMsg wraps an agent.Message for delivery through the bubbletea message system.
@@ -112,6 +114,15 @@ type Model struct {
 	// baseTools holds non-MCP tools so we can rebuild the full tool list
 	// when MCP servers change (restart, disconnect, enable/disable).
 	baseTools []tools.Tool
+
+	// version is the compiled-in version string, used for update checks.
+	version string
+
+	// disableUpdateCheck suppresses the async startup update check.
+	disableUpdateCheck bool
+
+	// pendingUpdate holds a release awaiting user confirmation in StateUpdate.
+	pendingUpdate *update.Release
 }
 
 // New creates the root TUI model without agent wiring.
@@ -217,6 +228,16 @@ func (m *Model) SetBaseTools(t []tools.Tool) {
 	m.baseTools = t
 }
 
+// SetVersion sets the compiled-in version string for update checks.
+func (m *Model) SetVersion(v string) {
+	m.version = v
+}
+
+// SetDisableUpdateCheck suppresses the async startup update check.
+func (m *Model) SetDisableUpdateCheck(v bool) {
+	m.disableUpdateCheck = v
+}
+
 // InitMCPStatus initializes the MCP status bar counts. Call this
 // synchronously before tea.NewProgram to ensure the counts are captured.
 func (m *Model) InitMCPStatus() {
@@ -251,12 +272,16 @@ func (m *Model) refreshMCPTools() {
 
 // Init initializes the TUI.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		m.input.Init(),
 		m.output.Init(),
 		m.startupCmd(),
 		m.spinner.Tick,
-	)
+	}
+	if !m.disableUpdateCheck {
+		cmds = append(cmds, m.checkUpdateCmd())
+	}
+	return tea.Batch(cmds...)
 }
 
 // startupCmd fires SessionStart hooks and checks for a checkpoint file.
@@ -283,6 +308,22 @@ func (m Model) startupCmd() tea.Cmd {
 		}
 
 		return nil
+	}
+}
+
+// checkUpdateCmd returns a tea.Cmd that checks for a newer version in the background.
+func (m Model) checkUpdateCmd() tea.Cmd {
+	version := m.version
+	return func() tea.Msg {
+		rel, err := update.CheckLatest(version)
+		if err != nil {
+			log.Printf("update check failed: %v", err)
+			return nil
+		}
+		if rel == nil {
+			return nil
+		}
+		return updateAvailableMsg{version: rel.Version}
 	}
 }
 
@@ -351,6 +392,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.indexDB = msg.db
 		}
 		return m, nil
+
+	case updateAvailableMsg:
+		m.output.AppendSystem(fmt.Sprintf("Update available: %s -- run /update to install", msg.version))
+		return m, nil
+
+	case updateCheckDoneMsg:
+		m.spinning = false
+		if msg.err != nil {
+			m.output.AppendError(fmt.Sprintf("Update check failed: %s", msg.err))
+			m.state = StateInput
+			return m, m.input.Focus()
+		}
+		if msg.rel == nil {
+			m.output.AppendSystem(fmt.Sprintf("glamdring %s is up to date.", m.version))
+			m.state = StateInput
+			return m, m.input.Focus()
+		}
+		m.pendingUpdate = msg.rel
+		m.state = StateUpdate
+		m.output.AppendSystem(fmt.Sprintf("Update glamdring %s -> %s?", m.version, msg.rel.Version))
+		return m, nil
+
+	case updateDoneMsg:
+		if msg.err != nil {
+			m.output.AppendError(fmt.Sprintf("Update failed: %s", msg.err))
+		} else {
+			m.output.AppendSystem(fmt.Sprintf("Updated to %s. Restart glamdring to use the new version.", msg.version))
+		}
+		m.state = StateInput
+		return m, m.input.Focus()
 
 	case spinner.TickMsg:
 		if m.spinning {
@@ -454,6 +525,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case StateCheckpoint:
 		return m.handleCheckpointKey(msg)
 
+	case StateUpdate:
+		return m.handleUpdateKey(msg)
+
 	case StateRunning:
 		// Toggle expand/collapse on tool result blocks.
 		if msg.String() == "e" {
@@ -483,7 +557,7 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 		if handler, ok := DispatchBuiltin(cmdName); ok {
 			m.input.Reset()
 			cmd := handler(&m, args)
-			if m.state != StateRunning {
+			if m.state != StateRunning && m.state != StateUpdate {
 				// Normal built-in — stay in input mode.
 				m.state = StateInput
 				return m, tea.Batch(cmd, m.input.Focus())
@@ -588,6 +662,23 @@ type checkpointFoundMsg struct {
 type indexRebuildDoneMsg struct {
 	db  *index.DB
 	err error
+}
+
+// updateAvailableMsg signals that a newer version is available.
+type updateAvailableMsg struct {
+	version string
+}
+
+// updateCheckDoneMsg signals that a manual /update check completed.
+type updateCheckDoneMsg struct {
+	rel *update.Release
+	err error
+}
+
+// updateDoneMsg signals that a download attempt completed.
+type updateDoneMsg struct {
+	version string
+	err     error
 }
 
 // handleAgentMsg routes agent messages to the appropriate component.
@@ -756,6 +847,37 @@ func (m Model) handleCheckpointKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleUpdateKey processes key presses during the update confirmation prompt.
+func (m Model) handleUpdateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		rel := m.pendingUpdate
+		m.pendingUpdate = nil
+		m.state = StateInput
+		m.output.AppendSystem("Downloading update...")
+		return m, func() tea.Msg {
+			exe, err := os.Executable()
+			if err != nil {
+				return updateDoneMsg{err: err}
+			}
+			exe, err = filepath.EvalSymlinks(exe)
+			if err != nil {
+				return updateDoneMsg{err: err}
+			}
+			if err := update.Download(rel, exe); err != nil {
+				return updateDoneMsg{err: err}
+			}
+			return updateDoneMsg{version: rel.Version}
+		}
+	case "n", "N":
+		m.pendingUpdate = nil
+		m.state = StateInput
+		m.output.AppendSystem("Update cancelled.")
+		return m, m.input.Focus()
+	}
+	return m, nil
+}
+
 // extractLastText returns the content of the last text block in the output,
 // used to capture the agent's compact summary.
 func (m *Model) extractLastText() string {
@@ -889,6 +1011,8 @@ func (m Model) View() string {
 		input = m.renderPermissionPrompt()
 	case StateCheckpoint:
 		input = m.renderCheckpointPrompt()
+	case StateUpdate:
+		input = m.renderUpdatePrompt()
 	default:
 		input = m.input.View()
 	}
@@ -919,6 +1043,16 @@ func (m Model) renderCheckpointPrompt() string {
 	title := m.styles.PermissionTitle.Render("Load checkpoint from previous session?")
 	help := m.styles.PermissionHelp.Render("[y]es  [n]o")
 
+	content := title + "\n" + help
+	return m.styles.PermissionBorder.
+		Width(m.width - 4).
+		Render(content)
+}
+
+// renderUpdatePrompt renders the inline update confirmation prompt.
+func (m Model) renderUpdatePrompt() string {
+	title := m.styles.PermissionTitle.Render("Install update?")
+	help := m.styles.PermissionHelp.Render("[y]es  [n]o")
 	content := title + "\n" + help
 	return m.styles.PermissionBorder.
 		Width(m.width - 4).
