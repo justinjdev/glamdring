@@ -139,49 +139,115 @@ func cmdCost(m *Model, args string) tea.Cmd {
 
 // cmdConfig displays the current configuration.
 func cmdConfig(m *Model, args string) tea.Cmd {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Model:     %s\n", m.agentCfg.Model))
-
-	if m.agentCfg.MaxTurns != nil && *m.agentCfg.MaxTurns > 0 {
-		b.WriteString(fmt.Sprintf("Max turns: %d\n", *m.agentCfg.MaxTurns))
-	} else {
-		b.WriteString("Max turns: unlimited\n")
-	}
-
-	if m.agentCfg.CWD != "" {
-		b.WriteString(fmt.Sprintf("CWD:       %s\n", m.agentCfg.CWD))
-	}
-
-	if m.indexDB != nil {
-		b.WriteString(fmt.Sprintf("Indexer:    %s (auto-rebuild: %v)\n", m.indexerCfg.IndexerCommand(), m.indexerCfg.IndexerAutoRebuild()))
-	} else if enabled := m.indexerCfg.IndexerEnabled(); enabled != nil && !*enabled {
-		b.WriteString("Indexer:    disabled\n")
-	}
-
-	if m.settings.MCPServers != nil && len(m.settings.MCPServers) > 0 {
-		names := make([]string, 0, len(m.settings.MCPServers))
-		for name := range m.settings.MCPServers {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		b.WriteString(fmt.Sprintf("MCP servers: %s", strings.Join(names, ", ")))
-	}
-
-	m.output.AppendSystem(strings.TrimRight(b.String(), "\n"))
+	modal := m.buildConfigModal("")
+	m.openModal(modal)
 	return nil
 }
 
-// cmdModel shows or changes the current model.
+// knownModels lists common Claude models for the model picker.
+var knownModels = []string{
+	"claude-opus-4-6",
+	"claude-sonnet-4-6",
+	"claude-haiku-4-5-20251001",
+}
+
+// buildConfigModal creates the interactive settings modal.
+// If focusLabel is non-empty, the cursor starts on that item.
+func (m *Model) buildConfigModal(focusLabel string) *ModalModel {
+	// Collect theme names.
+	themes := ThemeNames()
+	if m.settings.Themes != nil {
+		for name := range m.settings.Themes {
+			themes = append(themes, name)
+		}
+		sort.Strings(themes)
+	}
+
+	// Collect model choices -- known models plus current if not in list.
+	models := make([]string, len(knownModels))
+	copy(models, knownModels)
+	currentModel := m.agentCfg.Model
+	found := false
+	for _, mod := range models {
+		if mod == currentModel {
+			found = true
+			break
+		}
+	}
+	if !found {
+		models = append([]string{currentModel}, models...)
+	}
+
+	isYolo := m.session != nil && m.session.IsYolo()
+
+	items := []MenuItem{
+		{Kind: MenuSection, Label: "Appearance"},
+		{Kind: MenuChoice, ID: "theme", Label: "Theme", Value: m.palette.Name, Choices: themes},
+		{Kind: MenuSection, Label: "Model"},
+		{Kind: MenuChoice, ID: "model", Label: "Model", Value: currentModel, Choices: models},
+		{Kind: MenuSection, Label: "Behavior"},
+		{Kind: MenuToggle, ID: "thinking", Label: "Thinking", Value: boolToOnOff(m.showThinking), Active: m.showThinking},
+		{Kind: MenuToggle, ID: "yolo", Label: "Yolo", Value: boolToOnOff(isYolo), Active: isYolo},
+		{Kind: MenuToggle, ID: "high_contrast", Label: "High contrast", Value: boolToOnOff(m.settings.HighContrast), Active: m.settings.HighContrast},
+	}
+
+	modal := NewModal("Settings", items, m.palette)
+	if focusLabel != "" {
+		modal.FocusItem(focusLabel)
+	}
+	return modal
+}
+
+// applyTheme switches to a named theme, persists the choice, and rebuilds styles.
+func (m *Model) applyTheme(name string) {
+	var palette ThemePalette
+	var found bool
+
+	if m.settings.Themes != nil {
+		if ucfg, ok := m.settings.Themes[name]; ok {
+			palette = PaletteFromUserConfig(name, ucfg)
+			found = true
+		}
+	}
+	if !found {
+		palette, found = LookupTheme(name)
+	}
+	if !found {
+		return
+	}
+
+	m.SetTheme(palette, m.settings.HighContrast)
+	m.settings.Theme = name
+	m.layoutComponents()
+	m.output.RefreshHeader(m.palette)
+
+	// Rebuild modal styles with new palette.
+	if m.modal != nil {
+		m.modal.palette = m.palette
+	}
+
+	_ = config.SaveUserSetting("theme", name)
+}
+
+func boolToOnOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
+
+// cmdModel opens the config modal focused on model, or switches directly with an arg.
 func cmdModel(m *Model, args string) tea.Cmd {
 	if args == "" {
-		m.output.AppendSystem(fmt.Sprintf("Current model: %s", m.agentCfg.Model))
+		modal := m.buildConfigModal("Model")
+		m.openModal(modal)
 		return nil
 	}
 
 	m.agentCfg.Model = args
-	m.session = nil // force recreation with new model on next submit
+	m.session = nil
 	m.statusbar.Update(args, m.totalInputTokens, m.totalOutputTokens, m.turn)
-	m.output.AppendSystem(fmt.Sprintf("Model changed to: %s", args))
+	_ = config.SaveUserSetting("model", args)
 	return nil
 }
 
@@ -554,83 +620,18 @@ func cmdCopy(m *Model, args string) tea.Cmd {
 	return nil
 }
 
-// cmdTheme lists available themes or switches to a named theme at runtime.
+// cmdTheme opens the config modal focused on theme, or switches directly with an arg.
 func cmdTheme(m *Model, args string) tea.Cmd {
 	args = strings.TrimSpace(args)
 
 	if args == "" {
-		// List all available themes.
-		var b strings.Builder
-		b.WriteString("Available themes:\n")
-
-		builtins := ThemeNames()
-		b.WriteString("  Built-in:\n")
-		for _, name := range builtins {
-			marker := "  "
-			if name == m.palette.Name {
-				marker = "* "
-			}
-			b.WriteString(fmt.Sprintf("    %s%s\n", marker, name))
-		}
-
-		if len(m.settings.Themes) > 0 {
-			userNames := make([]string, 0, len(m.settings.Themes))
-			for name := range m.settings.Themes {
-				userNames = append(userNames, name)
-			}
-			sort.Strings(userNames)
-			b.WriteString("  User-defined:\n")
-			for _, name := range userNames {
-				marker := "  "
-				if name == m.palette.Name {
-					marker = "* "
-				}
-				b.WriteString(fmt.Sprintf("    %s%s\n", marker, name))
-			}
-		}
-
-		m.output.AppendSystem(strings.TrimRight(b.String(), "\n"))
+		modal := m.buildConfigModal("Theme")
+		m.openModal(modal)
 		return nil
 	}
 
-	// Switch to a named theme.
-	var palette ThemePalette
-	var found bool
-
-	// Check user-defined themes first.
-	if m.settings.Themes != nil {
-		if ucfg, ok := m.settings.Themes[args]; ok {
-			palette = PaletteFromUserConfig(args, ucfg)
-			found = true
-		}
-	}
-
-	// Fall back to built-in themes.
-	if !found {
-		palette, found = LookupTheme(args)
-	}
-
-	if !found {
-		all := ThemeNames()
-		if len(m.settings.Themes) > 0 {
-			for name := range m.settings.Themes {
-				all = append(all, name)
-			}
-			sort.Strings(all)
-		}
-		m.output.AppendError(fmt.Sprintf("Unknown theme %q. Available: %s", args, strings.Join(all, ", ")))
-		return nil
-	}
-
-	m.SetTheme(palette, m.settings.HighContrast)
-	m.settings.Theme = args
-	m.layoutComponents()
-
-	if err := config.SaveUserSetting("theme", args); err != nil {
-		m.output.AppendSystem(fmt.Sprintf("Theme changed to: %s (failed to save: %v)", args, err))
-	} else {
-		m.output.AppendSystem(fmt.Sprintf("Theme changed to: %s (saved)", args))
-	}
+	// Direct switch by name.
+	m.applyTheme(args)
 	return nil
 }
 
