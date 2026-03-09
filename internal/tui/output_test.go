@@ -489,3 +489,20 @@ func TestParseTodos_EmptyArray(t *testing.T) {
 		t.Errorf("expected empty slice, got %v", items)
 	}
 }
+
+func TestParseTodos_InvalidStatusSkipped(t *testing.T) {
+	input := map[string]any{
+		"todos": []any{
+			map[string]any{"id": "1", "content": "Valid", "status": "pending"},
+			map[string]any{"id": "2", "content": "Bad status", "status": "unknown"},
+			map[string]any{"id": "3", "content": "No status", "status": ""},
+		},
+	}
+	items := parseTodos(input)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item (invalid statuses skipped), got %v", items)
+	}
+	if items[0].Content != "Valid" {
+		t.Errorf("unexpected item: %+v", items[0])
+	}
+}

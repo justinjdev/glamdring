@@ -813,6 +813,10 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.lastToolWasTodo = am.ToolName == "TodoWrite"
 		if m.lastToolWasTodo {
 			todos := parseTodos(am.ToolInput)
+			if len(todos) == 0 {
+				m.lastToolWasTodo = false
+				return m, nil
+			}
 			m.output.UpdateTaskList(todos)
 			return m, nil
 		}

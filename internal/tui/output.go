@@ -588,6 +588,11 @@ func parseTodos(input map[string]any) []todoItem {
 		if content == "" {
 			continue
 		}
+		switch status {
+		case "pending", "in_progress", "completed":
+		default:
+			continue
+		}
 		items = append(items, todoItem{ID: id, Content: content, Status: status})
 	}
 	return items
