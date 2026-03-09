@@ -475,3 +475,17 @@ func TestParseTodos_MissingTodosKey(t *testing.T) {
 		t.Errorf("expected nil for missing todos key, got %v", items)
 	}
 }
+
+func TestParseTodos_NonArrayTodosValue(t *testing.T) {
+	items := parseTodos(map[string]any{"todos": "not an array"})
+	if items != nil {
+		t.Errorf("expected nil for non-array todos value, got %v", items)
+	}
+}
+
+func TestParseTodos_EmptyArray(t *testing.T) {
+	items := parseTodos(map[string]any{"todos": []any{}})
+	if len(items) != 0 {
+		t.Errorf("expected empty slice, got %v", items)
+	}
+}

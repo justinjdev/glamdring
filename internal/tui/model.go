@@ -544,6 +544,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = StateInput
 			m.output.ClearPending()
 			m.output.ClearToolSpinner()
+			m.output.FinalizeTaskList()
+			m.lastToolWasTodo = false
 			m.output.FinalizeStar()
 			m.output.AppendSystem("(interrupted)")
 			return m, m.input.Focus()
@@ -840,6 +842,12 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.output.FlushAllPending()
 		if m.lastToolWasTodo {
 			m.lastToolWasTodo = false
+			if am.ToolIsError {
+				m.output.AppendToolResult(am.ToolOutput, true)
+				m.spinning = true
+				m.spinnerLabel = "Thinking..."
+				return m, m.spinner.Tick
+			}
 			m.spinning = true
 			m.spinnerLabel = "Thinking..."
 			return m, m.spinner.Tick
@@ -859,6 +867,8 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.spinning = false
 		m.output.ClearToolSpinner()
 		m.output.FlushAllPending()
+		m.output.FinalizeTaskList()
+		m.lastToolWasTodo = false
 		m.output.FinalizeStar()
 		errMsg := "unknown error"
 		if am.Err != nil {
@@ -926,6 +936,8 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		return m, m.input.Focus()
 
 	case agent.MessageMaxTurnsReached:
+		m.output.FinalizeTaskList()
+		m.lastToolWasTodo = false
 		m.output.AppendError("max turns reached")
 		m.state = StateInput
 		return m, m.input.Focus()
