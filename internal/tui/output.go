@@ -466,6 +466,10 @@ func (m *OutputModel) appendToolOutImmediate(text string) {
 		if last.kind == blockToolResult && !last.finalized {
 			last.content += text
 			last.rendered = "" // invalidate cache
+			idx := len(m.blocks) - 1
+			if strings.Count(last.content, "\n") >= collapseThreshold {
+				m.collapsed[idx] = true
+			}
 			return
 		}
 	}
@@ -688,16 +692,16 @@ func (m *OutputModel) HasPending() bool {
 func (m *OutputModel) DrainPending() bool {
 	drained := false
 
-	if len(m.pendingText) > 0 {
-		take := runeAlignedChunk(m.pendingText)
-		m.appendTextImmediate(m.pendingText[:take])
-		m.pendingText = m.pendingText[take:]
-		drained = true
-	}
 	if len(m.pendingThink) > 0 {
 		take := runeAlignedChunk(m.pendingThink)
 		m.appendThinkImmediate(m.pendingThink[:take])
 		m.pendingThink = m.pendingThink[take:]
+		drained = true
+	}
+	if len(m.pendingText) > 0 {
+		take := runeAlignedChunk(m.pendingText)
+		m.appendTextImmediate(m.pendingText[:take])
+		m.pendingText = m.pendingText[take:]
 		drained = true
 	}
 	if len(m.pendingToolOut) > 0 {
@@ -717,13 +721,13 @@ func (m *OutputModel) DrainPending() bool {
 
 // FlushAllPending moves all remaining pending text into blocks and renders.
 func (m *OutputModel) FlushAllPending() {
-	if len(m.pendingText) > 0 {
-		m.appendTextImmediate(m.pendingText)
-		m.pendingText = ""
-	}
 	if len(m.pendingThink) > 0 {
 		m.appendThinkImmediate(m.pendingThink)
 		m.pendingThink = ""
+	}
+	if len(m.pendingText) > 0 {
+		m.appendTextImmediate(m.pendingText)
+		m.pendingText = ""
 	}
 	if len(m.pendingToolOut) > 0 {
 		m.appendToolOutImmediate(m.pendingToolOut)

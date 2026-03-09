@@ -53,8 +53,8 @@ func TestBrighten(t *testing.T) {
 
 func TestThemeNames(t *testing.T) {
 	names := ThemeNames()
-	if len(names) != 5 {
-		t.Fatalf("ThemeNames() returned %d names, want 5", len(names))
+	if len(names) != 6 {
+		t.Fatalf("ThemeNames() returned %d names, want 6", len(names))
 	}
 	// Should be sorted.
 	for i := 1; i < len(names); i++ {

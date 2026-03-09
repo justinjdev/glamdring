@@ -1302,7 +1302,8 @@ func (m *Model) layoutComponents() {
 	desiredInput := m.input.DesiredHeight()
 	inputTotalHeight := desiredInput + inputBorderHeight
 
-	outputHeight := m.height - inputTotalHeight - statusHeight - paddingLines
+	spinnerHeight := 1 // always reserved for the spinner line (empty when not spinning)
+	outputHeight := m.height - inputTotalHeight - statusHeight - paddingLines - spinnerHeight
 	if outputHeight < 1 {
 		outputHeight = 1
 	}
@@ -1335,12 +1336,11 @@ func (m Model) View() string {
 		input = m.input.View()
 	}
 
-	parts := []string{output}
+	var spinnerLine string
 	if m.spinning && m.spinnerLabel != "" {
-		spinnerLine := m.styles.SpinnerText.Render(m.spinner.View() + " " + m.spinnerLabel)
-		parts = append(parts, spinnerLine)
+		spinnerLine = m.styles.SpinnerText.Render(m.spinner.View() + " " + m.spinnerLabel)
 	}
-	parts = append(parts, "", status, input)
+	parts := []string{output, spinnerLine, "", status, input}
 
 	base := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
