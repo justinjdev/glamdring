@@ -321,19 +321,19 @@
 		<p>For the complete reference — phase gates, task dependencies, file locking, inter-agent messaging, context compaction, and team observability — see the sections below.</p>
 
 		<div class="ref-grid">
-			<a href="{base}/agent-teams#phase-gates" class="ref-card">
+			<a href="#phase-gates" class="ref-card">
 				<span class="ref-title">Phase Gates</span>
 				<span class="ref-desc">auto, leader, condition gate types and configuration</span>
 			</a>
-			<a href="{base}/agent-teams#task-management" class="ref-card">
+			<a href="#task-management" class="ref-card">
 				<span class="ref-title">Task Management</span>
 				<span class="ref-desc">status transitions and dependency resolution</span>
 			</a>
-			<a href="{base}/agent-teams#file-locking" class="ref-card">
+			<a href="#file-locking" class="ref-card">
 				<span class="ref-title">File Locking</span>
 				<span class="ref-desc">per-task locks with automatic release</span>
 			</a>
-			<a href="{base}/agent-teams#messaging" class="ref-card">
+			<a href="#messaging" class="ref-card">
 				<span class="ref-title">Messaging</span>
 				<span class="ref-desc">inter-agent communication and ordering</span>
 			</a>
