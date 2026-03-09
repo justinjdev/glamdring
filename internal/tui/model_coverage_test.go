@@ -2165,3 +2165,51 @@ func TestUpdate_MouseMsg_RoutesToOutput_Running(t *testing.T) {
 		t.Errorf("expected StateRunning, got %d", model.state)
 	}
 }
+
+func TestIndexStartupCheck_NotInstalled(t *testing.T) {
+	m := New()
+	m.indexerCfg = config.IndexerConfig{Command: "shire-does-not-exist-xyz"}
+	result, _ := m.Update(indexStartupCheckMsg{notInstalled: true})
+	model := result.(Model)
+	if model.state != StateInput {
+		t.Errorf("state = %v, want StateInput", model.state)
+	}
+}
+
+func TestIndexStartupCheck_Prompt(t *testing.T) {
+	m := New()
+	result, _ := m.Update(indexStartupCheckMsg{})
+	model := result.(Model)
+	if model.state != StateIndexPrompt {
+		t.Errorf("state = %v, want StateIndexPrompt", model.state)
+	}
+}
+
+func TestIndexStartupCheck_AutoBuild(t *testing.T) {
+	m := New()
+	result, _ := m.Update(indexStartupCheckMsg{autoBuild: true})
+	model := result.(Model)
+	if model.state == StateIndexPrompt {
+		t.Error("state should not be StateIndexPrompt for autoBuild=true")
+	}
+}
+
+func TestIndexPromptKey_Yes(t *testing.T) {
+	m := New()
+	m.state = StateIndexPrompt
+	result, _ := m.handleIndexPromptKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	model := result.(Model)
+	if model.state == StateIndexPrompt {
+		t.Error("state should have left StateIndexPrompt after y")
+	}
+}
+
+func TestIndexPromptKey_No(t *testing.T) {
+	m := New()
+	m.state = StateIndexPrompt
+	result, _ := m.handleIndexPromptKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	model := result.(Model)
+	if model.state != StateInput {
+		t.Errorf("state = %v, want StateInput", model.state)
+	}
+}

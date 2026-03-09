@@ -36,6 +36,7 @@ const (
 	StateCheckpoint              // checkpoint found, awaiting user decision
 	StateUpdate                  // waiting for update confirmation
 	StateModal                   // interactive modal overlay is open
+	StateIndexPrompt             // waiting for index build confirmation
 )
 
 // AgentMsg wraps an agent.Message for delivery through the bubbletea message system.
@@ -293,6 +294,7 @@ func (m Model) Init() tea.Cmd {
 		m.renderStartupHeader(),
 		m.startupCmd(),
 		m.spinner.Tick,
+		m.checkIndexStartupCmd(),
 	}
 	if !m.disableUpdateCheck {
 		cmds = append(cmds, m.checkUpdateCmd())
@@ -372,6 +374,33 @@ func (m Model) checkUpdateCmd() tea.Cmd {
 	}
 }
 
+// checkIndexStartupCmd returns a tea.Cmd that fires at startup when no index
+// DB is open. Checks whether to prompt, auto-build, or show an install hint.
+// Returns nil if the index is present, disabled, or auto_build=false.
+func (m Model) checkIndexStartupCmd() tea.Cmd {
+	if m.indexDB != nil {
+		return nil
+	}
+	enabled := m.indexerCfg.IndexerEnabled()
+	if enabled != nil && !*enabled {
+		return nil
+	}
+	autoBuild := m.indexerCfg.IndexerAutoBuild()
+	if autoBuild != nil && !*autoBuild {
+		return nil
+	}
+	cmdName := m.indexerCfg.IndexerCommand()
+	return func() tea.Msg {
+		if _, err := exec.LookPath(cmdName); err != nil {
+			return indexStartupCheckMsg{notInstalled: true}
+		}
+		if autoBuild != nil && *autoBuild {
+			return indexStartupCheckMsg{autoBuild: true}
+		}
+		return indexStartupCheckMsg{}
+	}
+}
+
 // Update handles all incoming messages.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -447,6 +476,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.indexDB = msg.db
 		}
+		return m, nil
+
+	case indexStartupCheckMsg:
+		cmdName := m.indexerCfg.IndexerCommand()
+		if msg.notInstalled {
+			m.output.AppendSystem(fmt.Sprintf(
+				"Code index not found. Install %s to enable code search:\n  brew tap justinjdev/shire && brew install %s",
+				cmdName, cmdName,
+			))
+			return m, nil
+		}
+		if msg.autoBuild {
+			m.output.AppendSystem("Building code index...")
+			return m, m.rebuildIndexCmd()
+		}
+		m.state = StateIndexPrompt
+		m.output.AppendSystem("No code index found. Build it now?")
 		return m, nil
 
 	case updateAvailableMsg:
@@ -620,6 +666,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case StateUpdate:
 		return m.handleUpdateKey(msg)
 
+	case StateIndexPrompt:
+		return m.handleIndexPromptKey(msg)
+
 	case StateModal:
 		return m.handleModalKey(msg)
 
@@ -652,7 +701,7 @@ func (m Model) handleSubmit(msg SubmitMsg) (tea.Model, tea.Cmd) {
 		if handler, ok := DispatchBuiltin(cmdName); ok {
 			m.input.Reset()
 			cmd := handler(&m, args)
-			if m.state != StateRunning && m.state != StateUpdate && m.state != StateModal {
+			if m.state != StateRunning && m.state != StateUpdate && m.state != StateModal && m.state != StateIndexPrompt {
 				// Normal built-in — stay in input mode.
 				m.state = StateInput
 				return m, tea.Batch(cmd, m.input.Focus())
@@ -763,6 +812,13 @@ type checkpointFoundMsg struct {
 type indexRebuildDoneMsg struct {
 	db  *index.DB
 	err error
+}
+
+// indexStartupCheckMsg is returned by checkIndexStartupCmd to signal what
+// action to take when no index is found at startup.
+type indexStartupCheckMsg struct {
+	notInstalled bool // shire binary not found in PATH
+	autoBuild    bool // auto_build=true, skip the prompt and build directly
 }
 
 // updateAvailableMsg signals that a newer version is available.
@@ -1042,6 +1098,21 @@ func (m Model) handleUpdateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleIndexPromptKey processes key presses during the index build prompt.
+func (m Model) handleIndexPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		m.state = StateInput
+		m.output.AppendSystem("Building code index...")
+		return m, m.rebuildIndexCmd()
+	case "n", "N":
+		m.state = StateInput
+		m.output.AppendSystem("Index build skipped.")
+		return m, m.input.Focus()
+	}
+	return m, nil
+}
+
 // openModal switches to StateModal with the given modal.
 func (m *Model) openModal(modal *ModalModel) {
 	m.preModalState = m.state
@@ -1256,6 +1327,8 @@ func (m Model) View() string {
 		input = m.renderCheckpointPrompt()
 	case StateUpdate:
 		input = m.renderUpdatePrompt()
+	case StateIndexPrompt:
+		input = m.renderIndexPrompt()
 	case StateModal:
 		input = m.input.View()
 	default:
@@ -1305,6 +1378,16 @@ func (m Model) renderCheckpointPrompt() string {
 // renderUpdatePrompt renders the inline update confirmation prompt.
 func (m Model) renderUpdatePrompt() string {
 	title := m.styles.PermissionTitle.Render("Install update?")
+	help := m.styles.PermissionHelp.Render("[y]es  [n]o")
+	content := title + "\n" + help
+	return m.styles.PermissionBorder.
+		Width(m.width - 4).
+		Render(content)
+}
+
+// renderIndexPrompt renders the inline index build confirmation prompt.
+func (m Model) renderIndexPrompt() string {
+	title := m.styles.PermissionTitle.Render("Build code index?")
 	help := m.styles.PermissionHelp.Render("[y]es  [n]o")
 	content := title + "\n" + help
 	return m.styles.PermissionBorder.
