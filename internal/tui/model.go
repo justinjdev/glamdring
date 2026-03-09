@@ -262,6 +262,21 @@ func (m *Model) InitMCPStatus() {
 	}
 }
 
+// refreshIndexTools rebuilds the agent tool list after the shire index DB is
+// replaced. Unlike refreshMCPTools, it does not reset the session: the tool
+// interfaces are identical — only the underlying data has changed.
+func (m *Model) refreshIndexTools() {
+	var newTools []tools.Tool
+	newTools = append(newTools, m.baseTools...)
+	if m.indexDB != nil {
+		newTools = append(newTools, index.Tools(m.indexDB)...)
+	}
+	if m.mcpMgr != nil {
+		newTools = append(newTools, m.mcpMgr.Tools()...)
+	}
+	m.agentCfg.Tools = newTools
+}
+
 // MCPServerDiedMsg signals that an MCP server has exited unexpectedly.
 type MCPServerDiedMsg struct {
 	Name string
@@ -475,16 +490,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.indexDB.Close()
 			}
 			m.indexDB = msg.db
+			m.refreshIndexTools()
 		}
 		return m, nil
 
 	case indexStartupCheckMsg:
-		cmdName := m.indexerCfg.IndexerCommand()
+		// Don't overwrite an already-pending prompt (e.g. checkpoint recovery).
+		if m.state != StateInput {
+			return m, nil
+		}
 		if msg.notInstalled {
-			m.output.AppendSystem(fmt.Sprintf(
-				"Code index not found. Install %s to enable code search:\n  brew tap justinjdev/shire && brew install %s",
-				cmdName, cmdName,
-			))
+			m.output.AppendSystem(
+				"Code index not found. Install shire to enable code search:\n  https://github.com/justinjdev/shire",
+			)
 			return m, nil
 		}
 		if msg.autoBuild {

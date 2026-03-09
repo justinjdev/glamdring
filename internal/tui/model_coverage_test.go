@@ -2194,6 +2194,31 @@ func TestIndexStartupCheck_AutoBuild(t *testing.T) {
 	}
 }
 
+func TestIndexStartupCheck_SkipSilently(t *testing.T) {
+	// auto_build=false (notInstalled=false, autoBuild=false, but state stays Input without prompt)
+	// Simulate by sending a notInstalled=false, autoBuild=false msg — the handler
+	// should transition to StateIndexPrompt, so this test verifies the *false* path
+	// is distinguished from the auto-build path via a separate flag.
+	// The silent-skip path is driven by checkIndexStartupCmd not emitting a msg;
+	// verify here that a non-auto, non-missing msg leads to the prompt (not a silent skip).
+	m := New()
+	result, _ := m.Update(indexStartupCheckMsg{notInstalled: false, autoBuild: false})
+	model := result.(Model)
+	if model.state != StateIndexPrompt {
+		t.Errorf("state = %v, want StateIndexPrompt when autoBuild=false and index missing", model.state)
+	}
+}
+
+func TestIndexStartupCheck_NoOverwriteCheckpoint(t *testing.T) {
+	m := New()
+	m.state = StateCheckpoint
+	result, _ := m.Update(indexStartupCheckMsg{})
+	model := result.(Model)
+	if model.state != StateCheckpoint {
+		t.Errorf("state = %v, want StateCheckpoint — index prompt must not overwrite checkpoint state", model.state)
+	}
+}
+
 func TestIndexPromptKey_Yes(t *testing.T) {
 	m := New()
 	m.state = StateIndexPrompt

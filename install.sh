@@ -91,7 +91,7 @@ install_shire() {
     }
 
     install_binary "$SHIRE_REPO" "shire" "$version" "$os" "$arch" "$tmpdir" || {
-        printf "warning: shire install failed. Install manually: brew tap justinjdev/shire && brew install shire\n"
+        printf "warning: shire install failed. Install manually: https://github.com/justinjdev/shire/releases\n"
         return
     }
 
