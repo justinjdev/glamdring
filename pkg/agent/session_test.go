@@ -1300,6 +1300,7 @@ func TestNewSessionAppliesThinkingBudget(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	// Use a budget-based model (not 4-6).
 	budget := 4000
 	cfg := Config{
 		Model:          "claude-opus-4-20250514",
@@ -1320,6 +1321,35 @@ func TestNewSessionAppliesThinkingBudget(t *testing.T) {
 	}
 }
 
+func TestNewSessionAdaptiveThinkingForOpus46(t *testing.T) {
+	var receivedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, buildSSEResponse("ok", "end_turn"))
+	}))
+	defer srv.Close()
+
+	cfg := Config{
+		Model: "claude-opus-4-6",
+		Creds: mockCreds{},
+	}
+	s := NewSession(cfg)
+	s.client.SetEndpoint(srv.URL)
+
+	drainMessages(s.Turn(context.Background(), "hello"))
+
+	thinking, ok := receivedBody["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking not set in request body")
+	}
+	if thinking["type"] != "adaptive" {
+		t.Errorf("thinking.type = %v, want \"adaptive\"", thinking["type"])
+	}
+}
+
 func TestNewSessionZeroBudgetDisablesThinking(t *testing.T) {
 	var receivedBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1333,7 +1363,7 @@ func TestNewSessionZeroBudgetDisablesThinking(t *testing.T) {
 
 	zero := 0
 	cfg := Config{
-		Model:          "claude-opus-4-20250514",
+		Model:          "claude-opus-4-6",
 		Creds:          mockCreds{},
 		ThinkingBudget: &zero,
 	}

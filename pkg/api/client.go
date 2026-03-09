@@ -66,16 +66,24 @@ func (c *Client) SetThinkingBudget(budget *int) {
 	c.thinkingBudget = budget
 }
 
-// defaultThinkingBudget is the token budget used when thinking is enabled and
-// no explicit budget has been configured.
+// defaultThinkingBudget is the token budget used when thinking is enabled via
+// the budget-based approach and no explicit budget has been configured.
 const defaultThinkingBudget = 10000
 
-// supportsThinking returns true if the model supports extended thinking.
+// supportsThinking returns true if the model supports any form of extended thinking.
 func (c *Client) supportsThinking() bool {
 	m := strings.ToLower(c.model)
 	return strings.Contains(m, "claude-3-7-") ||
 		strings.Contains(m, "opus-4") ||
 		strings.Contains(m, "sonnet-4")
+}
+
+// supportsAdaptiveThinking returns true for models that use adaptive thinking
+// (type:"adaptive") rather than the budget-based approach (type:"enabled").
+// Adaptive thinking is the recommended mode for claude-*-4-6 models.
+func (c *Client) supportsAdaptiveThinking() bool {
+	m := strings.ToLower(c.model)
+	return strings.Contains(m, "opus-4-6") || strings.Contains(m, "sonnet-4-6")
 }
 
 // Stream sends a MessageRequest to the API with streaming enabled and returns
@@ -86,17 +94,24 @@ func (c *Client) Stream(ctx context.Context, req *MessageRequest) (<-chan Stream
 	req.Stream = true
 	req.Model = c.model
 
-	// Enable extended thinking for supported models, unless the caller
-	// already set a ThinkingConfig or the budget is explicitly disabled (0).
+	// Enable extended thinking for supported models, unless the caller already
+	// set a ThinkingConfig or thinking is explicitly disabled (budget == 0).
+	// claude-*-4-6 models use adaptive thinking (no budget needed); older
+	// supported models use the budget-based approach.
 	if c.supportsThinking() && req.Thinking == nil {
-		budget := defaultThinkingBudget
-		if c.thinkingBudget != nil {
-			budget = *c.thinkingBudget
-		}
-		if budget > 0 {
-			req.Thinking = &ThinkingConfig{
-				Type:         "enabled",
-				BudgetTokens: budget,
+		disabled := c.thinkingBudget != nil && *c.thinkingBudget == 0
+		if !disabled {
+			if c.supportsAdaptiveThinking() {
+				req.Thinking = &ThinkingConfig{Type: "adaptive"}
+			} else {
+				budget := defaultThinkingBudget
+				if c.thinkingBudget != nil {
+					budget = *c.thinkingBudget
+				}
+				req.Thinking = &ThinkingConfig{
+					Type:         "enabled",
+					BudgetTokens: budget,
+				}
 			}
 		}
 	}

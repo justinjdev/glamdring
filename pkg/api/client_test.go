@@ -178,6 +178,8 @@ func TestSupportsThinking(t *testing.T) {
 	}{
 		{"claude-opus-4-20250514", true},
 		{"claude-sonnet-4-20250514", true},
+		{"claude-opus-4-6", true},
+		{"claude-sonnet-4-6", true},
 		{"claude-3-7-sonnet-20250219", true},
 		{"claude-3-haiku-20240307", false},
 		{"claude-3-opus-20240229", false},
@@ -187,6 +189,26 @@ func TestSupportsThinking(t *testing.T) {
 		client := NewClient(&auth.APIKeyCredentials{Key: "k"}, tt.model)
 		if got := client.supportsThinking(); got != tt.want {
 			t.Errorf("supportsThinking(%q) = %v, want %v", tt.model, got, tt.want)
+		}
+	}
+}
+
+func TestSupportsAdaptiveThinking(t *testing.T) {
+	tests := []struct {
+		model string
+		want  bool
+	}{
+		{"claude-opus-4-6", true},
+		{"claude-sonnet-4-6", true},
+		{"claude-opus-4-20250514", false},
+		{"claude-sonnet-4-20250514", false},
+		{"claude-3-7-sonnet-20250219", false},
+		{"test-model", false},
+	}
+	for _, tt := range tests {
+		client := NewClient(&auth.APIKeyCredentials{Key: "k"}, tt.model)
+		if got := client.supportsAdaptiveThinking(); got != tt.want {
+			t.Errorf("supportsAdaptiveThinking(%q) = %v, want %v", tt.model, got, tt.want)
 		}
 	}
 }
@@ -523,6 +545,42 @@ func TestStreamEnablesThinkingForSupportedModel(t *testing.T) {
 	}
 }
 
+func TestStreamAdaptiveThinkingForOpus46(t *testing.T) {
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, buildSSEResponse("hi", "end_turn"))
+	}))
+	defer server.Close()
+
+	client := NewClient(&auth.APIKeyCredentials{Key: "test-key"}, "claude-opus-4-6")
+	client.SetEndpoint(server.URL)
+
+	events, err := client.Stream(context.Background(), &MessageRequest{
+		MaxTokens: 16384,
+		Messages:  []RequestMessage{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error: %v", err)
+	}
+	for range events {
+	}
+
+	thinking, ok := receivedBody["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking not set in request body")
+	}
+	if thinking["type"] != "adaptive" {
+		t.Errorf("thinking.type = %v, want \"adaptive\"", thinking["type"])
+	}
+	if _, hasBudget := thinking["budget_tokens"]; hasBudget {
+		t.Error("adaptive thinking should not include budget_tokens")
+	}
+}
+
 func TestStreamUsesConfiguredThinkingBudget(t *testing.T) {
 	var receivedBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -534,6 +592,7 @@ func TestStreamUsesConfiguredThinkingBudget(t *testing.T) {
 	}))
 	defer server.Close()
 
+	// Use a budget-based model (not 4-6).
 	budget := 5000
 	client := NewClient(&auth.APIKeyCredentials{Key: "test-key"}, "claude-opus-4-20250514")
 	client.SetEndpoint(server.URL)
