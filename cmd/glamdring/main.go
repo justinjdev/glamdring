@@ -63,11 +63,16 @@ func main() {
 	experimentalTeams := flag.Bool("experimental-teams", false, "enable experimental agent teams support")
 	demo := flag.Bool("demo", false, "launch with demo content for theme screenshots")
 	demoTheme := flag.String("demo-theme", "glamdring", "theme to use with --demo")
+	demoIndexPrompt := flag.Bool("demo-index-prompt", false, "launch in index build prompt state for screenshots")
 	flag.Parse()
 
 	// Demo mode: launch TUI with sample content, no auth or agent needed.
 	if *demo {
 		runDemo(*demoTheme)
+		return
+	}
+	if *demoIndexPrompt {
+		runDemoIndexPrompt(*demoTheme)
 		return
 	}
 
@@ -292,6 +297,23 @@ func runDemo(themeName string) {
 	}
 	m.SetTheme(palette, false)
 	m.PopulateDemoContent()
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// runDemoIndexPrompt launches the TUI showing the index build prompt.
+// Used for VHS screenshot capture of the startup index prompt feature.
+func runDemoIndexPrompt(themeName string) {
+	m := tui.New()
+	palette, ok := tui.LookupTheme(themeName)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "warning: unknown theme %q, using glamdring\n", themeName)
+	}
+	m.SetTheme(palette, false)
+	m.PopulateDemoIndexPrompt()
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

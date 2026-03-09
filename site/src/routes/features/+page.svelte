@@ -66,6 +66,13 @@
 		<p>Code indexer integration for intelligent code search across your project. The indexer is auto-detected when <code>.shire/index.db</code> exists in the project root.</p>
 
 		<p>The index is automatically rebuilt after file changes, keeping search results current. Indexer behavior is configurable via settings.</p>
+
+		<p>On startup, if no index is found, glamdring prompts you to build one. Set <code>indexer.auto_build: true</code> to skip the prompt and build automatically.</p>
+
+		<figure>
+			<img src="{base}/screenshots/index-prompt.png" alt="index build prompt" />
+			<figcaption>startup index build prompt</figcaption>
+		</figure>
 	</section>
 
 	<div class="divider"><div class="divider-ring"></div></div>

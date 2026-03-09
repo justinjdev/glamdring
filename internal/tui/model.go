@@ -229,6 +229,17 @@ func (m *Model) PopulateDemoContent() {
 	m.output.AppendText("The `ThemePalette` struct defines all color slots. You can also create custom themes in your settings file.")
 }
 
+// PopulateDemoIndexPrompt fills the output with representative content and
+// places the model in StateIndexPrompt for screenshot capture.
+func (m *Model) PopulateDemoIndexPrompt() {
+	m.output.AppendUserMessage("Refactor the auth package to use interface-based mocking")
+	m.output.AppendToolCall("Read", "internal/auth/provider.go")
+	m.output.AppendToolResult("type Provider struct {\n    db *sql.DB\n}\n\nfunc (p *Provider) Authenticate(token string) (*User, error) {\n    // ...\n}", false)
+	m.output.AppendText("I'll extract an `Authenticator` interface and update the package to depend on it.")
+	m.output.AppendSystem("No code index found. Build it now?")
+	m.state = StateIndexPrompt
+}
+
 // SetMCPManager stores the MCP manager for /mcp command and status bar updates.
 func (m *Model) SetMCPManager(mgr *mcp.Manager) {
 	m.mcpMgr = mgr
