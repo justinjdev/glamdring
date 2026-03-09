@@ -113,7 +113,7 @@
 	<section>
 		<h2 id="themes">Themes</h2>
 
-		<p>Five LOTR-inspired color themes are built in:</p>
+		<p>Six LOTR-inspired color themes are built in:</p>
 
 		<div class="table-wrap">
 			<table>
@@ -144,6 +144,10 @@
 						<td><code>shire</code></td>
 						<td>Warm russet-earth</td>
 					</tr>
+					<tr>
+						<td><code>anduin</code></td>
+						<td>Colorblind-safe warm neutral (deuteranopia/protanopia)</td>
+					</tr>
 				</tbody>
 			</table>
 		</div>
@@ -168,6 +172,10 @@
 			<figure>
 				<img src="{base}/screenshots/theme-shire.png" alt="shire theme" />
 				<figcaption>shire</figcaption>
+			</figure>
+			<figure>
+				<img src="{base}/screenshots/theme-anduin.png" alt="anduin theme" />
+				<figcaption>anduin (colorblind-safe)</figcaption>
 			</figure>
 		</div>
 

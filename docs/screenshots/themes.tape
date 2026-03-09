@@ -68,3 +68,14 @@ Hide
 Type "/quit"
 Enter
 Sleep 500ms
+Type "/tmp/glamdring-demo --demo --demo-themeanduin"
+Enter
+Sleep 2s
+Show
+Sleep 1s
+Screenshot docs/screenshots/theme-anduin.png
+
+Hide
+Type "/quit"
+Enter
+Sleep 500ms
