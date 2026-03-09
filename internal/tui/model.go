@@ -813,12 +813,12 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.lastToolWasTodo = am.ToolName == "TodoWrite"
 		if m.lastToolWasTodo {
 			todos := parseTodos(am.ToolInput)
-			if len(todos) == 0 {
-				m.lastToolWasTodo = false
+			if len(todos) > 0 {
+				m.output.UpdateTaskList(todos)
 				return m, nil
 			}
-			m.output.UpdateTaskList(todos)
-			return m, nil
+			// Malformed/empty payload: fall through to normal tool-call rendering.
+			m.lastToolWasTodo = false
 		}
 		switch am.ToolName {
 		case "Edit", "Write", "Bash":
