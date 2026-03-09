@@ -3,7 +3,7 @@ package tui
 import "testing"
 
 func TestThemeRegistry_AllBuiltins(t *testing.T) {
-	expected := []string{"glamdring", "rivendell", "mithril", "lothlorien", "shire"}
+	expected := []string{"glamdring", "rivendell", "mithril", "lothlorien", "shire", "anduin"}
 	for _, name := range expected {
 		p, ok := LookupTheme(name)
 		if !ok {
@@ -53,8 +53,8 @@ func TestBrighten(t *testing.T) {
 
 func TestThemeNames(t *testing.T) {
 	names := ThemeNames()
-	if len(names) != 5 {
-		t.Fatalf("ThemeNames() returned %d names, want 5", len(names))
+	if len(names) != 6 {
+		t.Fatalf("ThemeNames() returned %d names, want 6", len(names))
 	}
 	// Should be sorted.
 	for i := 1; i < len(names); i++ {

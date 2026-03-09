@@ -133,6 +133,13 @@ var builtinThemes = map[string]ThemePalette{
 		Primary: "#e07838", Secondary: "#d89840", Success: "#88b44c", Error: "#e05040",
 		Info: "#c08848", Subtle: "#c87090", Surface0: "#261e18", Surface1: "#342a22", Surface2: "#44382e",
 	},
+	// anduin: Colorblind-safe warm-neutral -- gold primary, teal/orange for success/error.
+	// Safe for deuteranopia and protanopia (red-green color blindness).
+	"anduin": {
+		Name: "anduin", Bg: "#101010", Fg: "#b8b0a4", FgDim: "#7a7a70", FgBright: "#e0d8cc",
+		Primary: "#ddaa44", Secondary: "#cc9944", Success: "#44bbcc", Error: "#ee8833",
+		Info: "#7799cc", Subtle: "#9988cc", Surface0: "#181818", Surface1: "#222220", Surface2: "#2e2e2c",
+	},
 }
 
 // LookupTheme returns the named theme. If not found, returns the glamdring
@@ -172,13 +179,14 @@ func PaletteFromUserConfig(name string, c config.UserThemeConfig) ThemePalette {
 func HighContrastTransform(p ThemePalette) ThemePalette {
 	p.Bg = "#0c0c10"
 	p.FgBright = "#f4f4f8"
-	p.Fg = brighten(p.Fg, 25)
-	p.Primary = brighten(p.Primary, 20)
-	p.Subtle = brighten(p.Subtle, 20)
-	p.Success = brighten(p.Success, 20)
-	p.Error = brighten(p.Error, 20)
-	p.Info = brighten(p.Info, 20)
-	p.Secondary = brighten(p.Secondary, 15)
+	p.Fg = brighten(p.Fg, 35)
+	p.FgDim = brighten(p.FgDim, 50)
+	p.Primary = brighten(p.Primary, 25)
+	p.Subtle = brighten(p.Subtle, 25)
+	p.Success = brighten(p.Success, 25)
+	p.Error = brighten(p.Error, 25)
+	p.Info = brighten(p.Info, 25)
+	p.Secondary = brighten(p.Secondary, 20)
 	p.Surface0 = "#161620"
 	p.Surface1 = "#222230"
 	p.Surface2 = "#303042"

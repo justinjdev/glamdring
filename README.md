@@ -27,7 +27,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Slash commands** — custom prompts from `.glamdring/commands/` with tab completion
 - **Custom agents** — define specialized subagents in `.glamdring/agents/`
 - **Subagents** — parallel task spawning via the Task tool
-- **Themes** — five LOTR-inspired color themes (glamdring, rivendell, mithril, lothlorien, shire) with `/theme` runtime switching, high contrast mode, and user-defined custom themes
+- **Themes** — six LOTR-inspired color themes (glamdring, rivendell, mithril, lothlorien, shire, anduin) with `/theme` runtime switching, high contrast mode, colorblind-safe theme, and user-defined custom themes
 - **Auto-update** — startup notification when a new version is available, `/update` command and `glamdring update` CLI to download and replace the binary with checksum verification. Disable startup check with `"disable_update_check": true` in settings.
 - **Agent teams** (experimental) — coordinated multi-agent workflows with phase-gated tool access, inter-agent messaging, per-task file locking with automatic release, task dependencies with blocked-claim prevention, message ordering (timestamps + sequence numbers), force shutdown, team observability, context compaction archiving, and built-in workflow presets (RPIV, plan-implement, scoped) plus custom workflows from settings. Enable with `--experimental-teams` flag or `"experimental": {"teams": true}` in settings.
 
@@ -123,7 +123,7 @@ Instructions files are additive -- both `GLAMDRING.md` and `CLAUDE.md` are loade
 
 ### Themes
 
-Glamdring ships with five LOTR-inspired color themes:
+Glamdring ships with six LOTR-inspired color themes:
 
 | Theme | Description |
 |---|---|
@@ -132,7 +132,7 @@ Glamdring ships with five LOTR-inspired color themes:
 | `mithril` | Bright cyan-silver |
 | `lothlorien` | Golden-amber |
 | `shire` | Warm russet-earth |
-
+| `anduin` | Warm neutral with gold accents — colorblind-safe (deuteranopia/protanopia) |
 
 Set the theme in `config.json` (or `settings.json`):
 
@@ -151,6 +151,8 @@ Set the theme in `config.json` (or `settings.json`):
 | `/theme <name>` | Switch theme immediately |
 
 **High contrast:** Set `"high_contrast": true` to boost text brightness and accent saturation for accessibility. Works with any theme.
+
+**Colorblind accessibility:** The `anduin` theme uses amber-gold as its primary accent and replaces green/red success/error indicators with teal/orange, making it safe for red-green color blindness (deuteranopia and protanopia).
 
 **Custom themes:** Define custom themes in your config. User-defined themes take precedence over built-ins when names conflict.
 
