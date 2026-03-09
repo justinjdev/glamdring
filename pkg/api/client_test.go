@@ -682,6 +682,20 @@ func TestStreamDoesNotOverrideExistingThinking(t *testing.T) {
 	}
 }
 
+func TestStreamNegativeBudgetReturnsError(t *testing.T) {
+	client := NewClient(&auth.APIKeyCredentials{Key: "test-key"}, "claude-opus-4-20250514")
+	neg := -1
+	client.SetThinkingBudget(&neg)
+
+	_, err := client.Stream(context.Background(), &MessageRequest{
+		MaxTokens: 16384,
+		Messages:  []RequestMessage{{Role: "user", Content: "hello"}},
+	})
+	if err == nil {
+		t.Fatal("Stream() expected error for negative thinking budget, got nil")
+	}
+}
+
 // mockOAuthCredentials implements auth.Credentials with controllable OAuth behavior.
 type mockOAuthCredentials struct {
 	token        string

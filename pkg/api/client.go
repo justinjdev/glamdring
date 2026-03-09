@@ -100,6 +100,9 @@ func (c *Client) Stream(ctx context.Context, req *MessageRequest) (<-chan Stream
 	// claude-*-4-6 models use adaptive thinking (no budget needed); older
 	// supported models use the budget-based approach.
 	if c.supportsThinking() && req.Thinking == nil {
+		if c.thinkingBudget != nil && *c.thinkingBudget < 0 {
+			return nil, fmt.Errorf("invalid thinking budget %d: must be >= 0", *c.thinkingBudget)
+		}
 		disabled := c.thinkingBudget != nil && *c.thinkingBudget == 0
 		if !disabled {
 			if c.supportsAdaptiveThinking() {
