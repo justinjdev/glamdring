@@ -55,6 +55,7 @@ install_binary() {
 
     tarball="${binary}_${version#v}_${os}_${arch}.tar.gz"
     url="https://github.com/${repo}/releases/download/${version}/${tarball}"
+    extractdir="$tmpdir/$binary"
 
     printf "Downloading %s\n" "$url"
     if command -v curl >/dev/null 2>&1; then
@@ -65,10 +66,11 @@ install_binary() {
         fatal "Neither curl nor wget found. Install one and try again."
     fi
 
-    tar -xzf "$tmpdir/$tarball" -C "$tmpdir"
+    mkdir -p "$extractdir"
+    tar -xzf "$tmpdir/$tarball" -C "$extractdir"
 
     mkdir -p "$INSTALL_DIR"
-    mv "$tmpdir/$binary" "$INSTALL_DIR/$binary"
+    mv "$extractdir/$binary" "$INSTALL_DIR/$binary"
     chmod +x "$INSTALL_DIR/$binary"
 }
 
@@ -99,12 +101,14 @@ install_shire() {
 get_latest_version() {
     url="https://api.github.com/repos/${1}/releases/latest"
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$url" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//'
+        ver="$(curl -fsSL "$url" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//')"
     elif command -v wget >/dev/null 2>&1; then
-        wget -qO- "$url" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//'
+        ver="$(wget -qO- "$url" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//')"
     else
         fatal "Neither curl nor wget found."
     fi
+    [ -z "$ver" ] && return 1
+    printf '%s\n' "$ver"
 }
 
 fatal() {
