@@ -115,6 +115,10 @@ type Model struct {
 	// Used to avoid firing the same threshold multiple times.
 	lastContextThreshold int
 
+	// lastToolWasTodo is true when the most recent tool call was TodoWrite.
+	// Used to suppress the corresponding tool result block.
+	lastToolWasTodo bool
+
 	// mcpMgr manages MCP server lifecycles, used by /mcp command.
 	mcpMgr *mcp.Manager
 
@@ -540,6 +544,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = StateInput
 			m.output.ClearPending()
 			m.output.ClearToolSpinner()
+			m.output.FinalizeTaskList()
+			m.lastToolWasTodo = false
 			m.output.FinalizeStar()
 			m.output.AppendSystem("(interrupted)")
 			return m, m.input.Focus()
@@ -804,6 +810,16 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 	case agent.MessageToolCall:
 		m.output.FlushAllPending()
 		m.output.ClearToolSpinner()
+		m.lastToolWasTodo = am.ToolName == "TodoWrite"
+		if m.lastToolWasTodo {
+			todos := parseTodos(am.ToolInput)
+			if len(todos) > 0 {
+				m.output.UpdateTaskList(todos)
+				return m, nil
+			}
+			// Malformed/empty payload: fall through to normal tool-call rendering.
+			m.lastToolWasTodo = false
+		}
 		switch am.ToolName {
 		case "Edit", "Write", "Bash":
 			m.turnModifiedFiles = true
@@ -828,6 +844,18 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 	case agent.MessageToolResult:
 		m.output.ClearToolSpinner()
 		m.output.FlushAllPending()
+		if m.lastToolWasTodo {
+			m.lastToolWasTodo = false
+			if am.ToolIsError {
+				m.output.AppendToolResult(am.ToolOutput, true)
+				m.spinning = true
+				m.spinnerLabel = "Thinking..."
+				return m, m.spinner.Tick
+			}
+			m.spinning = true
+			m.spinnerLabel = "Thinking..."
+			return m, m.spinner.Tick
+		}
 		m.output.AppendToolResult(am.ToolOutput, am.ToolIsError)
 		m.spinning = true
 		m.spinnerLabel = "Thinking..."
@@ -843,6 +871,8 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.spinning = false
 		m.output.ClearToolSpinner()
 		m.output.FlushAllPending()
+		m.output.FinalizeTaskList()
+		m.lastToolWasTodo = false
 		m.output.FinalizeStar()
 		errMsg := "unknown error"
 		if am.Err != nil {
@@ -854,6 +884,7 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.spinning = false
 		m.output.ClearToolSpinner()
 		m.output.FlushAllPending()
+		m.output.FinalizeTaskList()
 		m.output.FinalizeStar()
 		m.totalInputTokens += am.InputTokens
 		m.totalOutputTokens += am.OutputTokens
@@ -909,6 +940,8 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		return m, m.input.Focus()
 
 	case agent.MessageMaxTurnsReached:
+		m.output.FinalizeTaskList()
+		m.lastToolWasTodo = false
 		m.output.AppendError("max turns reached")
 		m.state = StateInput
 		return m, m.input.Focus()

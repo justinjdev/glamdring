@@ -26,7 +26,7 @@ The system SHALL provide a text input area that supports multiline editing. The 
 - **THEN** the input content is sent as the next user message and the input is cleared
 
 ### Requirement: Tool call display
-The system SHALL display tool calls inline in the output. Each tool call SHALL show the tool name and a summary of its input. Tool results SHALL be collapsible (collapsed by default for large outputs).
+The system SHALL display tool calls inline in the output. Each tool call SHALL show the tool name and a summary of its input. Tool results SHALL be collapsible (collapsed by default for large outputs). The `TodoWrite` tool SHALL be excluded from this behavior — its calls and results are handled by the task list display capability instead.
 
 #### Scenario: Bash tool display
 - **WHEN** the agent executes a Bash tool call with command `git status`
@@ -35,6 +35,10 @@ The system SHALL display tool calls inline in the output. Each tool call SHALL s
 #### Scenario: Large tool result
 - **WHEN** a tool result exceeds a configurable line threshold
 - **THEN** the result is collapsed by default with an option to expand
+
+#### Scenario: TodoWrite call is not shown as a generic tool call
+- **WHEN** the agent executes a `TodoWrite` tool call
+- **THEN** no generic tool call block is added to the output; a task list block is shown instead
 
 ### Requirement: Permission prompt UI
 The system SHALL display permission prompts as a modal or inline prompt when the agent requests a side-effect tool. The prompt SHALL show the tool name, input details, and accept y (yes), n (no), or a (always allow) as responses.

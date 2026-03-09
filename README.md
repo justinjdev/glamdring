@@ -11,6 +11,7 @@ A fast, native TUI for agentic coding with Claude. Built in Go with [Charm](http
 - **Agentic loop** — streaming responses, multi-turn conversations with persistent session memory, extended thinking with `/thinking` toggle, prompt caching support
 - **Agent interrupt** — `Ctrl+C` cancels the current turn instead of killing the program; double-press to quit
 - **Thinking spinner** — visual feedback while the agent is processing
+- **Task list display** — when the agent uses `TodoWrite` to track its work, a live task list appears inline with `[ ]` pending, `[>]` in-progress, and `[x]` completed indicators; updates in-place across calls and freezes when the turn completes
 - **Per-model cost tracking** — accurate pricing for Opus, Sonnet, and Haiku
 - **Context window display** — live `ctx: N%` in status bar with color thresholds (gold at 60%, red at 80%) and inline `/compact` suggestions
 - **Built-in tools** — Read (2000-line default limit, line truncation), Write (read-before-write safety), Edit (permission-preserving, no-op rejection), Bash (timeout detection, 1MB output limit, background execution, real-time output streaming), Glob (noise directory filtering, result limits), Grep (full ripgrep-style flags, binary detection, type filters) + [shire](https://github.com/justinjdev/shire) index tools (auto-detected, auto-rebuilt after file changes)
