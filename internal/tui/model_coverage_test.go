@@ -2238,3 +2238,30 @@ func TestIndexPromptKey_No(t *testing.T) {
 		t.Errorf("state = %v, want StateInput", model.state)
 	}
 }
+
+func TestIndexPromptKey_Yes_ReturnsCmd(t *testing.T) {
+	m := New()
+	m.state = StateIndexPrompt
+	_, cmd := m.handleIndexPromptKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if cmd == nil {
+		t.Error("y path must return a rebuild cmd, got nil")
+	}
+}
+
+func TestIndexStartupCheck_AutoBuild_ReturnsCmd(t *testing.T) {
+	m := New()
+	_, cmd := m.Update(indexStartupCheckMsg{autoBuild: true})
+	if cmd == nil {
+		t.Error("auto-build path must return a rebuild cmd, got nil")
+	}
+}
+
+func TestCheckIndexStartupCmd_AutoBuildFalse_ReturnsNil(t *testing.T) {
+	m := New()
+	f := false
+	m.indexerCfg = config.IndexerConfig{AutoBuild: &f}
+	cmd := m.checkIndexStartupCmd()
+	if cmd != nil {
+		t.Error("checkIndexStartupCmd must return nil when auto_build=false")
+	}
+}
