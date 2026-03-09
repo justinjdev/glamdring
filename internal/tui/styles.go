@@ -76,6 +76,12 @@ type Styles struct {
 
 	// Status bar danger (context window >= 80%)
 	StatusBarDanger lipgloss.Style
+
+	// Task list status indicators and content
+	TaskListPending    lipgloss.Style
+	TaskListInProgress lipgloss.Style
+	TaskListDone       lipgloss.Style
+	TaskListContent    lipgloss.Style
 }
 
 // ThemePalette defines the named color slots for a theme.
@@ -356,5 +362,19 @@ func DefaultStyles(p ThemePalette) Styles {
 			Background(p.Surface1).
 			Foreground(p.Error).
 			Bold(true),
+
+		// Task list status indicators
+		TaskListPending: lipgloss.NewStyle().
+			Foreground(p.FgDim),
+
+		TaskListInProgress: lipgloss.NewStyle().
+			Foreground(p.Primary).
+			Bold(true),
+
+		TaskListDone: lipgloss.NewStyle().
+			Foreground(p.Success),
+
+		TaskListContent: lipgloss.NewStyle().
+			Foreground(p.Fg),
 	}
 }

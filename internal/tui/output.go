@@ -82,6 +82,10 @@ type OutputModel struct {
 	// Empty string means no tool is actively running.
 	toolSpinner string
 
+	// taskListIdx is the index of the current turn's task list block, or -1
+	// if no task list has been created this turn.
+	taskListIdx int
+
 	// headerInfo stores the raw "ver\nmodel\ncwd" string for re-rendering
 	// the banner when the theme changes.
 	headerInfo string
@@ -104,14 +108,23 @@ const (
 	blockUserMessage
 	blockHeader
 	blockSystem
+	blockTaskList
 )
+
+// todoItem represents a single task in a TodoWrite task list.
+type todoItem struct {
+	ID      string
+	Content string
+	Status  string // "pending", "in_progress", or "completed"
+}
 
 type outputBlock struct {
 	kind      blockKind
 	content   string
-	isError   bool   // for tool results
-	finalized bool   // true when block is complete (no more appends)
-	rendered  string // cached rendered output
+	isError   bool       // for tool results
+	finalized bool       // true when block is complete (no more appends)
+	rendered  string     // cached rendered output
+	tasks     []todoItem // for blockTaskList
 }
 
 // NewOutputModel creates an output viewport with glamour markdown rendering.
@@ -135,6 +148,7 @@ func NewOutputModel(styles Styles, width, height int) OutputModel {
 		width:        width,
 		collapsed:    make(map[int]bool),
 		glamourStyle: glamourStyle,
+		taskListIdx:  -1,
 	}
 }
 
@@ -522,6 +536,63 @@ func (m *OutputModel) AppendSystem(s string) {
 	m.doRender()
 }
 
+// UpdateTaskList updates the task list block for the current turn.
+// If no task list block exists yet, one is appended. If one already exists
+// (same turn), its tasks are updated in-place and the render cache is cleared.
+func (m *OutputModel) UpdateTaskList(todos []todoItem) {
+	if m.taskListIdx >= 0 {
+		m.blocks[m.taskListIdx].tasks = todos
+		m.blocks[m.taskListIdx].rendered = ""
+	} else {
+		m.finalizePreviousBlock()
+		m.taskListIdx = len(m.blocks)
+		m.blocks = append(m.blocks, outputBlock{
+			kind:  blockTaskList,
+			tasks: todos,
+		})
+	}
+	m.doRender()
+}
+
+// FinalizeTaskList marks the current turn's task list block as finalized
+// and resets the index so the next turn starts fresh.
+func (m *OutputModel) FinalizeTaskList() {
+	if m.taskListIdx >= 0 {
+		m.blocks[m.taskListIdx].finalized = true
+		m.blocks[m.taskListIdx].rendered = ""
+		m.taskListIdx = -1
+		m.doRender()
+	}
+}
+
+// parseTodos converts the raw ToolInput map from a TodoWrite call into a
+// slice of todoItems. Malformed or unrecognized entries are silently skipped.
+func parseTodos(input map[string]any) []todoItem {
+	raw, ok := input["todos"]
+	if !ok {
+		return nil
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	items := make([]todoItem, 0, len(list))
+	for _, entry := range list {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		id, _ := m["id"].(string)
+		content, _ := m["content"].(string)
+		status, _ := m["status"].(string)
+		if content == "" {
+			continue
+		}
+		items = append(items, todoItem{ID: id, Content: content, Status: status})
+	}
+	return items
+}
+
 // Clear removes all content blocks and resets the viewport.
 func (m *OutputModel) Clear() {
 	m.blocks = nil
@@ -530,6 +601,7 @@ func (m *OutputModel) Clear() {
 	m.hasNewContent = false
 	m.ClearPending()
 	m.toolSpinner = ""
+	m.taskListIdx = -1
 	m.dirty = false
 	m.viewport.SetContent("")
 	m.viewport.GotoTop()
@@ -801,6 +873,9 @@ func (m *OutputModel) doRender() {
 		case blockThinking:
 			rendered = m.renderThinkingBlock(i, b)
 
+		case blockTaskList:
+			rendered = m.renderTaskList(b)
+
 		case blockSystem:
 			styled := m.styles.SystemText.Render(b.content)
 			rendered = m.styles.SystemBorder.Render(styled)
@@ -865,6 +940,28 @@ func (m *OutputModel) renderThinkingBlock(idx int, b outputBlock) string {
 		strings.Repeat("\u2508", clamp(m.width/2, 1, 40)),
 	)
 	return block + "\n" + separator
+}
+
+// renderTaskList renders a task list block with status indicators.
+func (m *OutputModel) renderTaskList(b outputBlock) string {
+	if len(b.tasks) == 0 {
+		return ""
+	}
+	var rows []string
+	for _, item := range b.tasks {
+		var indicator string
+		switch item.Status {
+		case "completed":
+			indicator = m.styles.TaskListDone.Render("[x]")
+		case "in_progress":
+			indicator = m.styles.TaskListInProgress.Render("[>]")
+		default:
+			indicator = m.styles.TaskListPending.Render("[ ]")
+		}
+		content := m.styles.TaskListContent.Render(item.Content)
+		rows = append(rows, indicator+" "+content)
+	}
+	return strings.Join(rows, "\n")
 }
 
 // clamp constrains val between lo and hi.

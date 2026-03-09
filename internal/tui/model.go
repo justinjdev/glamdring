@@ -115,6 +115,10 @@ type Model struct {
 	// Used to avoid firing the same threshold multiple times.
 	lastContextThreshold int
 
+	// lastToolWasTodo is true when the most recent tool call was TodoWrite.
+	// Used to suppress the corresponding tool result block.
+	lastToolWasTodo bool
+
 	// mcpMgr manages MCP server lifecycles, used by /mcp command.
 	mcpMgr *mcp.Manager
 
@@ -804,6 +808,12 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 	case agent.MessageToolCall:
 		m.output.FlushAllPending()
 		m.output.ClearToolSpinner()
+		m.lastToolWasTodo = am.ToolName == "TodoWrite"
+		if m.lastToolWasTodo {
+			todos := parseTodos(am.ToolInput)
+			m.output.UpdateTaskList(todos)
+			return m, nil
+		}
 		switch am.ToolName {
 		case "Edit", "Write", "Bash":
 			m.turnModifiedFiles = true
@@ -828,6 +838,12 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 	case agent.MessageToolResult:
 		m.output.ClearToolSpinner()
 		m.output.FlushAllPending()
+		if m.lastToolWasTodo {
+			m.lastToolWasTodo = false
+			m.spinning = true
+			m.spinnerLabel = "Thinking..."
+			return m, m.spinner.Tick
+		}
 		m.output.AppendToolResult(am.ToolOutput, am.ToolIsError)
 		m.spinning = true
 		m.spinnerLabel = "Thinking..."
@@ -854,6 +870,7 @@ func (m Model) handleAgentMsg(msg AgentMsg) (Model, tea.Cmd) {
 		m.spinning = false
 		m.output.ClearToolSpinner()
 		m.output.FlushAllPending()
+		m.output.FinalizeTaskList()
 		m.output.FinalizeStar()
 		m.totalInputTokens += am.InputTokens
 		m.totalOutputTokens += am.OutputTokens

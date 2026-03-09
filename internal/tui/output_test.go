@@ -346,3 +346,132 @@ func TestRendererDirtyRetriesOnFailure(t *testing.T) {
 		t.Error("expected rendererDirty to be consumed after successful rerender with width 1")
 	}
 }
+
+func TestUpdateTaskList_AppendsNewBlock(t *testing.T) {
+	m := newTestOutput(80, 24)
+	todos := []todoItem{
+		{ID: "1", Content: "Write tests", Status: "pending"},
+		{ID: "2", Content: "Run tests", Status: "in_progress"},
+	}
+
+	m.UpdateTaskList(todos)
+
+	if len(m.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(m.blocks))
+	}
+	if m.blocks[0].kind != blockTaskList {
+		t.Errorf("expected blockTaskList, got %d", m.blocks[0].kind)
+	}
+	if len(m.blocks[0].tasks) != 2 {
+		t.Errorf("expected 2 tasks, got %d", len(m.blocks[0].tasks))
+	}
+	if m.taskListIdx != 0 {
+		t.Errorf("expected taskListIdx=0, got %d", m.taskListIdx)
+	}
+}
+
+func TestUpdateTaskList_UpdatesInPlace(t *testing.T) {
+	m := newTestOutput(80, 24)
+	first := []todoItem{{ID: "1", Content: "Task A", Status: "pending"}}
+	m.UpdateTaskList(first)
+
+	second := []todoItem{
+		{ID: "1", Content: "Task A", Status: "completed"},
+		{ID: "2", Content: "Task B", Status: "in_progress"},
+	}
+	m.UpdateTaskList(second)
+
+	if len(m.blocks) != 1 {
+		t.Fatalf("expected 1 block after second update, got %d", len(m.blocks))
+	}
+	if len(m.blocks[0].tasks) != 2 {
+		t.Errorf("expected 2 tasks after update, got %d", len(m.blocks[0].tasks))
+	}
+	if m.blocks[0].tasks[0].Status != "completed" {
+		t.Errorf("expected task 0 status 'completed', got %q", m.blocks[0].tasks[0].Status)
+	}
+}
+
+func TestFinalizeTaskList_MarksFinalized(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.UpdateTaskList([]todoItem{{ID: "1", Content: "Task", Status: "pending"}})
+
+	m.FinalizeTaskList()
+
+	if !m.blocks[0].finalized {
+		t.Error("expected block to be finalized after FinalizeTaskList")
+	}
+	if m.taskListIdx != -1 {
+		t.Errorf("expected taskListIdx=-1 after finalization, got %d", m.taskListIdx)
+	}
+}
+
+func TestFinalizeTaskList_NoopWhenNoTaskList(t *testing.T) {
+	m := newTestOutput(80, 24)
+	// Should not panic when no task list exists.
+	m.FinalizeTaskList()
+	if m.taskListIdx != -1 {
+		t.Errorf("expected taskListIdx=-1, got %d", m.taskListIdx)
+	}
+}
+
+func TestRenderTaskList_StatusIndicators(t *testing.T) {
+	m := newTestOutput(80, 24)
+	m.UpdateTaskList([]todoItem{
+		{ID: "1", Content: "Todo", Status: "pending"},
+		{ID: "2", Content: "Doing", Status: "in_progress"},
+		{ID: "3", Content: "Done", Status: "completed"},
+	})
+	m.finalizePreviousBlock()
+	m.doRender()
+
+	rendered := m.blocks[0].rendered
+	if !strings.Contains(rendered, "[ ]") {
+		t.Errorf("expected '[ ]' for pending task in rendered output: %q", rendered)
+	}
+	if !strings.Contains(rendered, "[>]") {
+		t.Errorf("expected '[>]' for in_progress task in rendered output: %q", rendered)
+	}
+	if !strings.Contains(rendered, "[x]") {
+		t.Errorf("expected '[x]' for completed task in rendered output: %q", rendered)
+	}
+}
+
+func TestParseTodos_ValidInput(t *testing.T) {
+	input := map[string]any{
+		"todos": []any{
+			map[string]any{"id": "1", "content": "Task one", "status": "pending"},
+			map[string]any{"id": "2", "content": "Task two", "status": "completed"},
+		},
+	}
+	items := parseTodos(input)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	if items[0].Content != "Task one" || items[0].Status != "pending" {
+		t.Errorf("unexpected first item: %+v", items[0])
+	}
+}
+
+func TestParseTodos_MalformedEntrySkipped(t *testing.T) {
+	input := map[string]any{
+		"todos": []any{
+			map[string]any{"id": "1", "content": "", "status": "pending"}, // empty content
+			map[string]any{"id": "2", "content": "Valid", "status": "in_progress"},
+		},
+	}
+	items := parseTodos(input)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item (malformed skipped), got %d", len(items))
+	}
+	if items[0].Content != "Valid" {
+		t.Errorf("unexpected item: %+v", items[0])
+	}
+}
+
+func TestParseTodos_MissingTodosKey(t *testing.T) {
+	items := parseTodos(map[string]any{"other": "stuff"})
+	if items != nil {
+		t.Errorf("expected nil for missing todos key, got %v", items)
+	}
+}

@@ -404,3 +404,67 @@ func TestExpandCollapseKeyToggle(t *testing.T) {
 		t.Error("expected tool result to be expanded after 'e' key")
 	}
 }
+
+func TestTodoWriteToolCall_ProducesTaskListBlock(t *testing.T) {
+	m := New()
+	m.state = StateRunning
+
+	msg := AgentMsg(agent.Message{
+		Type:     agent.MessageToolCall,
+		ToolName: "TodoWrite",
+		ToolInput: map[string]any{
+			"todos": []any{
+				map[string]any{"id": "1", "content": "Step one", "status": "pending"},
+			},
+		},
+	})
+	model, _ := m.handleAgentMsg(msg)
+
+	// Should have exactly one block and it should be a task list.
+	if len(model.output.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(model.output.blocks))
+	}
+	if model.output.blocks[0].kind != blockTaskList {
+		t.Errorf("expected blockTaskList, got %d", model.output.blocks[0].kind)
+	}
+	// lastToolWasTodo must be set so the result is suppressed.
+	if !model.lastToolWasTodo {
+		t.Error("expected lastToolWasTodo=true after TodoWrite call")
+	}
+}
+
+func TestTodoWriteToolResult_Suppressed(t *testing.T) {
+	m := New()
+	m.state = StateRunning
+
+	// First, emit a TodoWrite tool call.
+	callMsg := AgentMsg(agent.Message{
+		Type:     agent.MessageToolCall,
+		ToolName: "TodoWrite",
+		ToolInput: map[string]any{
+			"todos": []any{
+				map[string]any{"id": "1", "content": "Step one", "status": "pending"},
+			},
+		},
+	})
+	m, _ = m.handleAgentMsg(callMsg)
+
+	blockCountAfterCall := len(m.output.blocks)
+
+	// Now emit the corresponding tool result.
+	resultMsg := AgentMsg(agent.Message{
+		Type:        agent.MessageToolResult,
+		ToolOutput:  "{}",
+		ToolIsError: false,
+	})
+	m, _ = m.handleAgentMsg(resultMsg)
+
+	// Block count must not increase (result suppressed).
+	if len(m.output.blocks) != blockCountAfterCall {
+		t.Errorf("expected no new block for TodoWrite result, got %d total (was %d)", len(m.output.blocks), blockCountAfterCall)
+	}
+	// Flag must be cleared.
+	if m.lastToolWasTodo {
+		t.Error("expected lastToolWasTodo=false after result consumed")
+	}
+}
