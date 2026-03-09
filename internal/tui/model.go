@@ -1104,7 +1104,7 @@ func (m Model) handleIndexPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "Y":
 		m.state = StateInput
 		m.output.AppendSystem("Building code index...")
-		return m, m.rebuildIndexCmd()
+		return m, tea.Batch(m.input.Focus(), m.rebuildIndexCmd())
 	case "n", "N":
 		m.state = StateInput
 		m.output.AppendSystem("Index build skipped.")

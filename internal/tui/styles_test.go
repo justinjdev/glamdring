@@ -3,7 +3,7 @@ package tui
 import "testing"
 
 func TestThemeRegistry_AllBuiltins(t *testing.T) {
-	expected := []string{"glamdring", "rivendell", "mithril", "lothlorien", "shire"}
+	expected := []string{"glamdring", "rivendell", "mithril", "lothlorien", "shire", "anduin"}
 	for _, name := range expected {
 		p, ok := LookupTheme(name)
 		if !ok {
