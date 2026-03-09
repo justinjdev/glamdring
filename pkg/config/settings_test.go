@@ -564,6 +564,52 @@ func TestDisableUpdateCheck(t *testing.T) {
 	}
 }
 
+func TestIndexerAutoBuild(t *testing.T) {
+	t.Run("nil by default", func(t *testing.T) {
+		cfg := IndexerConfig{}
+		if cfg.IndexerAutoBuild() != nil {
+			t.Errorf("expected nil, got %v", cfg.IndexerAutoBuild())
+		}
+	})
+	t.Run("explicit true", func(t *testing.T) {
+		v := true
+		cfg := IndexerConfig{AutoBuild: &v}
+		got := cfg.IndexerAutoBuild()
+		if got == nil || !*got {
+			t.Errorf("expected *true, got %v", got)
+		}
+	})
+	t.Run("explicit false", func(t *testing.T) {
+		v := false
+		cfg := IndexerConfig{AutoBuild: &v}
+		got := cfg.IndexerAutoBuild()
+		if got == nil || *got {
+			t.Errorf("expected *false, got %v", got)
+		}
+	})
+}
+
+func TestMergeSettingsIndexerAutoBuild(t *testing.T) {
+	t.Run("override merges auto_build", func(t *testing.T) {
+		v := true
+		base := Settings{}
+		override := Settings{Indexer: IndexerConfig{AutoBuild: &v}}
+		mergeSettings(&base, &override)
+		if base.Indexer.AutoBuild == nil || !*base.Indexer.AutoBuild {
+			t.Error("expected auto_build to be merged as true")
+		}
+	})
+	t.Run("nil override does not clobber base", func(t *testing.T) {
+		v := true
+		base := Settings{Indexer: IndexerConfig{AutoBuild: &v}}
+		override := Settings{}
+		mergeSettings(&base, &override)
+		if base.Indexer.AutoBuild == nil || !*base.Indexer.AutoBuild {
+			t.Error("base auto_build should not be clobbered by nil override")
+		}
+	})
+}
+
 func TestLoadSettings_GlamdringOverridesClaude(t *testing.T) {
 	root := t.TempDir()
 	glamDir := filepath.Join(root, ".glamdring")
