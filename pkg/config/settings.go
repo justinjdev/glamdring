@@ -66,6 +66,7 @@ type IndexerConfig struct {
 	Enabled     *bool  `json:"enabled,omitempty"`      // nil = auto-detect, true = force on, false = disable
 	Command     string `json:"command,omitempty"`      // indexer binary name (default: "shire")
 	AutoRebuild *bool  `json:"auto_rebuild,omitempty"` // rebuild index after file-modifying turns (default: true)
+	AutoBuild   *bool  `json:"auto_build,omitempty"`   // nil = prompt, true = auto-build, false = skip
 }
 
 // MCPServerConfig describes how to launch an MCP server process.
@@ -283,6 +284,10 @@ func (c IndexerConfig) IndexerAutoRebuild() bool {
 	return true
 }
 
+// IndexerAutoBuild returns the auto_build setting. nil = prompt user, true = build
+// automatically without prompting, false = skip silently.
+func (c IndexerConfig) IndexerAutoBuild() *bool { return c.AutoBuild }
+
 // mergeSettings applies non-zero values from override onto base.
 func mergeSettings(base, override *Settings) {
 	if override.Model != "" {
@@ -307,6 +312,9 @@ func mergeSettings(base, override *Settings) {
 	}
 	if override.Indexer.AutoRebuild != nil {
 		base.Indexer.AutoRebuild = override.Indexer.AutoRebuild
+	}
+	if override.Indexer.AutoBuild != nil {
+		base.Indexer.AutoBuild = override.Indexer.AutoBuild
 	}
 	if override.Experimental.Teams {
 		base.Experimental.Teams = true

@@ -257,6 +257,7 @@ The shire code indexer is auto-detected by default. Configure via `config.json` 
 |---|---|---|
 | `enabled` | auto-detect | `true` = force on, `false` = disable, omit = auto-detect `.shire/index.db` |
 | `command` | `"shire"` | Binary name for the indexer |
+| `auto_build` | `null` | `true` = build index at startup automatically, `false` = skip silently, omit = prompt user if no index is found |
 | `auto_rebuild` | `true` | Rebuild index after agent turns that modify files |
 
 ### Agent Teams (Experimental)
