@@ -206,7 +206,7 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 		s.drainRegularMessages()
 
 		req := &api.MessageRequest{
-			MaxTokens: 16384,
+			MaxTokens: 32000,
 			Messages:  s.messages,
 			System:    s.cfg.SystemPrompt,
 			Tools:     s.provider.Schemas(),
