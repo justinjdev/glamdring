@@ -68,8 +68,8 @@ func (c *Client) SetThinkingBudget(budget *int) {
 
 // defaultThinkingBudget is the token budget used when thinking is enabled via
 // the budget-based approach and no explicit budget has been configured.
-// Matches Claude Code's default; requires max_tokens > 31999 (session uses 32000).
-const defaultThinkingBudget = 31999
+// Matches Claude Code's default of 10000.
+const defaultThinkingBudget = 10000
 
 // supportsThinking returns true if the model supports any form of extended thinking.
 func (c *Client) supportsThinking() bool {
