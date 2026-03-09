@@ -55,7 +55,7 @@ var builtinDescriptions = map[string]string{
 	"mcp":      "Manage MCP servers and tools",
 	"export":   "Export conversation (--html for HTML format)",
 	"copy":     "Copy last response to clipboard",
-	"theme":    "Show or switch theme",
+	"theme":    "Show or switch theme (anduin: colorblind-safe)",
 	"update":   "Check for and install updates",
 }
 

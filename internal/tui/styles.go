@@ -136,7 +136,7 @@ var builtinThemes = map[string]ThemePalette{
 	// anduin: Colorblind-safe warm-neutral -- gold primary, teal/orange for success/error.
 	// Safe for deuteranopia and protanopia (red-green color blindness).
 	"anduin": {
-		Name: "anduin", Bg: "#101010", Fg: "#b8b0a4", FgDim: "#606058", FgBright: "#e0d8cc",
+		Name: "anduin", Bg: "#101010", Fg: "#b8b0a4", FgDim: "#7a7a70", FgBright: "#e0d8cc",
 		Primary: "#ddaa44", Secondary: "#cc9944", Success: "#44bbcc", Error: "#ee8833",
 		Info: "#7799cc", Subtle: "#9988cc", Surface0: "#181818", Surface1: "#222220", Surface2: "#2e2e2c",
 	},
