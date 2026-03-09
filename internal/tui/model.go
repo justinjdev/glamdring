@@ -91,6 +91,11 @@ type Model struct {
 	// indexerCfg holds indexer settings (command name, auto-rebuild).
 	indexerCfg config.IndexerConfig
 
+	// pendingIndexCheck holds an indexStartupCheckMsg that arrived while the
+	// model was not in StateInput (e.g. StateCheckpoint). It is replayed once
+	// the blocking state resolves.
+	pendingIndexCheck *indexStartupCheckMsg
+
 	// turnModifiedFiles tracks whether the current agent turn used file-modifying tools.
 	turnModifiedFiles bool
 
@@ -494,6 +499,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case indexRebuildDoneMsg:
 		if msg.err != nil {
 			log.Printf("index rebuild: %v", msg.err)
+			m.output.AppendError(fmt.Sprintf("Index build failed: %v", msg.err))
 			return m, nil
 		}
 		if msg.db != nil {
@@ -506,8 +512,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case indexStartupCheckMsg:
-		// Don't overwrite an already-pending prompt (e.g. checkpoint recovery).
+		// If another startup prompt is active (e.g. checkpoint recovery), defer
+		// this message until that state resolves so it is not lost.
 		if m.state != StateInput {
+			m.pendingIndexCheck = &msg
 			return m, nil
 		}
 		if msg.notInstalled {
@@ -518,7 +526,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.autoBuild {
 			m.output.AppendSystem("Building code index...")
-			return m, m.rebuildIndexCmd()
+			return m, tea.Batch(m.input.Focus(), m.rebuildIndexCmd())
 		}
 		m.state = StateIndexPrompt
 		m.output.AppendSystem("No code index found. Build it now?")
@@ -1085,15 +1093,26 @@ func (m Model) handleCheckpointKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.removeCheckpointFile()
 		m.checkpointContent = ""
 		m.state = StateInput
-		return m, m.input.Focus()
+		return m, tea.Batch(m.input.Focus(), m.flushPendingIndexCheck())
 	case "n", "N":
 		m.removeCheckpointFile()
 		m.checkpointContent = ""
 		m.output.Clear()
 		m.state = StateInput
-		return m, m.input.Focus()
+		return m, tea.Batch(m.input.Focus(), m.flushPendingIndexCheck())
 	}
 	return m, nil
+}
+
+// flushPendingIndexCheck replays a deferred indexStartupCheckMsg if one was
+// stored while another startup prompt was active. Returns nil if none pending.
+func (m *Model) flushPendingIndexCheck() tea.Cmd {
+	if m.pendingIndexCheck == nil {
+		return nil
+	}
+	msg := *m.pendingIndexCheck
+	m.pendingIndexCheck = nil
+	return func() tea.Msg { return msg }
 }
 
 // handleUpdateKey processes key presses during the update confirmation prompt.
@@ -1133,7 +1152,7 @@ func (m Model) handleIndexPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "Y":
 		m.state = StateInput
 		m.output.AppendSystem("Building code index...")
-		return m, m.rebuildIndexCmd()
+		return m, tea.Batch(m.input.Focus(), m.rebuildIndexCmd())
 	case "n", "N":
 		m.state = StateInput
 		m.output.AppendSystem("Index build skipped.")

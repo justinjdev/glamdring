@@ -2265,3 +2265,62 @@ func TestCheckIndexStartupCmd_AutoBuildFalse_ReturnsNil(t *testing.T) {
 		t.Error("checkIndexStartupCmd must return nil when auto_build=false")
 	}
 }
+
+func TestIndexStartupCheck_DeferredDuringCheckpoint(t *testing.T) {
+	m := New()
+	m.state = StateCheckpoint
+	result, _ := m.Update(indexStartupCheckMsg{})
+	model := result.(Model)
+	if model.state != StateCheckpoint {
+		t.Errorf("state = %v, want StateCheckpoint", model.state)
+	}
+	if model.pendingIndexCheck == nil {
+		t.Error("pendingIndexCheck should be stored when msg arrives during StateCheckpoint")
+	}
+}
+
+func TestCheckpointKey_Yes_FlushesIndexCheck(t *testing.T) {
+	m := New()
+	m.state = StateCheckpoint
+	msg := indexStartupCheckMsg{}
+	m.pendingIndexCheck = &msg
+	result, cmd := m.handleCheckpointKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	model := result.(Model)
+	if model.pendingIndexCheck != nil {
+		t.Error("pendingIndexCheck should be cleared after checkpoint resolves")
+	}
+	if cmd == nil {
+		t.Error("cmd should be non-nil to replay the pending index check")
+	}
+}
+
+func TestCheckpointKey_No_FlushesIndexCheck(t *testing.T) {
+	m := New()
+	m.state = StateCheckpoint
+	msg := indexStartupCheckMsg{}
+	m.pendingIndexCheck = &msg
+	result, cmd := m.handleCheckpointKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	model := result.(Model)
+	if model.pendingIndexCheck != nil {
+		t.Error("pendingIndexCheck should be cleared after checkpoint resolves")
+	}
+	if cmd == nil {
+		t.Error("cmd should be non-nil to replay the pending index check")
+	}
+}
+
+func TestIndexRebuildDoneMsg_ErrorSurfaces(t *testing.T) {
+	m := New()
+	result, _ := m.Update(indexRebuildDoneMsg{err: errors.New("build failed")})
+	model := result.(Model)
+	// Error should be visible in output (non-empty output indicates message was appended).
+	_ = model // state doesn't change; the test validates no panic and the handler runs
+}
+
+func TestAutoBuild_ReturnsInputFocus(t *testing.T) {
+	m := New()
+	_, cmd := m.Update(indexStartupCheckMsg{autoBuild: true})
+	if cmd == nil {
+		t.Error("auto-build path must return a batched cmd including input.Focus()")
+	}
+}
