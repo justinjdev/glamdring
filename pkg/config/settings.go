@@ -21,6 +21,7 @@ type Settings struct {
 	HighContrast       bool                       `json:"high_contrast,omitempty"`
 	Themes             map[string]UserThemeConfig `json:"themes,omitempty"`
 	DisableUpdateCheck bool                       `json:"disable_update_check,omitempty"`
+	ThinkingBudget     *int                       `json:"thinking_budget,omitempty"`
 }
 
 // UserThemeConfig holds user-defined theme colors from settings.json.
@@ -334,6 +335,9 @@ func mergeSettings(base, override *Settings) {
 	}
 	if override.DisableUpdateCheck {
 		base.DisableUpdateCheck = true
+	}
+	if override.ThinkingBudget != nil {
+		base.ThinkingBudget = override.ThinkingBudget
 	}
 }
 

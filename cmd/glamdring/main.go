@@ -124,7 +124,7 @@ func main() {
 
 	// Build the subagent runner: a closure that wraps agent.Run and bridges
 	// the agent.Message channel into the tools.SubagentResult channel.
-	subagentRunner := makeSubagentRunner(creds, settings.Model)
+	subagentRunner := makeSubagentRunner(creds, settings.Model, settings.ThinkingBudget)
 
 	// Open shire index if configured/available.
 	var indexDB *index.DB
@@ -213,15 +213,16 @@ func main() {
 	}
 
 	cfg := agent.Config{
-		Model:        settings.Model,
-		Creds:        creds,
-		SystemPrompt: systemPrompt,
-		Tools:        allTools,
-		MaxTurns:     settings.MaxTurns,
-		CWD:          workDir,
-		HookRunner:   hookRunner,
-		Permissions:  permissions,
-		Yolo:         *yolo,
+		Model:          settings.Model,
+		Creds:          creds,
+		SystemPrompt:   systemPrompt,
+		Tools:          allTools,
+		MaxTurns:       settings.MaxTurns,
+		CWD:            workDir,
+		HookRunner:     hookRunner,
+		Permissions:    permissions,
+		Yolo:           *yolo,
+		ThinkingBudget: settings.ThinkingBudget,
 	}
 
 	m := tui.NewWithAgent(ctx, cfg)
@@ -300,7 +301,7 @@ func runDemo(themeName string) {
 
 // makeSubagentRunner returns a SubagentRunner that wraps agent.Run. It
 // captures the credentials and model so subagents share the parent's auth.
-func makeSubagentRunner(creds auth.Credentials, model string) tools.SubagentRunner {
+func makeSubagentRunner(creds auth.Credentials, model string, thinkingBudget *int) tools.SubagentRunner {
 	return func(ctx context.Context, opts tools.SubagentOptions) <-chan tools.SubagentResult {
 		resultCh := make(chan tools.SubagentResult, 64)
 
@@ -315,13 +316,14 @@ func makeSubagentRunner(creds auth.Credentials, model string) tools.SubagentRunn
 		}
 
 		cfg := agent.Config{
-			Prompt:       opts.Prompt,
-			SystemPrompt: opts.SystemPrompt,
-			Creds:        creds,
-			Model:        agentModel,
-			Tools:        opts.Tools,
-			MaxTurns:     maxTurns,
-			Yolo:         true, // subagents auto-approve tools
+			Prompt:         opts.Prompt,
+			SystemPrompt:   opts.SystemPrompt,
+			Creds:          creds,
+			Model:          agentModel,
+			Tools:          opts.Tools,
+			MaxTurns:       maxTurns,
+			Yolo:           true, // subagents auto-approve tools
+			ThinkingBudget: thinkingBudget,
 		}
 
 		// Pass through team state for team agents.

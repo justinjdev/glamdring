@@ -25,10 +25,11 @@ type refresher interface {
 
 // Client is the HTTP client for the Claude Messages API.
 type Client struct {
-	creds      auth.Credentials
-	model      string
-	httpClient *http.Client
-	endpoint   string
+	creds          auth.Credentials
+	model          string
+	httpClient     *http.Client
+	endpoint       string
+	thinkingBudget *int // nil = default, 0 = disabled, positive = use that budget
 }
 
 // NewClient creates a new API client for the given credentials and model.
@@ -58,10 +59,32 @@ func (c *Client) SetEndpoint(url string) {
 	c.endpoint = url
 }
 
-// supportsThinking returns true if the model supports extended thinking.
+// SetThinkingBudget sets the token budget for extended thinking. Pass nil to
+// use the default budget, a pointer to 0 to disable thinking, or a positive
+// value to use a custom budget.
+func (c *Client) SetThinkingBudget(budget *int) {
+	c.thinkingBudget = budget
+}
+
+// defaultThinkingBudget is the token budget used when thinking is enabled via
+// the budget-based approach and no explicit budget has been configured.
+// Matches Claude Code's default of 10000.
+const defaultThinkingBudget = 10000
+
+// supportsThinking returns true if the model supports any form of extended thinking.
 func (c *Client) supportsThinking() bool {
 	m := strings.ToLower(c.model)
-	return strings.Contains(m, "opus-4") || strings.Contains(m, "sonnet-4")
+	return strings.Contains(m, "claude-3-7-") ||
+		strings.Contains(m, "opus-4") ||
+		strings.Contains(m, "sonnet-4")
+}
+
+// supportsAdaptiveThinking returns true for models that use adaptive thinking
+// (type:"adaptive") rather than the budget-based approach (type:"enabled").
+// Adaptive thinking is the recommended mode for claude-*-4-6 models.
+func (c *Client) supportsAdaptiveThinking() bool {
+	m := strings.ToLower(c.model)
+	return strings.Contains(m, "opus-4-6") || strings.Contains(m, "sonnet-4-6")
 }
 
 // Stream sends a MessageRequest to the API with streaming enabled and returns
@@ -72,11 +95,28 @@ func (c *Client) Stream(ctx context.Context, req *MessageRequest) (<-chan Stream
 	req.Stream = true
 	req.Model = c.model
 
-	// Enable adaptive thinking for supported models.
+	// Enable extended thinking for supported models, unless the caller already
+	// set a ThinkingConfig or thinking is explicitly disabled (budget == 0).
+	// claude-*-4-6 models use adaptive thinking (no budget needed); older
+	// supported models use the budget-based approach.
 	if c.supportsThinking() && req.Thinking == nil {
-		req.Thinking = &ThinkingConfig{
-			Type:         "enabled",
-			BudgetTokens: 10000,
+		if c.thinkingBudget != nil && *c.thinkingBudget < 0 {
+			return nil, fmt.Errorf("invalid thinking budget %d: must be >= 0", *c.thinkingBudget)
+		}
+		disabled := c.thinkingBudget != nil && *c.thinkingBudget == 0
+		if !disabled {
+			if c.supportsAdaptiveThinking() {
+				req.Thinking = &ThinkingConfig{Type: "adaptive"}
+			} else {
+				budget := defaultThinkingBudget
+				if c.thinkingBudget != nil {
+					budget = *c.thinkingBudget
+				}
+				req.Thinking = &ThinkingConfig{
+					Type:         "enabled",
+					BudgetTokens: budget,
+				}
+			}
 		}
 	}
 

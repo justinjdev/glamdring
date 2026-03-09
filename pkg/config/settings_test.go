@@ -508,6 +508,49 @@ func TestSettings_ThemeFields(t *testing.T) {
 	}
 }
 
+func TestMergeSettings_ThinkingBudget(t *testing.T) {
+	base := DefaultSettings()
+
+	// Merging a nil ThinkingBudget leaves base unchanged.
+	mergeSettings(&base, &Settings{})
+	if base.ThinkingBudget != nil {
+		t.Errorf("expected nil ThinkingBudget after empty merge, got %v", base.ThinkingBudget)
+	}
+
+	// Merging a positive budget sets it.
+	budget := 5000
+	mergeSettings(&base, &Settings{ThinkingBudget: &budget})
+	if base.ThinkingBudget == nil || *base.ThinkingBudget != 5000 {
+		t.Errorf("ThinkingBudget = %v, want 5000", base.ThinkingBudget)
+	}
+
+	// Merging budget=0 explicitly disables thinking (overrides existing).
+	zero := 0
+	mergeSettings(&base, &Settings{ThinkingBudget: &zero})
+	if base.ThinkingBudget == nil || *base.ThinkingBudget != 0 {
+		t.Errorf("ThinkingBudget = %v, want 0 (explicitly disabled)", base.ThinkingBudget)
+	}
+}
+
+func TestLoadSettings_ThinkingBudget(t *testing.T) {
+	root := t.TempDir()
+	claudeDir := filepath.Join(root, ".claude")
+	if err := os.Mkdir(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	budget := 8000
+	settings := Settings{ThinkingBudget: &budget}
+	data, _ := json.Marshal(settings)
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := LoadSettings(root)
+	if s.ThinkingBudget == nil || *s.ThinkingBudget != 8000 {
+		t.Errorf("ThinkingBudget = %v, want 8000", s.ThinkingBudget)
+	}
+}
+
 func TestDisableUpdateCheck(t *testing.T) {
 	base := DefaultSettings()
 	if base.DisableUpdateCheck {

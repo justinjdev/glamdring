@@ -59,6 +59,12 @@ type Config struct {
 	// Endpoint overrides the API endpoint URL. Intended for testing with
 	// httptest servers.
 	Endpoint string
+
+	// ThinkingBudget overrides the extended thinking token budget. nil = use
+	// the model default (adaptive for claude-*-4-6, 10000 tokens for older
+	// supported models), a pointer to 0 disables thinking entirely, and any
+	// positive value sets a custom budget (non-adaptive models only).
+	ThinkingBudget *int
 }
 
 // DefaultModel is the default Claude model to use.
