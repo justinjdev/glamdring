@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,6 +39,7 @@ var builtinCommands = map[string]BuiltinHandler{
 	"copy":     cmdCopy,
 	"theme":    cmdTheme,
 	"update":   cmdUpdate,
+	"session":  cmdSession,
 }
 
 // builtinDescriptions provides short help text for each built-in command.
@@ -57,6 +59,7 @@ var builtinDescriptions = map[string]string{
 	"copy":     "Copy last response to clipboard",
 	"theme":    "Show or switch theme (anduin: colorblind-safe)",
 	"update":   "Check for and install updates",
+	"session":  "Manage saved sessions (list|resume <id>|delete <id>|repair)",
 }
 
 // BuiltinNames returns a sorted list of built-in command names.
@@ -110,15 +113,19 @@ func cmdQuit(m *Model, args string) tea.Cmd {
 
 // cmdClear resets the output viewport, token counters, and conversation history.
 func cmdClear(m *Model, args string) tea.Cmd {
+	// Close current session before clearing.
+	if m.session != nil {
+		if err := m.session.Close(); err != nil {
+			log.Printf("session close on clear: %v", err)
+		}
+		m.session.Reset()
+	}
 	m.output.Clear()
 	m.statusbar.Reset()
 	m.totalInputTokens = 0
 	m.totalOutputTokens = 0
 	m.turn = 0
 	m.statusbar.Update(m.agentCfg.Model, 0, 0, 0)
-	if m.session != nil {
-		m.session.Reset()
-	}
 	return nil
 }
 
@@ -648,6 +655,114 @@ func cmdUpdate(m *Model, args string) tea.Cmd {
 		rel, err := update.CheckLatest(version)
 		return updateCheckDoneMsg{rel: rel, err: err}
 	}
+}
+
+// cmdSession manages saved conversation sessions.
+// Subcommands: list (default), resume <id>, delete <id>, repair
+func cmdSession(m *Model, args string) tea.Cmd {
+	if m.sessionStore == nil {
+		m.output.AppendSystem("Session persistence is disabled.")
+		return nil
+	}
+
+	parts := strings.Fields(args)
+	sub := "list"
+	if len(parts) > 0 {
+		sub = parts[0]
+	}
+
+	switch sub {
+	case "list", "":
+		return cmdSessionList(m)
+	case "resume":
+		if len(parts) < 2 {
+			m.output.AppendError("Usage: /session resume <id>")
+			return nil
+		}
+		return cmdSessionResume(m, parts[1])
+	case "delete":
+		if len(parts) < 2 {
+			m.output.AppendError("Usage: /session delete <id>")
+			return nil
+		}
+		return cmdSessionDelete(m, parts[1])
+	case "repair":
+		return cmdSessionRepair(m)
+	default:
+		m.output.AppendError(fmt.Sprintf("Unknown /session subcommand: %s", sub))
+		m.output.AppendSystem("Usage: /session [list|resume <id>|delete <id>|repair]")
+		return nil
+	}
+}
+
+func cmdSessionList(m *Model) tea.Cmd {
+	sessions, err := m.sessionStore.ListSessions()
+	if err != nil {
+		m.output.AppendError(fmt.Sprintf("Failed to list sessions: %s", err))
+		return nil
+	}
+	if len(sessions) == 0 {
+		m.output.AppendSystem("No saved sessions.")
+		return nil
+	}
+	var b strings.Builder
+	b.WriteString("Saved sessions:\n")
+	for _, s := range sessions {
+		b.WriteString(fmt.Sprintf("  %s  %-40s  %s  (%d messages)\n",
+			s.ID[:8],
+			truncateString(s.Title, 40),
+			s.UpdatedAt.Format("Jan 2 15:04"),
+			s.MessageCount,
+		))
+	}
+	m.output.AppendSystem(strings.TrimRight(b.String(), "\n"))
+	return nil
+}
+
+func cmdSessionResume(m *Model, id string) tea.Cmd {
+	msgs, err := m.sessionStore.LoadMessages(id)
+	if err != nil {
+		m.output.AppendError(fmt.Sprintf("Failed to resume session %s: %s", id, err))
+		return nil
+	}
+	if len(msgs) == 0 {
+		m.output.AppendError(fmt.Sprintf("Session %s not found or empty.", id))
+		return nil
+	}
+	if m.session == nil {
+		m.session = agent.NewSession(m.agentCfg)
+	}
+	m.session.SetMessages(msgs)
+	m.output.AppendSystem(fmt.Sprintf("Resumed session %s (%d messages).", id[:8], len(msgs)))
+	return nil
+}
+
+func cmdSessionDelete(m *Model, id string) tea.Cmd {
+	if err := m.sessionStore.DeleteSession(id); err != nil {
+		m.output.AppendError(fmt.Sprintf("Failed to delete session %s: %s", id, err))
+		return nil
+	}
+	m.output.AppendSystem(fmt.Sprintf("Deleted session %s.", id[:8]))
+	return nil
+}
+
+func cmdSessionRepair(m *Model) tea.Cmd {
+	n, err := m.sessionStore.RebuildIndex()
+	if err != nil {
+		m.output.AppendError(fmt.Sprintf("Failed to repair index: %s", err))
+		return nil
+	}
+	m.output.AppendSystem(fmt.Sprintf("Index rebuilt: %d sessions found.", n))
+	return nil
+}
+
+// truncateString truncates s to maxLen runes, appending "..." if truncated.
+func truncateString(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen-3]) + "..."
 }
 
 const compactPrompt = `Summarize our conversation so far into a compact context block. Be aggressive about compression — discard noise, keep only what matters for continuing work.

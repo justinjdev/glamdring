@@ -10,6 +10,7 @@ import (
 
 	"github.com/justin/glamdring/pkg/api"
 	"github.com/justin/glamdring/pkg/config"
+	"github.com/justin/glamdring/pkg/session"
 	"github.com/justin/glamdring/pkg/tools"
 )
 
@@ -26,6 +27,9 @@ type Session struct {
 	priorityCh   <-chan any
 	regularCh    <-chan any
 	teamScope    *config.TeamScope
+	store          *session.Store
+	sessionID      string
+	lastSavedIndex int
 	TotalInput         int
 	TotalOutput        int
 	TotalCacheCreation       int
@@ -74,6 +78,15 @@ func NewSession(cfg Config) *Session {
 	}
 	if cfg.Yolo {
 		s.SetYolo(true)
+	}
+	if cfg.Store != nil {
+		meta, err := cfg.Store.NewSession()
+		if err != nil {
+			log.Printf("session persistence: failed to create session: %v", err)
+		} else {
+			s.store = cfg.Store
+			s.sessionID = meta.ID
+		}
 	}
 	return s
 }
@@ -146,6 +159,9 @@ func (s *Session) Reset() {
 	s.messages = nil
 	s.sessionAllow = make(map[string]bool)
 	s.yolo = false
+	// Clear persistence state so the next Turn() starts a new session file.
+	s.sessionID = ""
+	s.lastSavedIndex = 0
 }
 
 // ToggleYolo flips yolo mode on or off. When enabled, all registered tools
@@ -255,6 +271,26 @@ func (s *Session) runTurn(ctx context.Context, out chan<- Message) {
 			Role:    "assistant",
 			Content: turnResult.contentBlocks,
 		})
+
+		if s.store != nil {
+			// After Reset(), sessionID is cleared — create a new session lazily.
+			if s.sessionID == "" {
+				if meta, err := s.store.NewSession(); err != nil {
+					log.Printf("session persistence: failed to create session: %v", err)
+					s.store = nil // disable persistence to avoid repeated failures
+				} else {
+					s.sessionID = meta.ID
+				}
+			}
+			if s.sessionID != "" {
+				newMsgs := s.messages[s.lastSavedIndex:]
+				if err := s.store.AppendMessages(s.sessionID, newMsgs); err != nil {
+					log.Printf("session persistence: append failed: %v", err)
+				} else {
+					s.lastSavedIndex = len(s.messages)
+				}
+			}
+		}
 
 		switch turnResult.stopReason {
 		case "end_turn", "refusal":
@@ -429,6 +465,38 @@ func (s *Session) tryFallbackModel(err error) string {
 	}
 	_, fallback := pmp.CurrentPhaseModel()
 	return fallback
+}
+
+// Close finalizes the session in the persistence store. No-op if no store
+// is configured. Should be called on /clear or program exit.
+func (s *Session) Close() error {
+	if s.store == nil {
+		return nil
+	}
+	var firstUserContent string
+	for _, m := range s.messages {
+		if m.Role == "user" {
+			switch v := m.Content.(type) {
+			case string:
+				firstUserContent = v
+			case []api.ContentBlock:
+				for _, b := range v {
+					if b.Type == "text" && b.Text != "" {
+						firstUserContent = b.Text
+						break
+					}
+				}
+			}
+			break
+		}
+	}
+	return s.store.CloseSession(s.sessionID, firstUserContent, len(s.messages))
+}
+
+// SetMessages replaces the conversation history. Used for session restore.
+func (s *Session) SetMessages(msgs []api.RequestMessage) {
+	s.messages = msgs
+	s.lastSavedIndex = len(msgs) // mark all as already saved
 }
 
 // formatTeamMessage converts an opaque team message to a string for injection.

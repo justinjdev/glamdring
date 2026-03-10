@@ -21,6 +21,7 @@ import (
 	"github.com/justin/glamdring/pkg/hooks"
 	"github.com/justin/glamdring/pkg/index"
 	"github.com/justin/glamdring/pkg/mcp"
+	"github.com/justin/glamdring/pkg/session"
 	"github.com/justin/glamdring/pkg/tools"
 	"github.com/justin/glamdring/pkg/update"
 	"golang.org/x/term"
@@ -144,6 +145,9 @@ type Model struct {
 
 	// pendingUpdate holds a release awaiting user confirmation in StateUpdate.
 	pendingUpdate *update.Release
+
+	// sessionStore is the session persistence store, used by /session command.
+	sessionStore *session.Store
 }
 
 // New creates the root TUI model without agent wiring.
@@ -268,6 +272,29 @@ func (m *Model) SetVersion(v string) {
 // SetDisableUpdateCheck suppresses the async startup update check.
 func (m *Model) SetDisableUpdateCheck(v bool) {
 	m.disableUpdateCheck = v
+}
+
+// SetSessionStore stores the session persistence store for /session command access.
+func (m *Model) SetSessionStore(store *session.Store) {
+	m.sessionStore = store
+}
+
+// ShowSessionRestoreHint checks for recent sessions and displays a restore hint.
+func (m *Model) ShowSessionRestoreHint() {
+	if m.sessionStore == nil {
+		return
+	}
+	sessions, err := m.sessionStore.ListSessions()
+	if err != nil || len(sessions) == 0 {
+		return
+	}
+	last := sessions[0]
+	m.output.AppendSystem(fmt.Sprintf(
+		"Previous session: %q (%s). Run /session resume %s to restore.",
+		last.Title,
+		last.UpdatedAt.Format("Jan 2 15:04"),
+		last.ID[:8],
+	))
 }
 
 // InitMCPStatus initializes the MCP status bar counts. Call this

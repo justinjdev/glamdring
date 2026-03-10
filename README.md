@@ -344,6 +344,32 @@ Leader resolution for the `leader` gate follows this priority: phase-level `gate
 
 **Context compaction:** When a `PhaseTransitionCallback` is configured, phase changes trigger compaction of the conversation history. The `ArchivingCompactor` stores raw conversation history in the context cache before compaction, providing an escape hatch if compacted summaries lose critical information.
 
+## Session Persistence
+
+glamdring automatically saves each conversation to `~/.glamdring/sessions/` as an append-only JSONL file. On startup, you can restore the previous session.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/session` or `/session list` | List all saved sessions |
+| `/session resume <id>` | Restore a previous session |
+| `/session delete <id>` | Delete a saved session |
+| `/session repair` | Rebuild the session index from files |
+
+### Configuration
+
+```json
+{
+  "persistence": {
+    "enabled": true,
+    "dir": "~/.glamdring/sessions"
+  }
+}
+```
+
+Set `enabled: false` to disable persistence. Set `dir` to use a custom directory.
+
 ## Architecture
 
 ```
