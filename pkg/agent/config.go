@@ -6,6 +6,7 @@ import (
 	"github.com/justin/glamdring/pkg/auth"
 	"github.com/justin/glamdring/pkg/config"
 	"github.com/justin/glamdring/pkg/hooks"
+	"github.com/justin/glamdring/pkg/session"
 	"github.com/justin/glamdring/pkg/tools"
 )
 
@@ -55,6 +56,10 @@ type Config struct {
 	// When set, operations outside the scope are denied before normal
 	// permission evaluation.
 	TeamScope *config.TeamScope
+
+	// Store is the session persistence store. When non-nil, conversation
+	// history is automatically saved to JSONL files on each turn.
+	Store *session.Store
 
 	// Endpoint overrides the API endpoint URL. Intended for testing with
 	// httptest servers.

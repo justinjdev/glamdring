@@ -22,6 +22,7 @@ type Settings struct {
 	Themes             map[string]UserThemeConfig `json:"themes,omitempty"`
 	DisableUpdateCheck bool                       `json:"disable_update_check,omitempty"`
 	ThinkingBudget     *int                       `json:"thinking_budget,omitempty"`
+	Persistence        PersistenceConfig          `json:"persistence,omitempty"`
 }
 
 // UserThemeConfig holds user-defined theme colors from settings.json.
@@ -44,6 +45,12 @@ type UserThemeConfig struct {
 // ExperimentalConfig holds flags for experimental features.
 type ExperimentalConfig struct {
 	Teams bool `json:"teams,omitempty"`
+}
+
+// PersistenceConfig controls session persistence behavior.
+type PersistenceConfig struct {
+	Enabled bool   `json:"enabled,omitempty"`
+	Dir     string `json:"dir,omitempty"`
 }
 
 // WorkflowConfig defines a user-configurable workflow with named phases.
@@ -105,6 +112,7 @@ func DefaultSettings() Settings {
 	return Settings{
 		Model: "claude-opus-4-6",
 		// MaxTurns nil = unlimited (default).
+		Persistence: PersistenceConfig{Enabled: true},
 	}
 }
 
@@ -347,6 +355,25 @@ func mergeSettings(base, override *Settings) {
 	if override.ThinkingBudget != nil {
 		base.ThinkingBudget = override.ThinkingBudget
 	}
+	if override.Persistence.Enabled {
+		base.Persistence.Enabled = true
+	}
+	if override.Persistence.Dir != "" {
+		base.Persistence.Dir = override.Persistence.Dir
+	}
+}
+
+// SessionsDir returns the directory for session JSONL files.
+// Uses Persistence.Dir if set, otherwise defaults to ~/.glamdring/sessions/.
+func (s Settings) SessionsDir() string {
+	if s.Persistence.Dir != "" {
+		return s.Persistence.Dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".glamdring/sessions"
+	}
+	return filepath.Join(home, ".glamdring", "sessions")
 }
 
 // knownToolNames is the set of built-in tool names recognized by glamdring.

@@ -22,6 +22,7 @@ import (
 	"github.com/justin/glamdring/pkg/hooks"
 	"github.com/justin/glamdring/pkg/index"
 	"github.com/justin/glamdring/pkg/mcp"
+	"github.com/justin/glamdring/pkg/session"
 	"github.com/justin/glamdring/pkg/teams"
 	"github.com/justin/glamdring/pkg/tools"
 	"github.com/justin/glamdring/pkg/update"
@@ -102,6 +103,17 @@ func main() {
 	settings := config.LoadSettings(workDir)
 	if *model != "" {
 		settings.Model = *model
+	}
+
+	// Initialize session persistence store.
+	var sessionStore *session.Store
+	if settings.Persistence.Enabled {
+		store, err := session.Open(settings.SessionsDir())
+		if err != nil {
+			log.Printf("warning: failed to open session store: %v", err)
+		} else {
+			sessionStore = store
+		}
 	}
 
 	// Discover instruction files (GLAMDRING.md / CLAUDE.md).
@@ -228,11 +240,16 @@ func main() {
 		Permissions:    permissions,
 		Yolo:           *yolo,
 		ThinkingBudget: settings.ThinkingBudget,
+		Store:          sessionStore,
 	}
 
 	m := tui.NewWithAgent(ctx, cfg)
 	m.SetSettings(settings)
 	m.SetVersion(version)
+	if sessionStore != nil {
+		m.SetSessionStore(sessionStore)
+		m.ShowSessionRestoreHint()
+	}
 	m.SetDisableUpdateCheck(settings.DisableUpdateCheck)
 
 	// Apply theme from settings.
